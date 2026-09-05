@@ -116,6 +116,32 @@ with c_nav4:
 st.markdown("---")
 
 # --- FUNCIONES DE BASE DE DATOS ---
+def agregar_item_a_remision(num_remision_val, primer_fila, tipo_huevo, cantidad, precio_unitario):
+    conn = get_connection()
+    cur = conn.cursor()
+    total = cantidad * precio_unitario
+    
+    query_insert = """
+        INSERT INTO remisiones (num_remision, fecha_emision, cliente, cedula_nit, destino, telefono, email, conductor, tipo_huevo, cantidad, precio_unitario, total)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """
+    cur.execute(query_insert, (
+        num_remision_val,
+        primer_fila.get("fecha_emision", datetime.now()),
+        primer_fila.get("cliente", ""),
+        primer_fila.get("cedula_nit", ""),
+        primer_fila.get("destino", ""),
+        primer_fila.get("telefono", ""),
+        primer_fila.get("email", ""),
+        primer_fila.get("conductor", "Ivan Herrera"),
+        tipo_huevo,
+        cantidad,
+        precio_unitario,
+        total
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
 def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio):
     conn = get_connection()
     cur = conn.cursor()

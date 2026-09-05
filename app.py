@@ -48,7 +48,7 @@ st.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS PROFESIONALES (NARANJA Y AZUL OSCURO) ---
+# --- ESTILOS CSS PROFESIONALES (NARANJA, AZUL OSCURO Y FONDO PERSONALIZADO) ---
 st.markdown(
     """
     <style>
@@ -60,11 +60,12 @@ st.markdown(
         --azul-oscuro: #0f2942;
         --naranja-acento: #f26822;
         --naranja-hover: #d95316;
-        --fondo-claro: #f4f7f6;
+        --fondo-app: #eef2f5;
+        --fondo-tarjeta: #ffffff;
     }
 
     .stApp {
-        background-color: var(--fondo-claro);
+        background-color: var(--fondo-app);
     }
     
     .block-container {
@@ -73,7 +74,7 @@ st.markdown(
         padding-left: 1.2rem;
         padding-right: 1.2rem;
         max-width: 540px;
-        background-color: #ffffff;
+        background-color: var(--fondo-tarjeta);
         border-radius: 16px;
         box-shadow: 0 6px 24px rgba(15, 41, 66, 0.08);
         margin-top: 1rem;
@@ -533,7 +534,6 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
     if not items_validos.empty:
         items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
         
-        # Agrupar para la vista y PDF limpio sin desglosar galpones
         df_agrupado_pdf = items_validos.groupby("Clasificación").agg({
             "Cantidad (Huevos)": "sum",
             "Precio Unitario ($)": "mean",
@@ -791,4 +791,3 @@ elif st.session_state.seccion_activa == "📜 Historial":
                                 eliminar_remision_completa(num_sel, df_rem)
                                 st.warning(f"Remisión No. {num_sel:06d} eliminada correctamente.")
                                 st.rerun()
-                                

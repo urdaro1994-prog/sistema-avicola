@@ -9,23 +9,95 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-# Configuración de la página
-st.set_page_config(page_title="HUEVONADA URIEL DAVID", layout="wide")
+# Configuración de página móvil
+st.set_page_config(page_title="HUEVONADA - App", layout="centered", initial_sidebar_state="collapsed")
 
-# --- ENCABEZADO CON ESCUDO Y TÍTULO ---
-col_logo, col_titulo = st.columns([1, 5])
+# --- ESTILOS CSS TIPO APP MÓVIL (TikTok Style) ---
+st.markdown("""
+    <style>
+    /* Ocultar barra superior, menú y footer de Streamlit */
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    /* Espaciado general para pantallas de teléfono */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 5rem;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+        max-width: 500px; /* Ancho típico de celular */
+    }
+    
+    /* Encabezado fijo y moderno */
+    .app-header {
+        text-align: center;
+        background: linear-gradient(135deg, #125375 0%, #0d3850 100%);
+        color: white;
+        padding: 15px;
+        border-radius: 16px;
+        margin-bottom: 15px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    /* Tarjetas redondeadas estilo App */
+    .app-card {
+        background-color: #ffffff;
+        border-radius: 16px;
+        padding: 15px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        margin-bottom: 15px;
+        border: 1px solid #e1e8ed;
+    }
+    
+    /* Botones principales tipo móvil */
+    .stButton>button {
+        width: 100%;
+        border-radius: 12px;
+        height: 3em;
+        font-weight: bold;
+        background-color: #125375;
+        color: white;
+        border: none;
+    }
+    
+    /* Ajustes para la tabla de edición */
+    div[data-testid="stDataEditor"] {
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
+# --- ENCABEZADO FIJO ---
+col_logo, col_tit = st.columns([1, 3])
 with col_logo:
-    if os.path.exists("LOGO.png"):
-        st.image("LOGO.png", width=120)
-    elif os.path.exists("LOGO.png"):
-        st.image("LOGO.png", width=120)
+    if os.path.exists("ESCUDO.png"):
+        st.image("ESCUDO.png", width=70)
+    elif os.path.exists("escudo.png"):
+        st.image("escudo.png", width=70)
     else:
         st.write("🛡️")
+with col_tit:
+    st.markdown("### **AGROAVÍCOLA**\n*Santa Isabel*")
 
-with col_titulo:
-    st.title("HUEVONADA URIEL DAVID")
-    st.caption("Gestión Avícola - Control de Stock")
+# --- NAVEGACIÓN INFERIOR (Estilo Menú Móvil) ---
+if "seccion_activa" not in st.session_state:
+    st.session_state.seccion_activa = "📤 Remisiones"
+
+# Botones de navegación tipo menú de App abajo
+c_nav1, c_nav2, c_nav3 = st.columns(3)
+with c_nav1:
+    if st.button("📥 Entrada", use_container_width=True):
+        st.session_state.seccion_activa = "📥 Entrada"
+with c_nav2:
+    if st.button("📤 Remisión", use_container_width=True):
+        st.session_state.seccion_activa = "📤 Remisiones"
+with c_nav3:
+    if st.button("📊 Stock", use_container_width=True):
+        st.session_state.seccion_activa = "📊 Stock"
+
+st.markdown("---")
 
 # --- FUNCIONES DE BASE DE DATOS ---
 def get_connection():
@@ -34,7 +106,6 @@ def get_connection():
 def obtener_siguiente_num_remision():
     conn = get_connection()
     cur = conn.cursor()
-    # Verifica si existe la columna num_remision o consulta el máximo ID
     try:
         cur.execute("SELECT COALESCE(MAX(num_remision), 0) + 1 FROM ventas")
         num = cur.fetchone()[0]
@@ -69,13 +140,10 @@ def registrar_produccion(fecha, galpon, conteos):
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, galpon, items_venta):
     conn = get_connection()
     cur = conn.cursor()
-    
     for item in items_venta:
         clasificacion = item['Clasificación']
         cantidad = int(item['Cantidad (Huevos)'])
         subtotal = float(item['Subtotal ($)'])
-        
-        # Inserción con control de remisión
         try:
             cur.execute("""
                 INSERT INTO ventas (cliente, galpon_origen, clasificacion, cantidad_huevos, total_dinero, num_remision)
@@ -88,10 +156,8 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
                 VALUES (%s, %s, %s, %s, %s)
             """, (cliente, galpon, clasificacion, cantidad, subtotal))
         
-        # Descontar del inventario
         query = f"UPDATE inventario SET {clasificacion.lower()} = {clasificacion.lower()} - %s WHERE galpon = %s"
         cur.execute(query, (cantidad, galpon))
-    
     conn.commit()
     cur.close()
     conn.close()
@@ -108,19 +174,16 @@ def cargar_ventas():
     conn.close()
     return df
 
-# --- FUNCIÓN GENERADORA DE PDF DE REMISIÓN ---
 def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, items_df, total_factura):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
-    
     styles = getSampleStyleSheet()
     style_normal = styles['Normal']
     
-    # Encabezado con imagen/LOGO
     header_data = [
         [
-            Image("LOGO.png", width=60, height=60) if os.path.exists("LOGO.png") else "🛡️",
+            Image("ESCUDO.png", width=60, height=60) if os.path.exists("ESCUDO.png") else "🛡️",
             Paragraph("<font size=16 color='#ffffff'><b>Remisión de venta</b></font>", style_normal),
             Paragraph("<font size=9 color='#ffffff'><b>Agroavicola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
         ]
@@ -137,7 +200,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story.append(t_header)
     story.append(Spacer(1, 15))
 
-    # Bloque de datos del cliente
     num_str = f"{num_remision:06d}"
     cliente_info_data = [
         [
@@ -146,14 +208,10 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
         ]
     ]
     t_info = Table(cliente_info_data, colWidths=[240, 300])
-    t_info.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('FONTSIZE', (0,0), (-1,-1), 9),
-    ]))
+    t_info.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
     story.append(t_info)
     story.append(Spacer(1, 15))
 
-    # Tabla de Productos/Descripción
     table_data = [["Descripción", "Cantidad", "Valor Unitario", "Valor total"]]
     for _, fila in items_df.iterrows():
         table_data.append([
@@ -163,8 +221,7 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
             f"$ {fila['Subtotal ($)']:,.2f}"
         ])
 
-    # Filas vacías estéticas para formato formal
-    for _ in range(max(0, 6 - len(items_df))):
+    for _ in range(max(0, 5 - len(items_df))):
         table_data.append(["", "", "", ""])
 
     t_items = Table(table_data, colWidths=[200, 100, 120, 120])
@@ -182,7 +239,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story.append(t_items)
     story.append(Spacer(1, 10))
 
-    # Totales
     totales_data = [
         ["Subtotal", f"$ {total_factura:,.2f}"],
         ["IVA", "$ 0.00"],
@@ -200,55 +256,44 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     buffer.seek(0)
     return buffer
 
-# --- INTERFAZ DE USUARIO EN PESTAÑAS ---
-tab1, tab2, tab3 = st.tabs(["📥 Entrada Producción", "📤 Salida / Ventas", "📊 Inventario Real"])
+# --- SECCIONES DE LA APLICACIÓN ---
 
-with tab1:
-    st.header("Registro Diario de Postura")
+# 1. ENTRADA DE PRODUCCIÓN
+if st.session_state.seccion_activa == "📥 Entrada":
+    st.subheader("📥 Registro Diario de Postura")
     fecha = st.date_input("Fecha", datetime.now())
     galpon = st.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
     
-    c1, c2 = st.columns(2)
-    with c1:
-        y = st.number_input("Yumbo", min_value=0, value=0)
-        ex = st.number_input("Extra", min_value=0, value=0)
-        aa = st.number_input("AA", min_value=0, value=0)
-        a = st.number_input("A", min_value=0, value=0)
-    with c2:
-        b = st.number_input("B", min_value=0, value=0)
-        c = st.number_input("C", min_value=0, value=0)
-        suc = st.number_input("Sucio", min_value=0, value=0)
-        rot = st.number_input("Roto", min_value=0, value=0)
+    y = st.number_input("Yumbo", min_value=0, value=0)
+    ex = st.number_input("Extra", min_value=0, value=0)
+    aa = st.number_input("AA", min_value=0, value=0)
+    a = st.number_input("A", min_value=0, value=0)
+    b = st.number_input("B", min_value=0, value=0)
+    c = st.number_input("C", min_value=0, value=0)
+    suc = st.number_input("Sucio", min_value=0, value=0)
+    rot = st.number_input("Roto", min_value=0, value=0)
         
     if st.button("💾 Guardar Producción"):
         conteos = {'Yumbo': y, 'Extra': ex, 'AA': aa, 'A': a, 'B': b, 'C': c, 'Sucio': suc, 'Roto': rot}
         registrar_produccion(fecha, galpon, conteos)
-        st.success("¡Registro de producción guardado exitosamente!")
+        st.success("¡Registro de producción guardado!")
 
-with tab2:
-    st.header("Despacho y Generación de Remisión de Venta")
+# 2. GENERACIÓN DE REMISIONES
+elif st.session_state.seccion_activa == "📤 Remisiones":
     df_inv = cargar_inventario()
     num_remision_actual = obtener_siguiente_num_remision()
 
     st.subheader(f"📋 Remisión No. {num_remision_actual:06d}")
     
-    # Formulario completo con los campos del cliente
-    c_cli1, c_cli2, c_cli3 = st.columns(3)
-    with c_cli1:
-        cliente_nombre = st.text_input("Nombre / Razón Social", placeholder="Ej. RAFAEL GARCIA")
-        cedula_nit = st.text_input("Cédula / NIT", placeholder="Ej. 901.786.799-7")
-    with c_cli2:
-        direccion = st.text_input("Dirección", value="CHOACHI")
-        telefono = st.text_input("Teléfono", placeholder="Ej. 3102397244")
-    with c_cli3:
-        email = st.text_input("Email", placeholder="cliente@correo.com")
-        conductor = st.text_input("Conductor", value="Ivan Herrera")
+    cliente_nombre = st.text_input("Razón Social / Cliente", placeholder="Ej. RAFAEL GARCIA")
+    cedula_nit = st.text_input("Cédula / NIT", placeholder="Ej. 901.786.799-7")
+    direccion = st.text_input("Dirección", value="CHOACHI")
+    telefono = st.text_input("Teléfono", placeholder="Ej. 3102397244")
+    email = st.text_input("Email", placeholder="cliente@correo.com")
+    conductor = st.text_input("Conductor", value="Ivan Herrera")
+    galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal_m")
 
-    galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal")
-
-    st.markdown("---")
-    st.subheader("🛒 Clasificación y Detalle de la Venta")
-
+    st.markdown("### 🛒 Detalle del Despacho")
     opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
     df_base = pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 3000, "Precio Unitario ($)": 370.0}])
 
@@ -257,8 +302,8 @@ with tab2:
         num_rows="dynamic",
         column_config={
             "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
-            "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad (Huevos)", min_value=0, step=1, required=True),
-            "Precio Unitario ($)": st.column_config.NumberColumn("Precio Unitario ($)", min_value=0.0, step=1.0, format="$%.2f", required=True)
+            "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
+            "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True)
         },
         use_container_width=True
     )
@@ -269,20 +314,19 @@ with tab2:
         items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
         total_factura = items_validos["Subtotal ($)"].sum()
 
-        st.markdown(f"### **TOTAL REMISIÓN: ${total_factura:,.2f}**")
+        st.markdown(f"### **TOTAL: ${total_factura:,.2f}**")
 
-        if st.button("🚀 Confirmar y Procesar Remisión", type="primary"):
+        if st.button("🚀 Confirmar y Generar Remisión"):
             if not cliente_nombre.strip():
-                st.error("Por favor ingresa el Nombre / Razón Social del cliente.")
+                st.error("Por favor ingresa el Nombre del cliente.")
             else:
-                # Validar stock
                 errores_stock = []
                 for _, fila in items_validos.iterrows():
                     c_clasif = fila["Clasificación"]
                     c_cant = int(fila["Cantidad (Huevos)"])
                     stock_disp = df_inv.loc[galpon_v, c_clasif]
                     if c_cant > stock_disp:
-                        errores_stock.append(f"Stock insuficiente para {c_clasif.upper()}. Disponible: {stock_disp}, Solicitado: {c_cant}")
+                        errores_stock.append(f"Stock insuficiente para {c_clasif.upper()}. Disponible: {stock_disp}")
 
                 if errores_stock:
                     for err in errores_stock:
@@ -294,9 +338,8 @@ with tab2:
                         num_remision_actual, galpon_v, items_dict
                     )
                     
-                    st.success(f"¡Remisión No. {num_remision_actual:06d} registrada exitosamente!")
+                    st.success(f"¡Remisión No. {num_remision_actual:06d} lista!")
                     
-                    # Generar archivo PDF de la remisión
                     fecha_hoy_str = datetime.now().strftime("%d/%m/%Y")
                     datos_cliente = {
                         "nombre": cliente_nombre,
@@ -309,16 +352,17 @@ with tab2:
                         num_remision_actual, fecha_hoy_str, conductor, datos_cliente, items_validos, total_factura
                     )
 
-                    # Botón para descargar el PDF
                     st.download_button(
-                        label="📄 Descargar Remisión de Venta (PDF)",
+                        label="📄 Descargar Remisión PDF",
                         data=pdf_buffer,
                         file_name=f"Remision_{num_remision_actual:06d}_{cliente_nombre}.pdf",
                         mime="application/pdf"
                     )
 
-with tab3:
-    st.header("Stock Acumulado Actual")
+# 3. STOCK E HISTORIAL
+elif st.session_state.seccion_activa == "📊 Stock":
+    st.subheader("📦 Stock en Granja")
     st.dataframe(cargar_inventario(), use_container_width=True)
-    st.header("Historial de Ventas")
+    
+    st.subheader("📜 Historial de Ventas")
     st.dataframe(cargar_ventas(), use_container_width=True)

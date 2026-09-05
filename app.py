@@ -117,10 +117,10 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     styles = getSampleStyleSheet()
     style_normal = styles['Normal']
     
-    # Encabezado con imagen/escudo
+    # Encabezado con imagen/LOGO
     header_data = [
         [
-            Image("ESCUDO.png", width=60, height=60) if os.path.exists("ESCUDO.png") else "🛡️",
+            Image("LOGO.png", width=60, height=60) if os.path.exists("LOGO.png") else "🛡️",
             Paragraph("<font size=16 color='#ffffff'><b>Remisión de venta</b></font>", style_normal),
             Paragraph("<font size=9 color='#ffffff'><b>Agroavicola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
         ]

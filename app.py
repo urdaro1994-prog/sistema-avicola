@@ -144,6 +144,17 @@ def cargar_inventario():
     conn.close()
     return df.set_index('galpon')
 
+def registrar_entrada_inventario(galpon, items_entrada):
+    conn = get_connection()
+    cur = conn.cursor()
+    for item in items_entrada:
+        clasificacion = item['Clasificación'].lower()
+        cantidad = int(item['Cantidad'])
+        cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} + %s WHERE galpon = %s", (cantidad, galpon))
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def cargar_remisiones():
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
@@ -394,14 +405,16 @@ else:
 
 # --- CONTENIDO DE LAS SESIONES ---
 if st.session_state.sesion_principal == "📦 Stock y Ventas":
-    c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(4)
+    c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5)
     with c_nav1:
         if st.button("📤 Rem.", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
     with c_nav2:
-        if st.button("👥 Clic.", use_container_width=True): st.session_state.seccion_activa = "👥 Clientes"
+        if st.button("📥 Entr.", use_container_width=True): st.session_state.seccion_activa = "📥 Entradas"
     with c_nav3:
-        if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
+        if st.button("👥 Clic.", use_container_width=True): st.session_state.seccion_activa = "👥 Clientes"
     with c_nav4:
+        if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
+    with c_nav5:
         if st.button("📜 Hist.", use_container_width=True): st.session_state.seccion_activa = "📜 Historial"
 
     st.markdown("---")
@@ -519,6 +532,43 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                         datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
                         pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
                         st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
+
+    elif st.session_state.seccion_activa == "📥 Entradas":
+        st.subheader("📥 Entrada de Producción / Clasificación")
+        st.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
+        
+        galpon_destino = st.selectbox("Seleccione el Galpón de Destino", ["Galpón 1", "Galpón 2", "Galpón 3"])
+        
+        opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+        df_base_entrada = pd.DataFrame([
+            {"Clasificación": "a", "Cantidad": 1000}
+        ])
+        
+        df_entrada_editado = st.data_editor(
+            df_base_entrada,
+            num_rows="dynamic",
+            column_config={
+                "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+                "Cantidad": st.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, required=True)
+            },
+            use_container_width=True,
+            key="editor_entradas_stock"
+        )
+        
+        if st.button("➕ Registrar Entrada al Inventario"):
+            entradas_validas = df_entrada_editado[df_entrada_editado["Cantidad"] > 0].copy()
+            if entradas_validas.empty:
+                st.warning("Debe ingresar al menos un ítem con cantidad mayor a 0.")
+            else:
+                lista_items_entrada = []
+                for _, r in entradas_validas.iterrows():
+                    lista_items_entrada.append({
+                        "Clasificación": r["Clasificación"],
+                        "Cantidad": int(r["Cantidad"])
+                    })
+                registrar_entrada_inventario(galpon_destino, lista_items_entrada)
+                st.success(f"¡Entrada registrada correctamente en {galpon_destino}!")
+                st.rerun()
 
     elif st.session_state.seccion_activa == "👥 Clientes":
         st.subheader("👥 Directorio de Clientes")

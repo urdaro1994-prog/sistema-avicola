@@ -1,0 +1,21 @@
+{
+  "short_name": "App David",
+  "name": "App David",
+  "icons": [
+    {
+      "src": "egg.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "egg.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#125375",
+  "theme_color": "#125375",
+  "display": "standalone",
+  "orientation": "portrait"
+}

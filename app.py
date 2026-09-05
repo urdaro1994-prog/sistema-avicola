@@ -16,10 +16,10 @@ st.set_page_config(page_title="HUEVONADA URIEL DAVID", layout="wide")
 col_logo, col_titulo = st.columns([1, 5])
 
 with col_logo:
-    if os.path.exists("ESCUDO.png"):
-        st.image("ESCUDO.png", width=120)
-    elif os.path.exists("escudo.png"):
-        st.image("escudo.png", width=120)
+    if os.path.exists("LOGO.png"):
+        st.image("LOGO.png", width=120)
+    elif os.path.exists("LOGO.png"):
+        st.image("LOGO.png", width=120)
     else:
         st.write("🛡️")
 

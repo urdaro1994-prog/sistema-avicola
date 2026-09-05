@@ -520,10 +520,26 @@ elif st.session_state.seccion_activa == "📊 Stock":
     st.dataframe(cargar_inventario(), use_container_width=True)
 
 elif st.session_state.seccion_activa == "📜 Historial":
-    st.subheader("📜 Historial y Descarga de Remisiones")
+    st.subheader("📜 Historial, Reimpresión y Gestión")
     df_rem = cargar_remisiones()
     
-   if not df_remision_det.empty:
+    if not df_rem.empty:
+        col_criterio = None
+        for posible in ["num_remision", "numero_remision", "remision_num", "id"]:
+            if posible in df_rem.columns:
+                col_criterio = posible
+                break
+
+        st.markdown("### 🔍 Gestionar o Reimprimir Remisión")
+        
+        if col_criterio:
+            lista_remisiones = sorted(df_rem[col_criterio].dropna().unique(), reverse=True)
+            remision_seleccionada = st.selectbox("Seleccione el N° de Remisión / ID:", lista_remisiones)
+            
+            if remision_seleccionada is not None:
+                df_remision_det = df_rem[df_rem[col_criterio] == remision_seleccionada]
+                
+                if not df_remision_det.empty:
                     primer_fila = df_remision_det.iloc[0]
                     c_nombre = str(primer_fila.get("cliente", "Cliente"))
                     c_cedula = str(primer_fila.get("cedula_nit", primer_fila.get("cedula", "")))
@@ -625,3 +641,26 @@ elif st.session_state.seccion_activa == "📜 Historial":
                                     )
                                     st.success("¡Remisión actualizada con éxito!")
                                     st.rerun()
+        else:
+            st.warning("No se encontró una columna de numeración válida en el historial.")
+
+        st.markdown("---")
+        st.markdown("### 📋 Tabla General de Historial")
+        
+        st.dataframe(
+            df_rem,
+            use_container_width=True,
+            hide_index=True
+        )
+        
+        st.markdown("---")
+        
+        pdf_historial_buffer = generar_pdf_historial(df_rem)
+        st.download_button(
+            label="📚 Descargar Historial Completo en PDF",
+            data=pdf_historial_buffer,
+            file_name=f"Historial_Remisiones_{datetime.now().strftime('%Y-%m-%d')}.pdf",
+            mime="application/pdf"
+        )
+    else:
+        st.info("Aún no hay remisiones registradas en la base de datos.")

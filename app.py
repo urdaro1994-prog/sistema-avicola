@@ -237,6 +237,72 @@ def cargar_remisiones():
     conn.close()
     return df
 
+def generar_pdf_historial(df_rem):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    styles = getSampleStyleSheet()
+    style_normal = styles['Normal']
+    
+    # Encabezado del reporte
+    header_data = [
+        [
+            Image("ESCUDO.png", width=50, height=50) if os.path.exists("ESCUDO.png") else "🛡️",
+            Paragraph("<font size=14 color='#ffffff'><b>Historial General de Remisiones</b></font>", style_normal),
+            Paragraph(f"<font size=8 color='#ffffff'><b>Agroavicola Santa Isabel</b><br/>Fecha reporte: {datetime.now().strftime('%d/%m/%Y')}</font>", style_normal)
+        ]
+    ]
+    t_header = Table(header_data, colWidths=[60, 320, 160])
+    t_header.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#125375")),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+    ]))
+    story.append(t_header)
+    story.append(Spacer(1, 15))
+
+    # Construir la tabla con los datos del historial
+    # Seleccionamos las columnas principales para que quepan bien en la hoja
+    table_data = [["N° Remisión", "Fecha", "Cliente", "Tipo", "Cant.", "Total"]]
+    
+    for _, fila in df_rem.iterrows():
+        # Formatear fecha si es un objeto datetime o string
+        fecha_val = str(fila.get("fecha_emision", ""))[:10]
+        total_val = fila.get("total", 0)
+        total_str = f"$ {total_val:,.2f}" if pd.notnull(total_val) else "$ 0.00"
+        
+        table_data.append([
+            str(fila.get("num_remision", "")),
+            fecha_val,
+            str(fila.get("cliente", ""))[:20], # Recortar nombres muy largos para que ajusten
+            str(fila.get("tipo_huevo", "")).upper(),
+            f"{int(fila.get('cantidad', 0)):,}",
+            total_str
+        ])
+
+    t_items = Table(table_data, colWidths=[70, 75, 140, 65, 60, 130])
+    t_items.setStyle(TableStyle([
+        ('LINEBELOW', (0,0), (-1,0), 1.5, colors.black),
+        ('LINEABOVE', (0,0), (-1,0), 1.5, colors.black),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (2,1), (2,-1), 'LEFT'), # Alinear nombres de clientes a la izquierda
+        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#c1d5e0")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#eef4f8"), colors.white]),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+    ]))
+    story.append(t_items)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+    
 def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, items_df, total_factura):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)

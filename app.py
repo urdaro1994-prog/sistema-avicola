@@ -469,7 +469,7 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
         guardar_cli_auto = st.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
 
         st.markdown("### 🛒 Detalle del Despacho")
-        st.caption("Añada los productos, especificando de qué galpón se descuenta el inventario.")
+        st.caption("Añada los productos, especificando la clasificación y de qué galpón se descuenta.")
         
         opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
         opciones_galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]

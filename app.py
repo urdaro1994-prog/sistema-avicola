@@ -468,17 +468,15 @@ elif st.session_state.seccion_activa == "📜 Historial":
                 f_emision_val = f_sel.get('fecha_emision', datetime.now())
                 fecha_str = f_emision_val[:10] if isinstance(f_emision_val, str) else pd.to_datetime(f_emision_val).strftime("%d/%m/%Y")
                 
-                # Encabezado conciso para el expander
                 titulo_expander = f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.2f} ({fecha_str})"
                 
                 with st.expander(titulo_expander):
                     tab_pdf, tab_editar = st.tabs(["👁️ Ver / Descargar PDF", "✏️ Editar o Eliminar"])
                     
-                    # Preparar items de esta remisión
                     items_actuales = []
                     for _, row in df_rem.iterrows():
                         items_actuales.append({
-                            "Clasificación": str(row.get('tipo_huevo', 'a')),
+                            "Clasificación": str(row.get('tipo_huevo', 'a')).upper(),
                             "Cantidad (Huevos)": int(row.get('cantidad', 0)),
                             "Precio Unitario ($)": float(row.get('precio_unitario', 0.0)),
                             "Subtotal ($)": float(row.get('total', 0.0))
@@ -495,19 +493,35 @@ elif st.session_state.seccion_activa == "📜 Historial":
                     conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
                     galpon_val = str(f_sel.get('galpon', 'Galpón 1'))
 
-                    # TAB 1: VER PDF Y DESCARGA
+                    # TAB 1: VISTA PREVIA LIMPIA Y DESCARGA
                     with tab_pdf:
                         pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
-                        base64_pdf = base64.b64encode(pdf_buf.getvalue()).decode('utf-8')
-                        pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="450px" type="application/pdf"></iframe>'
-                        st.markdown(pdf_display, unsafe_allow_html=True)
+                        
+                        # Resumen nativo sin iframe propenso a errores
+                        c_inf1, c_inf2 = st.columns(2)
+                        with c_inf1:
+                            st.write(f"**Cliente:** {cli_nombre.upper()}")
+                            st.write(f"**Cédula/NIT:** {cli_datos['cedula']}")
+                            st.write(f"**Fecha:** {fecha_str}")
+                        with c_inf2:
+                            st.write(f"**Teléfono:** {cli_datos['telefono']}")
+                            st.write(f"**Dirección:** {cli_datos['direccion']}")
+                            st.write(f"**Conductor:** {conductor_val}")
+                        
+                        st.dataframe(
+                            df_items_pdf[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)", "Subtotal ($)"]],
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                        st.markdown(f"#### **Total: ${tot_val:,.2f}**")
                         
                         st.download_button(
-                            label=f"📥 Descargar PDF No. {num_sel:06d}",
+                            label=f"📥 Descargar PDF Remisión No. {num_sel:06d}",
                             data=pdf_buf,
                             file_name=f"Remision_{num_sel:06d}_{cli_nombre}.pdf",
                             mime="application/pdf",
-                            key=f"dl_pdf_{num_sel}"
+                            key=f"dl_pdf_{num_sel}",
+                            use_container_width=True
                         )
 
                     # TAB 2: EDITAR Y ELIMINAR
@@ -524,6 +538,7 @@ elif st.session_state.seccion_activa == "📜 Historial":
                             
                             st.markdown("### 🛒 Productos")
                             df_base_edit = df_items_pdf[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)"]].copy()
+                            df_base_edit["Clasificación"] = df_base_edit["Clasificación"].str.lower()
                             opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
                             
                             df_editado = st.data_editor(

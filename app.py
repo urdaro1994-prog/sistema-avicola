@@ -139,7 +139,7 @@ def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nue
         WHERE id = %s
     """
     cur.execute(query_update, (
-        nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, 
+        nuevo_cliente, nueva_cedula, nueva_dir, nueva_tel, nuevo_email, 
         nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio, nuevo_total, id_registro
     ))
     conn.commit()
@@ -465,54 +465,16 @@ elif st.session_state.seccion_activa == "📜 Historial":
         st.dataframe(df_historial, use_container_width=True)
         
         st.markdown("---")
-        st.subheader("✏️ Modificar o 🗑️ Eliminar Remisión Anterior")
+        st.subheader("👁️ Ver y Gestionar Remisión del Historial")
         
-        # Opciones para seleccionar un registro existente por su ID
         ids_disponibles = df_historial['id'].tolist()
-        id_seleccionado = st.selectbox("Selecciona el ID de la remisión a gestionar", ids_disponibles)
+        id_seleccionado = st.selectbox("Selecciona el ID de la remisión", ids_disponibles)
         
         if id_seleccionado:
-            fila_sel = df_historial[df_historial['id'] == id_seleccionado].iloc[0]
-            
-            num_rem_val = fila_sel.get('num_remision', fila_sel.get('id'))
-            
-            with st.form(key=f"form_editar_{id_seleccionado}"):
-                c_cliente = st.text_input("Cliente", value=str(fila_sel.get('cliente', '')))
-                c_cedula = st.text_input("Cédula / NIT", value=str(fila_sel.get('cedula_nit', '')))
-                c_dir = st.text_input("Dirección", value=str(fila_sel.get('destino', '')))
-                c_tel = st.text_input("Teléfono", value=str(fila_sel.get('telefono', '')))
-                c_email = st.text_input("Email", value=str(fila_sel.get('email', '')))
-                c_cond = st.text_input("Conductor", value=str(fila_sel.get('conductor', '')))
-                c_tipo = st.text_input("Tipo de Huevo", value=str(fila_sel.get('tipo_huevo', '')))
-                c_cant = st.number_input("Cantidad", min_value=0, value=int(fila_sel.get('cantidad', 0)))
-                c_precio = st.number_input("Precio Unitario", min_value=0.0, value=float(fila_sel.get('precio_unitario', 0.0)))
-                
-                col_btn1, col_btn2 = st.columns(2)
-                with col_btn1:
-                    submit_actualizar = st.form_submit_button("💾 Actualizar Cambios")
-                with col_btn2:
-                    submit_eliminar = st.form_submit_button("🗑️ Eliminar Registro")
-                
-                if submit_actualizar:
-                    actualizar_remision(
-                        id_seleccionado, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_tipo, c_cant, c_precio
-                    )
-                    st.success(f"¡Remisión ID {id_seleccionado} actualizada con éxito!")
-                    st.rerun()
-                
-                if submit_eliminar:
-                    eliminar_remision(id_seleccionado)
-                    st.warning(f"Remisión ID {id_seleccionado} eliminada.")
-                    st.rerun()
-
-        st.markdown("---")
-        st.subheader("📄 Descargar PDF de Remisión del Historial")
-        id_pdf = st.selectbox("Selecciona el ID para generar su PDF", ids_disponibles, key="select_pdf_historial")
-        if id_pdf:
-            f_sel = df_historial[df_historial['id'] == id_pdf].iloc[0]
+            f_sel = df_historial[df_historial['id'] == id_seleccionado].iloc[0]
             n_rem = int(f_sel.get('num_remision', f_sel.get('id', 1)))
             
-            # Formatear fecha de emisión de forma segura
+            # Formatear fecha
             f_emision_val = f_sel.get('fecha_emision', datetime.now())
             if isinstance(f_emision_val, str):
                 fecha_str = f_emision_val[:10]
@@ -535,15 +497,53 @@ elif st.session_state.seccion_activa == "📜 Historial":
             }])
             tot_val = float(f_sel.get('total', 0.0))
             
+            # Generar PDF en buffer
             pdf_buf = generar_pdf_remision(
                 n_rem, fecha_str, str(f_sel.get('conductor', 'Ivan Herrera')), cli_datos, df_item_unico, tot_val
             )
             
+            # --- VISUALIZAR PDF EN PANTALLA ---
+            base64_pdf = base64.b64encode(pdf_buf.getvalue()).decode('utf-8')
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="500px" type="application/pdf"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+            
+            st.markdown("")
             st.download_button(
                 label=f"📥 Descargar PDF Remisión No. {n_rem:06d}",
                 data=pdf_buf,
                 file_name=f"Remision_{n_rem:06d}_{cli_datos['nombre']}.pdf",
                 mime="application/pdf",
-                key=f"dl_pdf_{id_pdf}"
+                key=f"dl_pdf_{id_seleccionado}"
             )
             
+            st.markdown("---")
+            st.subheader("✏️ Modificar o 🗑️ Eliminar esta Remisión")
+            
+            with st.form(key=f"form_editar_{id_seleccionado}"):
+                c_cliente = st.text_input("Cliente", value=str(f_sel.get('cliente', '')))
+                c_cedula = st.text_input("Cédula / NIT", value=str(f_sel.get('cedula_nit', '')))
+                c_dir = st.text_input("Dirección", value=str(f_sel.get('destino', '')))
+                c_tel = st.text_input("Teléfono", value=str(f_sel.get('telefono', '')))
+                c_email = st.text_input("Email", value=str(f_sel.get('email', '')))
+                c_cond = st.text_input("Conductor", value=str(f_sel.get('conductor', '')))
+                c_tipo = st.text_input("Tipo de Huevo", value=str(f_sel.get('tipo_huevo', '')))
+                c_cant = st.number_input("Cantidad", min_value=0, value=int(f_sel.get('cantidad', 0)))
+                c_precio = st.number_input("Precio Unitario", min_value=0.0, value=float(f_sel.get('precio_unitario', 0.0)))
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    submit_actualizar = st.form_submit_button("💾 Actualizar Cambios")
+                with col_btn2:
+                    submit_eliminar = st.form_submit_button("🗑️ Eliminar Registro")
+                
+                if submit_actualizar:
+                    actualizar_remision(
+                        id_seleccionado, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_tipo, c_cant, c_precio
+                    )
+                    st.success(f"¡Remisión ID {id_seleccionado} actualizada con éxito!")
+                    st.rerun()
+                
+                if submit_eliminar:
+                    eliminar_remision(id_seleccionado)
+                    st.warning(f"Remisión ID {id_seleccionado} eliminada.")
+                    st.rerun()

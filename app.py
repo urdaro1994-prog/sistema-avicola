@@ -48,7 +48,7 @@ st.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS PROFESIONALES (NARANJA, AZUL OSCURO Y FONDO PERSONALIZADO) ---
+# --- ESTILOS CSS CON NUEVO FONDO ---
 st.markdown(
     """
     <style>
@@ -56,27 +56,21 @@ st.markdown(
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    :root {
-        --azul-oscuro: #0f2942;
-        --naranja-acento: #f26822;
-        --naranja-hover: #d95316;
-        --fondo-app: #eef2f5;
-        --fondo-tarjeta: #ffffff;
-    }
-
+    /* Fondo general de la aplicación (Tono gris-azulado suave) */
     .stApp {
-        background-color: var(--fondo-app);
+        background-color: #dbe4ec !important;
     }
     
+    /* Contenedor central (Tarjeta) */
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 5rem;
         padding-left: 1.2rem;
         padding-right: 1.2rem;
         max-width: 540px;
-        background-color: var(--fondo-tarjeta);
+        background-color: #f8fafc !important;
         border-radius: 16px;
-        box-shadow: 0 6px 24px rgba(15, 41, 66, 0.08);
+        box-shadow: 0 8px 30px rgba(15, 41, 66, 0.12);
         margin-top: 1rem;
         margin-bottom: 2rem;
     }
@@ -86,30 +80,21 @@ st.markdown(
         border-radius: 10px;
         height: 3.2em;
         font-weight: 600;
-        background-color: var(--azul-oscuro);
+        background-color: #0f2942;
         color: white;
-        border: 2px solid var(--naranja-acento);
+        border: 2px solid #f26822;
         transition: all 0.2s ease-in-out;
     }
     
     .stButton>button:hover {
-        background-color: var(--naranja-acento);
+        background-color: #f26822;
         color: white;
-        border-color: var(--azul-oscuro);
+        border-color: #0f2942;
     }
 
     h1, h2, h3 {
-        color: var(--azul-oscuro);
+        color: #0f2942;
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    }
-
-    .brand-container {
-        background: linear-gradient(135deg, #0f2942 0%, #1a446c 100%);
-        padding: 16px;
-        border-radius: 12px;
-        color: white;
-        margin-bottom: 1.5rem;
-        border-bottom: 4px solid var(--naranja-acento);
     }
     </style>
     """,

@@ -27,9 +27,11 @@ svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
 b64_svg = base64.b64encode(svg_huevo.encode('utf-8')).decode('utf-8')
 data_uri = f"data:image/svg+xml;base64,{b64_svg}"
 
+# --- INYECCIÓN DIRECTA EN EL DOM DE SAFARI (IPHONE) ---
 st.markdown(f"""
     <script>
         var doc = window.parent.document;
+        
         var oldIcons = doc.querySelectorAll("link[rel*='icon'], link[rel*='apple']");
         oldIcons.forEach(function(el) {{ el.remove(); }});
 
@@ -121,11 +123,11 @@ def obtener_siguiente_num_remision():
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT COALESCE(MAX(num_remision), 0) + 1 FROM ventas")
+        cur.execute("SELECT COALESCE(MAX(num_remision), 0) + 1 FROM remisiones")
         num = cur.fetchone()[0]
-    except:
+    except Exception:
         conn.rollback()
-        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM ventas")
+        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM remisiones")
         num = cur.fetchone()[0]
     cur.close()
     conn.close()
@@ -154,24 +156,32 @@ def registrar_produccion(fecha, galpon, conteos):
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, galpon, items_venta):
     conn = get_connection()
     cur = conn.cursor()
+    fecha_actual = datetime.now()
+
     for item in items_venta:
         clasificacion = item['Clasificación']
         cantidad = int(item['Cantidad (Huevos)'])
         subtotal = float(item['Subtotal ($)'])
-        try:
-            cur.execute("""
-                INSERT INTO ventas (cliente, galpon_origen, clasificacion, cantidad_huevos, total_dinero, num_remision)
-                VALUES (%s, %s, %s, %s, %s, %s)
-            """, (cliente, galpon, clasificacion, cantidad, subtotal, num_remision))
-        except:
-            conn.rollback()
-            cur.execute("""
-                INSERT INTO ventas (cliente, galpon_origen, clasificacion, cantidad_huevos, total_dinero)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (cliente, galpon, clasificacion, cantidad, subtotal))
-        
+        precio_u = float(item['Precio Unitario ($)'])
+
+        # Inserción en la tabla remisiones
+        cur.execute("""
+            INSERT INTO remisiones (
+                num_remision, fecha_emision, cliente, cedula_nit, 
+                telefono, destino, email, conductor, 
+                tipo_huevo, cantidad, precio_unitario, total
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            num_remision, fecha_actual, cliente, cedula,
+            telefono, direccion, email, conductor,
+            clasificacion, cantidad, precio_u, subtotal
+        ))
+
+        # Descuento en inventario
         query = f"UPDATE inventario SET {clasificacion.lower()} = {clasificacion.lower()} - %s WHERE galpon = %s"
         cur.execute(query, (cantidad, galpon))
+
     conn.commit()
     cur.close()
     conn.close()
@@ -182,9 +192,9 @@ def cargar_inventario():
     conn.close()
     return df.set_index('galpon')
 
-def cargar_ventas():
+def cargar_remisiones():
     conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM ventas ORDER BY id DESC", conn)
+    df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
     conn.close()
     return df
 
@@ -377,21 +387,22 @@ elif st.session_state.seccion_activa == "📊 Stock":
 
 elif st.session_state.seccion_activa == "📜 Historial":
     st.subheader("📜 Historial de Remisiones Guardadas")
-    df_v = cargar_ventas()
-    if not df_v.empty:
+    df_rem = cargar_remisiones()
+    if not df_rem.empty:
         st.dataframe(
-            df_v,
+            df_rem,
             column_config={
                 "id": "ID",
                 "num_remision": "N° Remisión",
+                "fecha_emision": "Fecha",
                 "cliente": "Cliente",
-                "galpon_origen": "Origen",
-                "clasificacion": "Tipo Huevo",
-                "cantidad_huevos": "Cantidad",
-                "total_dinero": st.column_config.NumberColumn("Total ($)", format="$%.2f")
+                "tipo_huevo": "Tipo",
+                "cantidad": "Cantidad",
+                "precio_unitario": st.column_config.NumberColumn("P. Unit ($)", format="$%.2f"),
+                "total": st.column_config.NumberColumn("Total ($)", format="$%.2f")
             },
             use_container_width=True,
             hide_index=True
         )
     else:
-        st.info("Aún no hay ventas registradas.")
+        st.info("Aún no hay remisiones registradas en la base de datos.")

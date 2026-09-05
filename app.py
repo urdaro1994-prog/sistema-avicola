@@ -1,126 +1,46 @@
 import streamlit as st
 import pandas as pd
-import psycopg2
-from datetime import datetime
-
-st.set_page_config(page_title="Control Avícola", layout="wide")
-
-def get_connection():
-    return psycopg2.connect(st.secrets["postgres"]["url"])
-
-def registrar_produccion(fecha, galpon, conteos):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO produccion (fecha, galpon, yumbo, extra, aa, a, b, c, sucio, roto)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, (fecha, galpon, conteos['Yumbo'], conteos['Extra'], conteos['AA'], 
-          conteos['A'], conteos['B'], conteos['C'], conteos['Sucio'], conteos['Roto']))
-    
-    cur.execute("""
-        UPDATE inventario SET
-            yumbo = yumbo + %s, extra = extra + %s, aa = aa + %s, a = a + %s,
-            b = b + %s, c = c + %s, sucio = sucio + %s, roto = roto + %s
-        WHERE galpon = %s
-    """, (conteos['Yumbo'], conteos['Extra'], conteos['AA'], conteos['A'],
-          conteos['B'], conteos['C'], conteos['Sucio'], conteos['Roto'], galpon))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def registrar_venta(cliente, galpon, clasificacion, cantidad, total):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO ventas (cliente, galpon_origen, clasificacion, cantidad_huevos, total_dinero)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (cliente, galpon, clasificacion, cantidad, total))
-    
-    query = f"UPDATE inventario SET {clasificacion.lower()} = {clasificacion.lower()} - %s WHERE galpon = %s"
-    cur.execute(query, (cantidad, galpon))
-    
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def cargar_inventario():
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM inventario ORDER BY galpon", conn)
-    conn.close()
-    return df.set_index('galpon')
-
-def cargar_ventas():
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM ventas ORDER BY id DESC", conn)
-    conn.close()
-    return df
-
-# --- INTERFAZ DE USUARIO ---
-st.title("HUEVONADA URIEL DAVID")
-
-tab1, tab2, tab3 = st.tabs(["📥 Entrada Producción", "📤 Salida / Ventas", "📊 Inventario Real"])
-
-with tab1:
-    st.header("Registro Diario de Postura")
-    fecha = st.date_input("Fecha", datetime.now())
-    galpon = st.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        y = st.number_input("Yumbo", min_value=0, value=0)
-        ex = st.number_input("Extra", min_value=0, value=0)
-        aa = st.number_input("AA", min_value=0, value=0)
-        a = st.number_input("A", min_value=0, value=0)
-    with c2:
-        b = st.number_input("B", min_value=0, value=0)
-        c = st.number_input("C", min_value=0, value=0)
-        suc = st.number_input("Sucio", min_value=0, value=0)
-        rot = st.number_input("Roto", min_value=0, value=0)
-        
-    if st.button("💾 Guardar Producción"):
-        conteos = {'Yumbo': y, 'Extra': ex, 'AA': aa, 'A': a, 'B': b, 'C': c, 'Sucio': suc, 'Roto': rot}
-        registrar_produccion(fecha, galpon, conteos)
-        st.success("¡Registro de producción guardado exitosamente!")
-
-with tab2:
-    st.header("Despacho de Ventas")
-    df_inv = cargar_inventario()
-    cliente = st.text_input("Nombre del Cliente")
-    galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal")
-    clasif_v = st.selectbox("Clasificación", ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"])
-    
-    stock_disp = df_inv.loc[galpon_v, clasif_v]
-    st.info(f"Disponible en {galpon_v} ({clasif_v.upper()}): {stock_disp} huevos")
-    
-    cant_v = st.number_input("Cantidad de Huevos Vendidos", min_value=1, value=1)
-    precio_v = st.number_input("Valor Total Venta ($)", min_value=0.0, value=0.0)
-    
-    if st.button("🚀 Registrar Venta"):
-        if cant_v > stock_disp:
-            st.error("No hay suficiente stock en ese galpón para realizar la venta.")
-        else:
-            registrar_venta(cliente, galpon_v, clasif_v, cant_v, precio_v)
-            st.success("Venta procesada y descontada del inventario.")
-import streamlit as st
-import pandas as pd
+import os
 from datetime import date
 
-st.title("🥚 Control de Postura y Stock de Huevos")
+# 1. Configuración de la página
+st.set_page_config(
+    page_title="HUEVONADA - Agroavícola Santa Isabel", 
+    page_icon="🛡️", 
+    layout="wide"
+)
 
-# Conexión a Postgres configurada en Secrets
+# 2. Encabezado: Título HUEVONADA con el Escudo al lado
+col1, col2 = st.columns([1, 6])
+
+with col1:
+    # Verificación segura de la imagen local para evitar errores si cambia el nombre
+    nombre_imagen = "ESCUDO.png"
+    if os.path.exists(nombre_imagen):
+        st.image(nombre_imagen, width=110)
+    elif os.path.exists("escudo.png"):
+        st.image("escudo.png", width=110)
+    else:
+        st.write("🛡️") # Muestra icono por defecto en caso de no hallar la imagen
+
+with col2:
+    st.title("HUEVONADA")
+    st.caption("Control de Postura y Stock de Huevos — Agroavícola Santa Isabel")
+
+# 3. Conexión nativa de Streamlit a Postgres (Supabase)
 conn = st.connection("postgres", type="sql")
 
-# Pestañas principales
-tab1, tab2 = st.tabs(["📝 Registrar Clasificación Diario", "📊 Reporte de Stock"])
+# 4. Pestañas de navegación de la aplicación
+tab1, tab2 = st.tabs(["📝 Registrar Clasificación Diario", "📊 Reporte de Stock e Inventario"])
 
-# --- PESTAÑA 1: REGISTRO DE CLASIFICACIÓN ---
+# --- PESTAÑA 1: REGISTRO DE ENTRADA ---
 with tab1:
     st.subheader("Entrada de Inventario Físico")
     
     with st.form("form_huevos", clear_on_submit=True):
-        col1, col2 = st.columns(2)
+        f_col1, f_col2 = st.columns(2)
         
-        with col1:
+        with f_col1:
             fecha_registro = st.date_input("Fecha de Conteo", date.today())
             galpon = st.selectbox("Galpón / Ubicación", ["Galpón 1", "Galpón 2", "Galpón 3", "General"])
             clasificacion = st.selectbox(
@@ -128,11 +48,11 @@ with tab1:
                 ["Jumbo", "AAA", "AA", "A", "B", "C", "Pique / Roto", "Manchado / Sucio"]
             )
             
-        with col2:
+        with f_col2:
             cartones = st.number_input("Cubetas / Cartones (30 uds)", min_value=0, step=1, value=0)
             unidades_sueltas = st.number_input("Huevos sueltos", min_value=0, max_value=29, step=1, value=0)
             
-            # Cálculo automático
+            # Cálculo de total
             total_huevos = (cartones * 30) + unidades_sueltas
             st.info(f"👉 **Total calculado:** {total_huevos} huevos")
 
@@ -166,36 +86,39 @@ with tab1:
             st.success(f"¡Registrados {total_huevos} huevos ({clasificacion}) exitosamente!")
             st.cache_data.clear()
 
-# --- PESTAÑA 2: BALANCE Y REPORTE DE STOCK ---
+# --- PESTAÑA 2: CONSULTA Y REPORTES ---
 with tab2:
-    st.subheader("📊 Stock Actual y Consultas")
+    st.subheader("📊 Consultas y Balance")
     
-    # Consultar datos guardados
-    df_huevos = conn.query("SELECT id, fecha, galpon, tipo_clasificacion, cantidad_cartones, cantidad_unidades, total_huevos, observaciones FROM control_huevos ORDER BY fecha DESC, id DESC;", ttl="1m")
+    # Consulta de registros
+    df_huevos = conn.query(
+        "SELECT id, fecha, galpon, tipo_clasificacion, cantidad_cartones, cantidad_unidades, total_huevos, observaciones FROM control_huevos ORDER BY fecha DESC, id DESC;", 
+        ttl="1m"
+    )
     
     if not df_huevos.empty:
-        # Métricas resumidas
+        # Resumen general
         total_acumulado = df_huevos["total_huevos"].sum()
         total_cubetas = total_acumulado // 30
         sobrantes = total_acumulado % 30
         
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Huevos en Stock", f"{total_acumulado:,} uds")
-        c2.metric("Total Cubetas", f"{total_cubetas:,} cubetas")
-        c3.metric("Sueltos Sobrantes", f"{sobrantes} uds")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Huevos Acumulados", f"{total_acumulado:,} uds")
+        m2.metric("Total Cubetas", f"{total_cubetas:,} cubetas")
+        m3.metric("Sueltos Sobrantes", f"{sobrantes} uds")
         
         st.divider()
         
-        # Filtros de búsqueda
-        f_col1, f_col2 = st.columns(2)
-        with f_col1:
+        # Filtros dinámicos
+        filt_col1, filt_col2 = st.columns(2)
+        with filt_col1:
             filtro_galpon = st.multiselect("Filtrar por Galpón", options=df_huevos["galpon"].unique(), default=df_huevos["galpon"].unique())
-        with f_col2:
+        with filt_col2:
             filtro_tipo = st.multiselect("Filtrar por Tamaño/Tipo", options=df_huevos["tipo_clasificacion"].unique(), default=df_huevos["tipo_clasificacion"].unique())
             
         df_filtrado = df_huevos[(df_huevos["galpon"].isin(filtro_galpon)) & (df_huevos["tipo_clasificacion"].isin(filtro_tipo))]
         
-        # Mostrar tabla interactiva
+        # Tabla interactiva de datos
         st.dataframe(
             df_filtrado,
             use_container_width=True,
@@ -211,19 +134,4 @@ with tab2:
             }
         )
     else:
-        st.info("No hay registros en el inventario aún.")
-with tab3:
-    st.header("Stock Acumulado Actual")
-    st.dataframe(cargar_inventario(), use_container_width=True)
-    st.header("Historial de Ventas")
-    st.dataframe(cargar_ventas(), use_container_width=True)
-import streamlit as st
-
-# Crear columnas para ubicar el logo a la izquierda del título
-col1, col2 = st.columns([1, 4])
-
-with col1:
-    st.image("ESCUDO.png", width=100) # Nombre exacto del archivo subido a GitHub
-
-with col2:
-    st.title("Control de Postura y Stock de Huevos")
+        st.info("No hay registros guardados en la base de datos.")

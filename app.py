@@ -509,5 +509,16 @@ elif st.session_state.seccion_activa == "📜 Historial":
             use_container_width=True,
             hide_index=True
         )
+        
+        st.markdown("---")
+        
+        # --- BOTÓN PARA DESCARGAR EL HISTORIAL EN PDF ---
+        pdf_historial_buffer = generar_pdf_historial(df_rem)
+        st.download_button(
+            label="📄 Descargar Historial Completo en PDF",
+            data=pdf_historial_buffer,
+            file_name=f"Historial_Remisiones_{datetime.now().strftime('%Y-%m-%d')}.pdf",
+            mime="application/pdf"
+        )
     else:
         st.info("Aún no hay remisiones registradas en la base de datos.")

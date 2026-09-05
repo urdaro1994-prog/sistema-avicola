@@ -158,29 +158,60 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
+    # Obtener los nombres de las columnas reales en la tabla 'remisiones'
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
+    columnas_existentes = set(row[0] for row in cur.fetchall())
+
     for item in items_venta:
         clasificacion = item['Clasificación']
         cantidad = int(item['Cantidad (Huevos)'])
         subtotal = float(item['Subtotal ($)'])
         precio_u = float(item['Precio Unitario ($)'])
 
-        # Inserción en la tabla remisiones
-        cur.execute("""
-            INSERT INTO remisiones (
-                num_remision, fecha_emision, cliente, cedula_nit, 
-                telefono, destino, email, conductor, 
-                tipo_huevo, cantidad, precio_unitario, total
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            num_remision, fecha_actual, cliente, cedula,
-            telefono, direccion, email, conductor,
-            clasificacion, cantidad, precio_u, subtotal
-        ))
+        # Mapeo flexible de posibles nombres de columnas en la base de datos
+        posibles_datos = {
+            "num_remision": num_remision,
+            "numero_remision": num_remision,
+            "remision_num": num_remision,
+            "fecha_emision": fecha_actual,
+            "fecha": fecha_actual,
+            "cliente": cliente,
+            "nombre_cliente": cliente,
+            "cedula_nit": cedula,
+            "cedula": cedula,
+            "nit": cedula,
+            "telefono": telefono,
+            "destino": direccion,
+            "direccion": direccion,
+            "email": email,
+            "conductor": conductor,
+            "tipo_huevo": clasificacion,
+            "clasificacion": clasificacion,
+            "tipo": clasificacion,
+            "cantidad": cantidad,
+            "precio_unitario": precio_u,
+            "precio_u": precio_u,
+            "precio": precio_u,
+            "total": subtotal,
+            "subtotal": subtotal,
+            "galpon": galpon
+        }
 
-        # Descuento en inventario
-        query = f"UPDATE inventario SET {clasificacion.lower()} = {clasificacion.lower()} - %s WHERE galpon = %s"
-        cur.execute(query, (cantidad, galpon))
+        # Filtrar solo las columnas que realmente existen en Supabase
+        datos_a_insertar = {k: v for k, v in posibles_datos.items() if k in columnas_existentes}
+
+        if datos_a_insertar:
+            columnas_sql = ", ".join(datos_a_insertar.keys())
+            placeholders_sql = ", ".join(["%s"] * len(datos_a_insertar))
+            valores_sql = tuple(datos_a_insertar.values())
+
+            query_insert = f"INSERT INTO remisiones ({columnas_sql}) VALUES ({placeholders_sql})"
+            cur.execute(query_insert, valores_sql)
+
+        # Descuento de inventario
+        col_inv = clasificacion.lower()
+        query_update = f"UPDATE inventario SET {col_inv} = {col_inv} - %s WHERE galpon = %s"
+        cur.execute(query_update, (cantidad, galpon))
 
     conn.commit()
     cur.close()

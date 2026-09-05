@@ -545,112 +545,26 @@ elif st.session_state.seccion_activa == "📊 Stock":
     st.subheader("📦 Stock en Granja")
     st.dataframe(cargar_inventario(), use_container_width=True)
 
-elif st.session_state.seccion_activa == "📜 Historial":
-    st.subheader("📜 Historial, Reimpresión y Gestión")
-    df_rem = cargar_remisiones()
-    
-    if not df_rem.empty:
-        col_criterio = None
-        for posible in ["num_remision", "numero_remision", "remision_num", "id"]:
-            if posible in df_rem.columns:
-                col_criterio = posible
-                break
-
-        st.markdown("### 🔍 Gestionar o Reimprimir Remisión")
-        
-        if col_criterio:
-            lista_remisiones = sorted(df_rem[col_criterio].dropna().unique(), reverse=True)
-            remision_seleccionada = st.selectbox("Seleccione el N° de Remisión / ID:", lista_remisiones)
-            
-            if remision_seleccionada is not None:
-                df_remision_det = df_rem[df_rem[col_criterio] == remision_seleccionada]
-                
-                if not df_remision_det.empty:
-                    primer_fila = df_remision_det.iloc[0]
-                    c_nombre = str(primer_fila.get("cliente", "Cliente"))
-                    c_cedula = str(primer_fila.get("cedula_nit", primer_fila.get("cedula", "")))
-                    c_dir = str(primer_fila.get("destino", primer_fila.get("direccion", "CHOACHI")))
-                    c_tel = str(primer_fila.get("telefono", ""))
-                    c_email = str(primer_fila.get("email", ""))
-                    c_conductor = str(primer_fila.get("conductor", "Ivan Herrera"))
-                    
-                    fecha_raw = primer_fila.get("fecha_emision", primer_fila.get("fecha", datetime.now()))
-                    if pd.notnull(fecha_raw):
-                        try:
-                            fecha_str = pd.to_datetime(fecha_raw).strftime("%d/%m/%Y")
-                        except:
-                            fecha_str = datetime.now().strftime("%d/%m/%Y")
-                    else:
-                        fecha_str = datetime.now().strftime("%d/%m/%Y")
-
-                    items_formateados = []
-                    total_factura_rem = 0.0
-                    
-                    for _, row in df_remision_det.iterrows():
-                        cant = int(row.get("cantidad", row.get("cant", 0)))
-                        p_unit = float(row.get("precio_unitario", row.get("precio", 0.0)))
-                        subt = float(row.get("total", row.get("subtotal", cant * p_unit)))
-                        total_factura_rem += subt
-                        
-                        items_formateados.append({
-                            "Clasificación": str(row.get("tipo_huevo", row.get("clasificacion", "A"))),
-                            "Cantidad (Huevos)": cant,
-                            "Precio Unitario ($)": p_unit,
-                            "Subtotal ($)": subt
-                        })
-                    
-                    df_items_pdf = pd.DataFrame(items_formateados)
-                    
-                    datos_cliente_reim = {
-                        "nombre": c_nombre,
-                        "cedula": c_cedula,
-                        "direccion": c_dir,
-                        "telefono": c_tel,
-                        "email": c_email
-                    }
-                    
-                    num_ref_pdf = int(remision_seleccionada) if str(remision_seleccionada).isdigit() else 1
-                    pdf_reimpresion = generar_pdf_remision(
-                        num_ref_pdf, 
-                        fecha_str, 
-                        c_conductor, 
-                        datos_cliente_reim, 
-                        df_items_pdf, 
-                        total_factura_rem
-                    )
-                    
-                    col_btn1, col_btn2 = st.columns(2)
-                    
-                    with col_btn1:
-                        st.download_button(
-                            label=f"📄 Descargar PDF",
-                            data=pdf_reimpresion,
-                            file_name=f"Remision_{remision_seleccionada}_{c_nombre}.pdf",
-                            mime="application/pdf",
-                            use_container_width=True
-                        )
-                        
-                    with col_btn2:
-                        if "id" in df_remision_det.columns:
-                            id_a_gestionar = st.selectbox("Seleccione ID interno:", df_remision_det["id"].tolist(), key=f"ges_{remision_seleccionada}")
-                            
-                            if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary"):
-                                eliminar_remision_por_id(id_a_gestionar)
-                                st.success(f"¡Registro con ID {id_a_gestionar} eliminado correctamente!")
-                                st.rerun()
-
-                    with st.expander("✏️ Editar o corregir datos de esta remisión"):
+# --- SECCIÓN DE EDICIÓN Y ADICIÓN ---
+                    with st.expander("✏️ Editar este producto o ➕ Agregar otro tipo de huevo"):
                         if "id" in df_remision_det.columns:
                             fila_editar = df_remision_det[df_remision_det["id"] == id_a_gestionar].iloc[0]
                             
+                            st.markdown("### Modificar el registro seleccionado")
                             with st.form(key=f"form_editar_{id_a_gestionar}"):
-                                st.write(f"Editando Registro ID: {id_a_gestionar}")
                                 ed_cliente = st.text_input("Cliente", value=str(fila_editar.get("cliente", "")))
                                 ed_cedula = st.text_input("Cédula / NIT", value=str(fila_editar.get("cedula_nit", "")))
                                 ed_dir = st.text_input("Dirección / Destino", value=str(fila_editar.get("destino", "")))
                                 ed_tel = st.text_input("Teléfono", value=str(fila_editar.get("telefono", "")))
                                 ed_email = st.text_input("Email", value=str(fila_editar.get("email", "")))
                                 ed_conductor = st.text_input("Conductor", value=str(fila_editar.get("conductor", "")))
+                                
+                                # Selector de clasificación de huevo
+                                tipos_disponibles = ["Yumbo", "Extra", "AA", "A", "B", "C", "Sucio", "Roto"]
+                                valor_actual_tipo = str(fila_editar.get("tipo_huevo", "AA"))
+                                indice_tipo = tipos_disponibles.index(valor_actual_tipo) if valor_actual_tipo in tipos_disponibles else 2
+                                
+                                ed_tipo = st.selectbox("Clasificación de Huevo", tipos_disponibles, index=indice_tipo)
                                 
                                 col_c, col_p = st.columns(2)
                                 with col_c:
@@ -663,30 +577,24 @@ elif st.session_state.seccion_activa == "📜 Historial":
                                 if guardar_cambios:
                                     actualizar_remision(
                                         id_a_gestionar, ed_cliente, ed_cedula, ed_dir, 
-                                        ed_tel, ed_email, ed_conductor, ed_cant, ed_prec
+                                        ed_tel, ed_email, ed_conductor, ed_tipo, ed_cant, ed_prec
                                     )
                                     st.success("¡Remisión actualizada con éxito!")
                                     st.rerun()
-        else:
-            st.warning("No se encontró una columna de numeración válida en el historial.")
 
-        st.markdown("---")
-        st.markdown("### 📋 Tabla General de Historial")
-        
-        st.dataframe(
-            df_rem,
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        st.markdown("---")
-        
-        pdf_historial_buffer = generar_pdf_historial(df_rem)
-        st.download_button(
-            label="📚 Descargar Historial Completo en PDF",
-            data=pdf_historial_buffer,
-            file_name=f"Historial_Remisiones_{datetime.now().strftime('%Y-%m-%d')}.pdf",
-            mime="application/pdf"
-        )
-    else:
-        st.info("Aún no hay remisiones registradas en la base de datos.")
+                            st.markdown("---")
+                            st.markdown("### ➕ Agregar otro tipo de huevo a esta misma remisión")
+                            with st.form(key=f"form_agregar_item_{remision_seleccionada}"):
+                                nuevo_tipo_add = st.selectbox("Nuevo Tipo de Huevo", tipos_disponibles, key="add_tipo")
+                                col_ca, col_pa = st.columns(2)
+                                with col_ca:
+                                    nueva_cant_add = st.number_input("Cantidad", min_value=1, value=30, key="add_cant")
+                                with col_pa:
+                                    nuevo_prec_add = st.number_input("Precio Unitario ($)", min_value=0.0, value=0.0, key="add_prec")
+                                
+                                btn_agregar_extra = st.form_submit_button("➕ Añadir a la Remisión")
+                                
+                                if btn_agregar_extra:
+                                    agregar_item_a_remision(remision_seleccionada, primer_fila, nuevo_tipo_add, nueva_cant_add, nuevo_prec_add)
+                                    st.success("¡Nuevo producto agregado a la remisión con éxito!")
+                                    st.rerun()

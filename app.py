@@ -94,21 +94,71 @@ with col_tit:
 if "seccion_activa" not in st.session_state:
     st.session_state.seccion_activa = "📤 Remisiones"
 
-c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(4)
+c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5)
 with c_nav1:
-    if st.button("📥 Entrada", use_container_width=True): st.session_state.seccion_activa = "📥 Entrada"
+    if st.button("📥 Ent.", use_container_width=True): st.session_state.seccion_activa = "📥 Entrada"
 with c_nav2:
-    if st.button("📤 Remisión", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
+    if st.button("📤 Rem.", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
 with c_nav3:
-    if st.button("📊 Stock", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
+    if st.button("👥 Clic.", use_container_width=True): st.session_state.seccion_activa = "👥 Clientes"
 with c_nav4:
-    if st.button("📜 Historial", use_container_width=True): st.session_state.seccion_activa = "📜 Historial"
+    if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
+with c_nav5:
+    if st.button("📜 Hist.", use_container_width=True): st.session_state.seccion_activa = "📜 Historial"
 
 st.markdown("---")
 
 # --- FUNCIONES DE BASE DE DATOS ---
 def get_connection():
     return psycopg2.connect(st.secrets["postgres"]["url"])
+
+def inicializar_tabla_clientes():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS clientes (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT UNIQUE NOT NULL,
+            cedula_nit TEXT,
+            direccion TEXT,
+            telefono TEXT,
+            email TEXT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_clientes():
+    inicializar_tabla_clientes()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM clientes ORDER BY nombre ASC", conn)
+    conn.close()
+    return df
+
+def guardar_cliente(nombre, cedula, direccion, telefono, email):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO clientes (nombre, cedula_nit, direccion, telefono, email)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (nombre) DO UPDATE SET
+            cedula_nit = EXCLUDED.cedula_nit,
+            direccion = EXCLUDED.direccion,
+            telefono = EXCLUDED.telefono,
+            email = EXCLUDED.email;
+    """, (nombre.strip().upper(), cedula, direccion, telefono, email))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def eliminar_cliente(cliente_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM clientes WHERE id = %s", (cliente_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def cargar_inventario():
     conn = get_connection()
@@ -375,15 +425,33 @@ if st.session_state.seccion_activa == "📥 Entrada":
 
 elif st.session_state.seccion_activa == "📤 Remisiones":
     df_inv = cargar_inventario()
+    df_clientes = cargar_clientes()
     num_remision_actual = obtener_siguiente_num_remision()
-    st.subheader(f"📋 Remisión No. {num_remision_actual:06d}")
     
-    cliente_nombre = st.text_input("Razón Social / Cliente", placeholder="Ej. RAFAEL GARCIA")
-    cedula_nit = st.text_input("Cédula / NIT", placeholder="Ej. 901.786.799-7")
-    direccion = st.text_input("Dirección", value="CHOACHI")
-    telefono = st.text_input("Teléfono", placeholder="Ej. 3102397244")
-    email = st.text_input("Email", placeholder="cliente@correo.com")
+    st.subheader(f"📋 Remisión No. {num_remision_actual:06d}")
+
+    # SELECTOR DE CLIENTE GUARDADO
+    opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
+    cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", opciones_cli)
+
+    val_nombre, val_cedula, val_dir, val_tel, val_email = "", "", "CHOACHI", "", ""
+
+    if cliente_sel != "-- Escribir cliente nuevo --" and not df_clientes.empty:
+        d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
+        val_nombre = str(d_cli.get("nombre", ""))
+        val_cedula = str(d_cli.get("cedula_nit", ""))
+        val_dir = str(d_cli.get("direccion", "CHOACHI"))
+        val_tel = str(d_cli.get("telefono", ""))
+        val_email = str(d_cli.get("email", ""))
+
+    cliente_nombre = st.text_input("Razón Social / Cliente", value=val_nombre, placeholder="Ej. RAFAEL GARCIA")
+    cedula_nit = st.text_input("Cédula / NIT", value=val_cedula, placeholder="Ej. 901.786.799-7")
+    direccion = st.text_input("Dirección", value=val_dir)
+    telefono = st.text_input("Teléfono", value=val_tel, placeholder="Ej. 3102397244")
+    email = st.text_input("Email", value=val_email, placeholder="cliente@correo.com")
     conductor = st.text_input("Conductor", value="Ivan Herrera")
+    
+    guardar_cli_auto = st.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
     galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal_m")
 
     st.markdown("### 🛒 Detalle del Despacho")
@@ -423,13 +491,61 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
                 if errores_stock:
                     for err in errores_stock: st.error(err)
                 else:
+                    if guardar_cli_auto:
+                        guardar_cliente(cliente_nombre, cedula_nit, direccion, telefono, email)
+
                     items_dict = items_validos.to_dict(orient="records")
                     registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, galpon_v, items_dict)
-                    st.success(f"¡Remisión No. {num_remision_actual:06d} guardada!")
+                    st.success(f"¡Remisión No. {num_remision_actual:06d} guardada con éxito!")
                     
                     datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
                     pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, items_validos, total_factura)
                     st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
+
+elif st.session_state.seccion_activa == "👥 Clientes":
+    st.subheader("👥 Directorio de Clientes")
+    
+    tab_nuevo, tab_lista = st.tabs(["➕ Agregar Cliente", "📋 Lista de Clientes"])
+    
+    with tab_nuevo:
+        with st.form(key="form_nuevo_cliente"):
+            st.markdown("### Datos del Cliente")
+            c_nom = st.text_input("Nombre / Razón Social *", placeholder="Ej. RAFAEL GARCIA")
+            c_ced = st.text_input("Cédula / NIT", placeholder="Ej. 901.786.799-7")
+            c_dir = st.text_input("Dirección", value="CHOACHI")
+            c_tel = st.text_input("Teléfono", placeholder="Ej. 3102397244")
+            c_em = st.text_input("Email", placeholder="cliente@correo.com")
+            
+            if st.form_submit_button("💾 Guardar Cliente"):
+                if not c_nom.strip():
+                    st.error("El nombre del cliente es obligatorio.")
+                else:
+                    guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
+                    st.success(f"¡Cliente {c_nom.upper()} guardado exitosamente!")
+                    st.rerun()
+
+    with tab_lista:
+        df_cli = cargar_clientes()
+        if df_cli.empty:
+            st.info("No hay clientes registrados en la base de datos.")
+        else:
+            st.caption(f"Total registrados: {len(df_cli)}")
+            for _, r_cli in df_cli.iterrows():
+                id_c = r_cli['id']
+                nom_c = r_cli['nombre']
+                ced_c = r_cli.get('cedula_nit', '')
+                tel_c = r_cli.get('telefono', '')
+                dir_c = r_cli.get('direccion', '')
+                em_c = r_cli.get('email', '')
+
+                with st.expander(f"👤 {nom_c} ({ced_c if ced_c else 'Sin Cédula/NIT'})"):
+                    st.write(f"**Teléfono:** {tel_c}")
+                    st.write(f"**Dirección:** {dir_c}")
+                    st.write(f"**Email:** {em_c}")
+                    if st.button(f"🗑️ Eliminar {nom_c}", key=f"del_cli_{id_c}"):
+                        eliminar_cliente(id_c)
+                        st.warning(f"Cliente {nom_c} eliminado.")
+                        st.rerun()
 
 elif st.session_state.seccion_activa == "📊 Stock":
     st.subheader("📦 Stock en Granja")
@@ -442,7 +558,6 @@ elif st.session_state.seccion_activa == "📜 Historial":
     if df_historial.empty:
         st.info("No hay remisiones registradas en la base de datos todavía.")
     else:
-        # --- FILTRO Y BÚSQUEDA ---
         busqueda = st.text_input("🔍 Buscar cliente o N° Remisión", placeholder="Ej. RAFAEL GARCIA o 000001")
         
         if busqueda.strip():
@@ -493,11 +608,9 @@ elif st.session_state.seccion_activa == "📜 Historial":
                     conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
                     galpon_val = str(f_sel.get('galpon', 'Galpón 1'))
 
-                    # TAB 1: VISTA PREVIA LIMPIA Y DESCARGA
                     with tab_pdf:
                         pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
                         
-                        # Resumen nativo sin iframe propenso a errores
                         c_inf1, c_inf2 = st.columns(2)
                         with c_inf1:
                             st.write(f"**Cliente:** {cli_nombre.upper()}")
@@ -524,7 +637,6 @@ elif st.session_state.seccion_activa == "📜 Historial":
                             use_container_width=True
                         )
 
-                    # TAB 2: EDITAR Y ELIMINAR
                     with tab_editar:
                         with st.form(key=f"form_editar_{num_sel}"):
                             c_cliente = st.text_input("Cliente", value=cli_datos['nombre'], key=f"cli_{num_sel}")

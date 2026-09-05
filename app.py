@@ -523,24 +523,7 @@ elif st.session_state.seccion_activa == "📜 Historial":
     st.subheader("📜 Historial y Descarga de Remisiones")
     df_rem = cargar_remisiones()
     
-    if not df_rem.empty:
-        # Detectar dinámicamente qué columna usar como identificador de remisión
-        col_criterio = None
-        for posible in ["num_remision", "numero_remision", "remision_num", "id"]:
-            if posible in df_rem.columns:
-                col_criterio = posible
-                break
-
-        st.markdown("### 🔍 Buscar Remisión para Reimprimir")
-        
-        if col_criterio:
-            lista_remisiones = sorted(df_rem[col_criterio].dropna().unique(), reverse=True)
-            remision_seleccionada = st.selectbox("Seleccione el N° de Remisión / ID:", lista_remisiones)
-            
-            if remision_seleccionada is not None:
-                df_remision_det = df_rem[df_rem[col_criterio] == remision_seleccionada]
-                
-                if not df_remision_det.empty:
+   if not df_remision_det.empty:
                     primer_fila = df_remision_det.iloc[0]
                     c_nombre = str(primer_fila.get("cliente", "Cliente"))
                     c_cedula = str(primer_fila.get("cedula_nit", primer_fila.get("cedula", "")))
@@ -584,7 +567,6 @@ elif st.session_state.seccion_activa == "📜 Historial":
                         "email": c_email
                     }
                     
-                    # Generar el PDF individual de forma segura
                     num_ref_pdf = int(remision_seleccionada) if str(remision_seleccionada).isdigit() else 1
                     pdf_reimpresion = generar_pdf_remision(
                         num_ref_pdf, 
@@ -595,37 +577,6 @@ elif st.session_state.seccion_activa == "📜 Historial":
                         total_factura_rem
                     )
                     
-                    st.download_button(
-                        label=f"📄 Descargar PDF Remisión / ID: {remision_seleccionada}",
-                        data=pdf_reimpresion,
-                        file_name=f"Remision_{remision_seleccionada}_{c_nombre}.pdf",
-                        mime="application/pdf"
-                    )
-        else:
-            st.warning("No se encontró una columna de numeración válida en el historial.")
-
-        st.markdown("---")
-        st.markdown("### 📋 Tabla General de Historial")
-        
-        st.dataframe(
-            df_rem,
-            use_container_width=True,
-            hide_index=True
-        )
-        
-        st.markdown("---")
-        
-        pdf_historial_buffer = generar_pdf_historial(df_rem)
-        st.download_button(
-            label="📚 Descargar Historial Completo en PDF",
-            data=pdf_historial_buffer,
-            file_name=f"Historial_Remisiones_{datetime.now().strftime('%Y-%m-%d')}.pdf",
-            mime="application/pdf"
-        )
-    else:
-        st.info("Aún no hay remisiones registradas en la base de datos.")
-        
-                   # Columnas para organizar los botones y opciones ordenadamente
                     col_btn1, col_btn2 = st.columns(2)
                     
                     with col_btn1:
@@ -641,16 +592,13 @@ elif st.session_state.seccion_activa == "📜 Historial":
                         if "id" in df_remision_det.columns:
                             id_a_gestionar = st.selectbox("Seleccione ID interno:", df_remision_det["id"].tolist(), key=f"ges_{remision_seleccionada}")
                             
-                            # Botón para eliminar
                             if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary"):
                                 eliminar_remision_por_id(id_a_gestionar)
                                 st.success(f"¡Registro con ID {id_a_gestionar} eliminado correctamente!")
                                 st.rerun()
 
-                    # --- SECCIÓN DE EDICIÓN DE DATOS ---
                     with st.expander("✏️ Editar o corregir datos de esta remisión"):
                         if "id" in df_remision_det.columns:
-                            # Filtrar la fila exacta que se quiere editar según el ID seleccionado en el selectbox de arriba
                             fila_editar = df_remision_det[df_remision_det["id"] == id_a_gestionar].iloc[0]
                             
                             with st.form(key=f"form_editar_{id_a_gestionar}"):

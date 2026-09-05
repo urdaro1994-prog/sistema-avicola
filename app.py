@@ -208,7 +208,12 @@ def registrar_produccion(fecha, galpon, conteos):
     cur.close()
     conn.close()
 
-def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, galpon, items_venta):
+def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, items_venta):
+    """
+    Registra la venta distribuyendo automáticamente el inventario según disponibilidad o por galpón asignado,
+    guardando el galpón de origen internamente en la base de datos sin alteración visual en la remisión.
+    items_venta es una lista de diccionarios: {'Clasificación': ..., 'Cantidad (Huevos)': ..., 'Precio Unitario ($)': ..., 'Galpón': ...}
+    """
     conn = get_connection()
     cur = conn.cursor()
     fecha_actual = datetime.now()
@@ -228,13 +233,14 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
         cantidad = int(item['Cantidad (Huevos)'])
         subtotal = float(item['Subtotal ($)'])
         precio_u = float(item['Precio Unitario ($)'])
+        galp_origen = item.get('Galpón', 'Galpón 1')
 
         datos_insert = {
             "num_remision": num_remision, "fecha_emision": fecha_actual,
             "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
             "destino": direccion, "email": email, "conductor": conductor,
             "tipo_huevo": clasificacion, "cantidad": cantidad,
-            "precio_unitario": precio_u, "total": subtotal, "galpon": galpon
+            "precio_unitario": precio_u, "total": subtotal, "galpon": galp_origen
         }
         
         datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
@@ -245,22 +251,22 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
             placeholders = ", ".join(["%s"] * len(datos_reales))
             cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
 
-        cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galpon))
+        cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galp_origen))
 
     conn.commit()
     cur.close()
     conn.close()
 
-def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, galpon_origen, df_viejos, items_nuevos):
+def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, df_viejos, items_nuevos):
     conn = get_connection()
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
+    # Revertir stock anterior
     for _, row in df_viejos.iterrows():
         c_tipo = str(row.get('tipo_huevo', 'a')).lower()
         c_cant = int(row.get('cantidad', 0))
-        g_bd = row.get('galpon', galpon_origen)
-        if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
+        g_bd = row.get('galpon', 'Galpón 1')
         cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
 
     cur.execute("""
@@ -280,13 +286,14 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
         cant = int(item['Cantidad (Huevos)'])
         subtotal = float(item['Subtotal ($)'])
         precio_u = float(item['Precio Unitario ($)'])
+        galp_origen = item.get('Galpón', 'Galpón 1')
 
         datos_insert = {
             "num_remision": num_remision, "fecha_emision": fecha_actual,
             "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
             "destino": direccion, "email": email, "conductor": conductor,
             "tipo_huevo": clasif, "cantidad": cant,
-            "precio_unitario": precio_u, "total": subtotal, "galpon": galpon_origen
+            "precio_unitario": precio_u, "total": subtotal, "galpon": galp_origen
         }
         
         datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
@@ -297,20 +304,19 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
             placeholders = ", ".join(["%s"] * len(datos_reales))
             cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
 
-        cur.execute(f"UPDATE inventario SET {clasif} = {clasif} - %s WHERE galpon = %s", (cant, galpon_origen))
+        cur.execute(f"UPDATE inventario SET {clasif} = {clasif} - %s WHERE galpon = %s", (cant, galp_origen))
 
     conn.commit()
     cur.close()
     conn.close()
 
-def eliminar_remision_completa(num_remision, galpon_origen, df_viejos):
+def eliminar_remision_completa(num_remision, df_viejos):
     conn = get_connection()
     cur = conn.cursor()
     for _, row in df_viejos.iterrows():
         c_tipo = str(row.get('tipo_huevo', 'a')).lower()
         c_cant = int(row.get('cantidad', 0))
-        g_bd = row.get('galpon', galpon_origen)
-        if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
+        g_bd = row.get('galpon', 'Galpón 1')
         cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
         
     cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
@@ -451,11 +457,19 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
     conductor = st.text_input("Conductor", value="Ivan Herrera")
     
     guardar_cli_auto = st.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
-    galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal_m")
 
     st.markdown("### 🛒 Detalle del Despacho")
+    st.caption("Selecciona el tipo de huevo, la cantidad, el precio unitario y el galpón de origen para cada línea.")
+    
     opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
-    df_base = pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 3000, "Precio Unitario ($)": 370.0}])
+    opciones_galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]
+    
+    df_base = pd.DataFrame([{
+        "Clasificación": "a", 
+        "Cantidad (Huevos)": 3000, 
+        "Precio Unitario ($)": 370.0,
+        "Galpón Origen": "Galpón 1"
+    }])
 
     df_editado = st.data_editor(
         df_base,
@@ -463,7 +477,8 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
         column_config={
             "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
             "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
-            "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True)
+            "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True),
+            "Galpón Origen": st.column_config.SelectboxColumn("Galpón Origen", options=opciones_galpones, required=True)
         },
         use_container_width=True
     )
@@ -472,6 +487,14 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
 
     if not items_validos.empty:
         items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
+        
+        # Agrupar para la vista y PDF limpio (sin mostrar el galpón)
+        df_agrupado_pdf = items_validos.groupby("Clasificación").agg({
+            "Cantidad (Huevos)": "sum",
+            "Precio Unitario ($)": "mean", # O el promedio/precio ingresado
+            "Subtotal ($)": "sum"
+        }).reset_index()
+
         total_factura = items_validos["Subtotal ($)"].sum()
         st.markdown(f"### **TOTAL: ${total_factura:,.2f}**")
 
@@ -480,12 +503,20 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
                 st.error("Por favor ingresa el Nombre del cliente.")
             else:
                 errores_stock = []
+                # Validar stock por galpón acumulado en la tabla de edición
+                stock_acumulado_uso = {}
                 for _, fila in items_validos.iterrows():
                     c_clasif = fila["Clasificación"]
                     c_cant = int(fila["Cantidad (Huevos)"])
-                    stock_disp = df_inv.loc[galpon_v, c_clasif]
+                    g_orig = fila["Galpón Origen"]
+                    
+                    key_st = (g_orig, c_clasif)
+                    stock_acumulado_uso[key_st] = stock_acumulado_uso.get(key_st, 0) + c_cant
+
+                for (g_orig, c_clasif), c_cant in stock_acumulado_uso.items():
+                    stock_disp = df_inv.loc[g_orig, c_clasif]
                     if c_cant > stock_disp:
-                        errores_stock.append(f"Stock insuficiente para {c_clasif.upper()}. Disponible: {stock_disp}")
+                        errores_stock.append(f"Stock insuficiente en {g_orig} para {c_clasif.upper()}. Disponible: {stock_disp}, Solicitado: {c_cant}")
 
                 if errores_stock:
                     for err in errores_stock: st.error(err)
@@ -493,12 +524,24 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
                     if guardar_cli_auto:
                         guardar_cliente(cliente_nombre, cedula_nit, direccion, telefono, email)
 
-                    items_dict = items_validos.to_dict(orient="records")
-                    registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, galpon_v, items_dict)
+                    # Preparar formato para la base de datos (con su galpón individual)
+                    items_dict = []
+                    for _, row in items_validos.iterrows():
+                        items_dict.append({
+                            'Clasificación': row['Clasificación'],
+                            'Cantidad (Huevos)': row['Cantidad (Huevos)'],
+                            'Precio Unitario ($)': row['Precio Unitario ($)'],
+                            'Subtotal ($)': row['Subtotal ($)'],
+                            'Galpón': row['Galpón Origen']
+                        })
+
+                    registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, items_dict)
                     st.success(f"¡Remisión No. {num_remision_actual:06d} guardada con éxito!")
                     
                     datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
-                    pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, items_validos, total_factura)
+                    
+                    # Generamos el PDF usando el dataframe agrupado para que no muestre galpones
+                    pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
                     st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
 
 elif st.session_state.seccion_activa == "👥 Clientes":
@@ -593,9 +636,17 @@ elif st.session_state.seccion_activa == "📜 Historial":
                             "Clasificación": str(row.get('tipo_huevo', 'a')).upper(),
                             "Cantidad (Huevos)": int(row.get('cantidad', 0)),
                             "Precio Unitario ($)": float(row.get('precio_unitario', 0.0)),
-                            "Subtotal ($)": float(row.get('total', 0.0))
+                            "Subtotal ($)": float(row.get('total', 0.0)),
+                            "Galpón Origen": str(row.get('galpon', 'Galpón 1'))
                         })
-                    df_items_pdf = pd.DataFrame(items_actuales)
+                    df_items_original = pd.DataFrame(items_actuales)
+                    
+                    # Agrupar para el PDF en el historial para ocultar los galpones desglosados
+                    df_items_pdf = df_items_original.groupby("Clasificación").agg({
+                        "Cantidad (Huevos)": "sum",
+                        "Precio Unitario ($)": "mean",
+                        "Subtotal ($)": "sum"
+                    }).reset_index()
                     
                     cli_datos = {
                         "nombre": cli_nombre,
@@ -605,7 +656,6 @@ elif st.session_state.seccion_activa == "📜 Historial":
                         "email": str(f_sel.get('email', ''))
                     }
                     conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
-                    galpon_val = str(f_sel.get('galpon', 'Galpón 1'))
 
                     with tab_pdf:
                         pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
@@ -644,13 +694,12 @@ elif st.session_state.seccion_activa == "📜 Historial":
                             c_tel = st.text_input("Teléfono", value=cli_datos['telefono'], key=f"tel_{num_sel}")
                             c_email = st.text_input("Email", value=cli_datos['email'], key=f"em_{num_sel}")
                             c_cond = st.text_input("Conductor", value=conductor_val, key=f"cond_{num_sel}")
-                            idx_galpon = ["Galpón 1", "Galpón 2", "Galpón 3"].index(galpon_val) if galpon_val in ["Galpón 1", "Galpón 2", "Galpón 3"] else 0
-                            c_galpon = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], index=idx_galpon, key=f"gal_{num_sel}")
                             
                             st.markdown("### 🛒 Productos")
-                            df_base_edit = df_items_pdf[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)"]].copy()
+                            df_base_edit = df_items_original[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)", "Galpón Origen"]].copy()
                             df_base_edit["Clasificación"] = df_base_edit["Clasificación"].str.lower()
                             opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+                            opciones_galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]
                             
                             df_editado = st.data_editor(
                                 df_base_edit,
@@ -658,7 +707,8 @@ elif st.session_state.seccion_activa == "📜 Historial":
                                 column_config={
                                     "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
                                     "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
-                                    "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True)
+                                    "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True),
+                                    "Galpón Origen": st.column_config.SelectboxColumn("Galpón Origen", options=opciones_galpones, required=True)
                                 },
                                 use_container_width=True,
                                 key=f"editor_{num_sel}"
@@ -676,15 +726,23 @@ elif st.session_state.seccion_activa == "📜 Historial":
                                     st.error("Debe haber al menos un producto válido.")
                                 else:
                                     items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
-                                    items_dict = items_validos.to_dict(orient="records")
+                                    items_dict = []
+                                    for _, row in items_validos.iterrows():
+                                        items_dict.append({
+                                            'Clasificación': row['Clasificación'],
+                                            'Cantidad (Huevos)': row['Cantidad (Huevos)'],
+                                            'Precio Unitario ($)': row['Precio Unitario ($)'],
+                                            'Subtotal ($)': row['Subtotal ($)'],
+                                            'Galpón': row['Galpón Origen']
+                                        })
                                     
                                     actualizar_remision_completa(
-                                        num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_galpon, df_rem, items_dict
+                                        num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, df_rem, items_dict
                                     )
                                     st.success(f"¡Remisión No. {num_sel:06d} actualizada con éxito!")
                                     st.rerun()
                             
                             if submit_eliminar:
-                                eliminar_remision_completa(num_sel, c_galpon, df_rem)
+                                eliminar_remision_completa(num_sel, df_rem)
                                 st.warning(f"Remisión No. {num_sel:06d} eliminada correctamente.")
                                 st.rerun()

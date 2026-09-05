@@ -116,6 +116,35 @@ with c_nav4:
 st.markdown("---")
 
 # --- FUNCIONES DE BASE DE DATOS ---
+def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, nuevo_conductor, nueva_cantidad, nuevo_precio):
+    conn = get_connection()
+    cur = conn.cursor()
+    
+    # Recalcular el subtotal automáticamente basado en la nueva cantidad y precio
+    nuevo_total = nueva_cantidad * nuevo_precio
+    
+    query_update = """
+        UPDATE remisiones 
+        SET cliente = %s, 
+            cedula_nit = %s, 
+            destino = %s, 
+            telefono = %s, 
+            email = %s, 
+            conductor = %s, 
+            cantidad = %s, 
+            precio_unitario = %s, 
+            total = %s 
+        WHERE id = %s
+    """
+    cur.execute(query_update, (
+        nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, 
+        nuevo_conductor, nueva_cantidad, nuevo_precio, nuevo_total, id_registro
+    ))
+    
+    conn.commit()
+    cur.close()
+    conn.close()
+    
 def get_connection():
     return psycopg2.connect(st.secrets["postgres"]["url"])
 
@@ -595,3 +624,55 @@ elif st.session_state.seccion_activa == "📜 Historial":
         )
     else:
         st.info("Aún no hay remisiones registradas en la base de datos.")
+        # Columnas para organizar los botones y opciones ordenadamente
+                    col_btn1, col_btn2 = st.columns(2)
+                    
+                    with col_btn1:
+                        st.download_button(
+                            label=f"📄 Descargar PDF",
+                            data=pdf_reimpresion,
+                            file_name=f"Remision_{remision_seleccionada}_{c_nombre}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                        
+                    with col_btn2:
+                        if "id" in df_remision_det.columns:
+                            id_a_gestionar = st.selectbox("Seleccione ID interno:", df_remision_det["id"].tolist(), key=f"ges_{remision_seleccionada}")
+                            
+                            # Botón para eliminar
+                            if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary"):
+                                eliminar_remision_por_id(id_a_gestionar)
+                                st.success(f"¡Registro con ID {id_a_gestionar} eliminado correctamente!")
+                                st.rerun()
+
+                    # --- SECCIÓN DE EDICIÓN DE DATOS ---
+                    with st.expander("✏️ Editar o corregir datos de esta remisión"):
+                        if "id" in df_remision_det.columns:
+                            # Filtrar la fila exacta que se quiere editar según el ID seleccionado en el selectbox de arriba
+                            fila_editar = df_remision_det[df_remision_det["id"] == id_a_gestionar].iloc[0]
+                            
+                            with st.form(key=f"form_editar_{id_a_gestionar}"):
+                                st.write(f"Editando Registro ID: {id_a_gestionar}")
+                                ed_cliente = st.text_input("Cliente", value=str(fila_editar.get("cliente", "")))
+                                ed_cedula = st.text_input("Cédula / NIT", value=str(fila_editar.get("cedula_nit", "")))
+                                ed_dir = st.text_input("Dirección / Destino", value=str(fila_editar.get("destino", "")))
+                                ed_tel = st.text_input("Teléfono", value=str(fila_editar.get("telefono", "")))
+                                ed_email = st.text_input("Email", value=str(fila_editar.get("email", "")))
+                                ed_conductor = st.text_input("Conductor", value=str(fila_editar.get("conductor", "")))
+                                
+                                col_c, col_p = st.columns(2)
+                                with col_c:
+                                    ed_cant = st.number_input("Cantidad", value=int(fila_editar.get("cantidad", 0)), min_value=1)
+                                with col_p:
+                                    ed_prec = st.number_input("Precio Unitario ($)", value=float(fila_editar.get("precio_unitario", 0.0)), min_value=0.0)
+                                
+                                guardar_cambios = st.form_submit_button("💾 Guardar Cambios")
+                                
+                                if guardar_cambios:
+                                    actualizar_remision(
+                                        id_a_gestionar, ed_cliente, ed_cedula, ed_dir, 
+                                        ed_tel, ed_email, ed_conductor, ed_cant, ed_prec
+                                    )
+                                    st.success("¡Remisión actualizada con éxito!")
+                                    st.rerun()

@@ -56,32 +56,33 @@ st.markdown(
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Fondo general de toda la aplicación (Azul grisáceo de la parte exterior) */
+    /* Fondo general de toda la aplicación (Azul grisáceo exterior) */
     .stApp {
         background-color: #c8d6e5 !important;
     }
     
-    /* Contenedor central (La tarjeta que marcaste) ahora de color naranja */
+    /* Contenedor central (La tarjeta principal) en Azul Oscuro */
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 5rem;
         padding-left: 1.2rem;
         padding-right: 1.2rem;
         max-width: 540px;
-        background-color: #f26822 !important; /* Tarjeta central en color naranja */
+        background-color: #0f2942 !important; /* Tarjeta central en azul oscuro */
         border-radius: 16px;
         box-shadow: 0 10px 35px rgba(15, 41, 66, 0.3);
         margin-top: 1rem;
         margin-bottom: 2rem;
-        border: 1px solid #d9531e;
+        border: 1px solid #1a3e63;
     }
     
+    /* Botones de navegación y generales con tono naranja corporativo o contraste */
     .stButton>button {
         width: 100%;
         border-radius: 10px;
         height: 3.2em;
         font-weight: 600;
-        background-color: #0f2942;
+        background-color: #f26822;
         color: white;
         border: 2px solid #ffffff;
         transition: all 0.2s ease-in-out;
@@ -89,13 +90,21 @@ st.markdown(
     
     .stButton>button:hover {
         background-color: #ffffff;
-        color: #0f2942;
-        border-color: #0f2942;
+        color: #f26822;
+        border-color: #f26822;
     }
 
-    h1, h2, h3, p, label {
+    /* Textos generales dentro de la tarjeta en color blanco o naranja brillante */
+    h1, h2, h3, h4, h5, h6, p, label, .stMarkdown, span {
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        color: #ffffff !important;
     }
+    
+    /* Ajustes específicos para títulos principales o subtítulos */
+    .stSubheader, h3 {
+        color: #f26822 !important;
+    }
+    
     </style>
     """,
     unsafe_allow_html=True
@@ -113,8 +122,8 @@ with col_logo:
 with col_tit:
     st.markdown("""
         <div style="padding-top: 5px;">
-            <h2 style="margin: 0; color: #0f2942; font-size: 22px; font-weight: 800;">AVÍCOLA SANTA ISABEL</h2>
-            <p style="margin: 0; color: #ffffff; font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">SISTEMA DE GESTIÓN Y CONTROL</p>
+            <h2 style="margin: 0; color: #f26822 !important; font-size: 22px; font-weight: 800;">AVÍCOLA SANTA ISABEL</h2>
+            <p style="margin: 0; color: #ffffff !important; font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">SISTEMA DE GESTIÓN Y CONTROL</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -527,8 +536,8 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
 
         total_factura = items_validos["Subtotal ($)"].sum()
         st.markdown(f"""
-            <div style="background-color: #0f2942; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #ffffff;">
-                <h3 style="margin: 0; color: white; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.2f}</h3>
+            <div style="background-color: #f26822; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #ffffff;">
+                <h3 style="margin: 0; color: white !important; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.2f}</h3>
             </div>
         """, unsafe_allow_html=True)
 

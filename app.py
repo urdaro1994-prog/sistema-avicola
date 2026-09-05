@@ -120,6 +120,8 @@ def cargar_remisiones():
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
     conn.close()
+    if not df.empty and 'num_remision' not in df.columns:
+        df['num_remision'] = df['id']
     return df
 
 def obtener_siguiente_num_remision():
@@ -161,7 +163,6 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
-    # CORRECCIÓN: Filtrar las columnas generadas (identity generation, generated always, etc.)
     cur.execute("""
         SELECT column_name, is_generated, identity_generation 
         FROM information_schema.columns 
@@ -205,7 +206,6 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
-    # 1. Devolver el inventario viejo
     for _, row in df_viejos.iterrows():
         c_tipo = str(row.get('tipo_huevo', 'a')).lower()
         c_cant = int(row.get('cantidad', 0))
@@ -213,11 +213,11 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
         if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
         cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
 
-    # 2. Borrar remisión vieja
-    cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
+    if 'num_remision' in df_viejos.columns:
+        cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
+    else:
+        cur.execute("DELETE FROM remisiones WHERE id = %s", (num_remision,))
 
-    # 3. Insertar nuevos items y descontar inventario
-    # CORRECCIÓN: Filtrar las columnas generadas
     cur.execute("""
         SELECT column_name, is_generated, identity_generation 
         FROM information_schema.columns 
@@ -259,7 +259,6 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
 def eliminar_remision_completa(num_remision, galpon_origen, df_viejos):
     conn = get_connection()
     cur = conn.cursor()
-    # Devolver inventario
     for _, row in df_viejos.iterrows():
         c_tipo = str(row.get('tipo_huevo', 'a')).lower()
         c_cant = int(row.get('cantidad', 0))
@@ -267,7 +266,11 @@ def eliminar_remision_completa(num_remision, galpon_origen, df_viejos):
         if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
         cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
         
-    cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
+    if 'num_remision' in df_viejos.columns:
+        cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
+    else:
+        cur.execute("DELETE FROM remisiones WHERE id = %s", (num_remision,))
+
     conn.commit()
     cur.close()
     conn.close()
@@ -438,8 +441,8 @@ elif st.session_state.seccion_activa == "📜 Historial":
     st.subheader("📜 Historial y Gestión de Remisiones")
     df_historial = cargar_remisiones()
     
-    if df_historial.empty or 'num_remision' not in df_historial.columns:
-        st.info("No hay remisiones registradas con la nueva estructura todavía.")
+    if df_historial.empty:
+        st.info("No hay remisiones registradas en la base de datos todavía.")
     else:
         st.dataframe(df_historial, use_container_width=True)
         st.markdown("---")
@@ -543,3 +546,4 @@ elif st.session_state.seccion_activa == "📜 Historial":
                     eliminar_remision_completa(num_sel, c_galpon, df_rem)
                     st.warning(f"Remisión No. {num_sel:06d} eliminada. ¡El stock se devolvió al {c_galpon}!")
                     st.rerun()
+                    

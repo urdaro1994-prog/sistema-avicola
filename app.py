@@ -9,32 +9,51 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
+# --- URL DE TU LOGO EN GITHUB (Reemplaza con la ruta de tu logo) ---
+# Si tu logo está en GitHub en la raíz de la rama principal:
+URL_LOGO = "https://raw.githubusercontent.com/TU_USUARIO/sistema-avicola/main/ESCUDO.png"
+
 # Configuración de página móvil
 st.set_page_config(
-    page_title="Agroavícola Santa Isabel",
-    page_icon="🥚",  # <-- Aquí pones la ruta a tu logo/escudo (PNG o ICO)
+    page_title="App David",
+    page_icon="🥚",
     layout="centered",
     initial_sidebar_state="collapsed"
 )
-# --- ESTILOS CSS TIPO APP MÓVIL (TikTok Style) ---
-st.markdown("""
+
+# --- INYECCIÓN HTML PARA ICONO Y NOMBRE EN PANTALLA DE INICIO (PWA / iOS / Android) ---
+st.markdown(f"""
+    <head>
+        <!-- Nombre que aparecerá bajo el ícono en el celular -->
+        <meta name="apple-mobile-web-app-title" content="App David">
+        <meta name="application-name" content="App David">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        
+        <!-- Icono para iPhone / iPad -->
+        <link rel="apple-touch-icon" sizes="180x180" href="{URL_LOGO}">
+        
+        <!-- Icono para Android / Navegadores -->
+        <link rel="icon" type="image/png" sizes="192x192" href="{URL_LOGO}">
+        <link rel="shortcut icon" href="{URL_LOGO}">
+    </head>
     <style>
     /* Ocultar barra superior, menú y footer de Streamlit */
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
+    #MainMenu {{visibility: hidden;}}
+    header {{visibility: hidden;}}
+    footer {{visibility: hidden;}}
     
     /* Espaciado general para pantallas de teléfono */
-    .block-container {
+    .block-container {{
         padding-top: 1rem;
         padding-bottom: 5rem;
         padding-left: 0.8rem;
         padding-right: 0.8rem;
-        max-width: 500px; /* Ancho típico de celular */
-    }
+        max-width: 500px;
+    }}
     
     /* Encabezado fijo y moderno */
-    .app-header {
+    .app-header {{
         text-align: center;
         background: linear-gradient(135deg, #125375 0%, #0d3850 100%);
         color: white;
@@ -42,20 +61,20 @@ st.markdown("""
         border-radius: 16px;
         margin-bottom: 15px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
+    }}
     
     /* Tarjetas redondeadas estilo App */
-    .app-card {
+    .app-card {{
         background-color: #ffffff;
         border-radius: 16px;
         padding: 15px;
         box-shadow: 0 2px 8px rgba(0,0,0,0.08);
         margin-bottom: 15px;
         border: 1px solid #e1e8ed;
-    }
+    }}
     
     /* Botones principales tipo móvil */
-    .stButton>button {
+    .stButton>button {{
         width: 100%;
         border-radius: 12px;
         height: 3em;
@@ -63,13 +82,12 @@ st.markdown("""
         background-color: #125375;
         color: white;
         border: none;
-    }
+    }}
     
-    /* Ajustes para la tabla de edición */
-    div[data-testid="stDataEditor"] {
+    div[data-testid="stDataEditor"] {{
         border-radius: 12px;
         overflow: hidden;
-    }
+    }}
     </style>
 """, unsafe_allow_html=True)
 
@@ -85,11 +103,10 @@ with col_logo:
 with col_tit:
     st.markdown("### **AGROAVÍCOLA**\n*Santa Isabel*")
 
-# --- NAVEGACIÓN INFERIOR (Estilo Menú Móvil) ---
+# --- NAVEGACIÓN INFERIOR ---
 if "seccion_activa" not in st.session_state:
     st.session_state.seccion_activa = "📤 Remisiones"
 
-# Botones de navegación tipo menú de App abajo
 c_nav1, c_nav2, c_nav3 = st.columns(3)
 with c_nav1:
     if st.button("📥 Entrada", use_container_width=True):

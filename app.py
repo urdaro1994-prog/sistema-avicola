@@ -46,16 +46,25 @@ def registrar_produccion(fecha, galpon, conteos):
     cur.close()
     conn.close()
 
-def registrar_venta(cliente, galpon, clasificacion, cantidad, total):
+def registrar_venta_multiple(cliente, galpon, items_venta):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO ventas (cliente, galpon_origen, clasificacion, cantidad_huevos, total_dinero)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (cliente, galpon, clasificacion, cantidad, total))
     
-    query = f"UPDATE inventario SET {clasificacion.lower()} = {clasificacion.lower()} - %s WHERE galpon = %s"
-    cur.execute(query, (cantidad, galpon))
+    for item in items_venta:
+        clasificacion = item['clasificacion']
+        cantidad = item['cantidad']
+        precio_unitario = item['precio_unitario']
+        subtotal = item['subtotal']
+        
+        # Guardar en historial de ventas
+        cur.execute("""
+            INSERT INTO ventas (cliente, galpon_origen, clasificacion, cantidad_huevos, total_dinero)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (cliente, galpon, clasificacion, cantidad, subtotal))
+        
+        # Descontar del inventario
+        query = f"UPDATE inventario SET {clasificacion.lower()} = {clasificacion.lower()} - %s WHERE galpon = %s"
+        cur.execute(query, (cantidad, galpon))
     
     conn.commit()
     cur.close()
@@ -99,24 +108,78 @@ with tab1:
         st.success("¡Registro de producción guardado exitosamente!")
 
 with tab2:
-    st.header("Despacho de Ventas")
+    st.header("Despacho de Ventas Múltiples")
     df_inv = cargar_inventario()
-    cliente = st.text_input("Nombre del Cliente")
-    galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal")
-    clasif_v = st.selectbox("Clasificación", ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"])
     
-    stock_disp = df_inv.loc[galpon_v, clasif_v]
-    st.info(f"Disponible en {galpon_v} ({clasif_v.upper()}): {stock_disp} huevos")
+    # Inicializar el carrito de compras en la sesión de Streamlit
+    if "carrito_ventas" not in st.session_state:
+        st.session_state.carrito_ventas = []
+
+    col_cli, col_gal = st.columns(2)
+    with col_cli:
+        cliente = st.text_input("Nombre del Cliente")
+    with col_gal:
+        galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal")
+
+    st.markdown("---")
+    st.subheader("➕ Agregar Productos a la Venta")
     
-    cant_v = st.number_input("Cantidad de Huevos Vendidos", min_value=1, value=1)
-    precio_v = st.number_input("Valor Total Venta ($)", min_value=0.0, value=0.0)
+    col_clas, col_cant, col_prec, col_btn = st.columns([2, 2, 2, 1])
     
-    if st.button("🚀 Registrar Venta"):
-        if cant_v > stock_disp:
-            st.error("No hay suficiente stock en ese galpón para realizar la venta.")
-        else:
-            registrar_venta(cliente, galpon_v, clasif_v, cant_v, precio_v)
-            st.success("Venta procesada y descontada del inventario.")
+    with col_clas:
+        clasif_v = st.selectbox("Clasificación", ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"], key="v_clas")
+        stock_disp = df_inv.loc[galpon_v, clasif_v]
+        st.caption(f"Disponible: **{stock_disp}** huevos")
+
+    with col_cant:
+        cant_v = st.number_input("Cantidad (Huevos)", min_value=1, value=1, key="v_cant")
+
+    with col_prec:
+        precio_unitario = st.number_input("Precio Unitario ($)", min_value=0.0, value=0.0, step=10.0, key="v_prec")
+
+    with col_btn:
+        st.write(" ") # Espaciador para alinear el botón
+        st.write(" ")
+        if st.button("➕ Agregar"):
+            if cant_v > stock_disp:
+                st.error("Supera el stock.")
+            elif precio_unitario <= 0:
+                st.warning("Precio inválido.")
+            else:
+                subtotal = cant_v * precio_unitario
+                st.session_state.carrito_ventas.append({
+                    "clasificacion": clasif_v,
+                    "cantidad": cant_v,
+                    "precio_unitario": precio_unitario,
+                    "subtotal": subtotal
+                })
+                st.success(f"Añadido {clasif_v.upper()}")
+
+    # Mostrar la lista de ítems agregados a esta venta
+    if st.session_state.carrito_ventas:
+        st.markdown("### 🛒 Resumen de la Venta")
+        df_carrito = pd.DataFrame(st.session_state.carrito_ventas)
+        st.dataframe(df_carrito, use_container_width=True)
+
+        total_factura = df_carrito["subtotal"].sum()
+        st.markdown(f"### **TOTAL FACTURA: ${total_factura:,.2f}**")
+
+        col_guardar, col_limpiar = st.columns([2, 1])
+        
+        with col_guardar:
+            if st.button("🚀 Confirmar y Guardar Venta Completa", type="primary"):
+                if not cliente.strip():
+                    st.error("Por favor ingresa el nombre del cliente.")
+                else:
+                    registrar_venta_multiple(cliente, galpon_v, st.session_state.carrito_ventas)
+                    st.success("¡Venta registrada con éxito y descontada del inventario!")
+                    st.session_state.carrito_ventas = [] # Limpiar carrito
+                    st.rerun()
+
+        with col_limpiar:
+            if st.button("🗑️ Vaciar Lista"):
+                st.session_state.carrito_ventas = []
+                st.rerun()
 
 with tab3:
     st.header("Stock Acumulado Actual")

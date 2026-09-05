@@ -10,8 +10,12 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # Configuración de página móvil
-st.set_page_config(page_title="HUEVONADA - App", layout="centered", initial_sidebar_state="collapsed")
-
+st.set_page_config(
+    page_title="Agroavícola Santa Isabel",
+    page_icon="🥚",  # <-- Aquí pones la ruta a tu logo/escudo (PNG o ICO)
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 # --- ESTILOS CSS TIPO APP MÓVIL (TikTok Style) ---
 st.markdown("""
     <style>

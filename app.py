@@ -56,7 +56,7 @@ def cargar_ventas():
     return df
 
 # --- INTERFAZ DE USUARIO ---
-st.title("https://es.wikipedia.org/wiki/Archivo:Millonarios_F%C3%BAtbol_Club_logo.png HUEVONADA URIEL DAVID")
+st.title("ESCUDO.png HUEVONADA URIEL DAVID")
 
 tab1, tab2, tab3 = st.tabs(["📥 Entrada Producción", "📤 Salida / Ventas", "📊 Inventario Real"])
 

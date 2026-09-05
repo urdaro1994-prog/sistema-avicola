@@ -116,6 +116,9 @@ with c_nav4:
 st.markdown("---")
 
 # --- FUNCIONES DE BASE DE DATOS ---
+def get_connection():
+    return psycopg2.connect(st.secrets["postgres"]["url"])
+
 def agregar_item_a_remision(num_remision_val, primer_fila, tipo_huevo, cantidad, precio_unitario):
     conn = get_connection()
     cur = conn.cursor()
@@ -142,6 +145,7 @@ def agregar_item_a_remision(num_remision_val, primer_fila, tipo_huevo, cantidad,
     conn.commit()
     cur.close()
     conn.close()
+
 def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio):
     conn = get_connection()
     cur = conn.cursor()
@@ -163,16 +167,13 @@ def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nue
         WHERE id = %s
     """
     cur.execute(query_update, (
-        nuevo_cliente, nueva_cedula, nueva_dir, nueva_tel, nuevo_email, 
+        nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, 
         nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio, nuevo_total, id_registro
     ))
     
     conn.commit()
     cur.close()
     conn.close()
-    
-def get_connection():
-    return psycopg2.connect(st.secrets["postgres"]["url"])
 
 def obtener_siguiente_num_remision():
     conn = get_connection()
@@ -213,14 +214,12 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
-    # Consultar columnas existentes y su estado de generación en Supabase
     cur.execute("""
         SELECT column_name, is_generated, identity_generation 
         FROM information_schema.columns 
         WHERE table_name = 'remisiones';
     """)
     
-    # Filtrar solo las columnas donde el sistema permite insertar datos libremente
     columnas_validas = set()
     for col_name, is_gen, id_gen in cur.fetchall():
         if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
@@ -260,7 +259,6 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
             "galpon": galpon
         }
 
-        # Seleccionar únicamente los campos que la base de datos acepta para inserción manual
         datos_a_insertar = {k: v for k, v in posibles_datos.items() if k in columnas_validas}
 
         if datos_a_insertar:
@@ -271,7 +269,6 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
             query_insert = f"INSERT INTO remisiones ({columnas_sql}) VALUES ({placeholders_sql})"
             cur.execute(query_insert, valores_sql)
 
-        # Descuento de inventario
         col_inv = clasificacion.lower()
         query_update = f"UPDATE inventario SET {col_inv} = {col_inv} - %s WHERE galpon = %s"
         cur.execute(query_update, (cantidad, galpon))
@@ -292,72 +289,6 @@ def cargar_remisiones():
     conn.close()
     return df
 
-def generar_pdf_historial(df_rem):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
-    story = []
-    styles = getSampleStyleSheet()
-    style_normal = styles['Normal']
-    
-    # Encabezado del reporte
-    header_data = [
-        [
-            Image("ESCUDO.png", width=50, height=50) if os.path.exists("ESCUDO.png") else "🛡️",
-            Paragraph("<font size=14 color='#ffffff'><b>Historial General de Remisiones</b></font>", style_normal),
-            Paragraph(f"<font size=8 color='#ffffff'><b>Agroavicola Santa Isabel</b><br/>Fecha reporte: {datetime.now().strftime('%d/%m/%Y')}</font>", style_normal)
-        ]
-    ]
-    t_header = Table(header_data, colWidths=[60, 320, 160])
-    t_header.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#125375")),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
-        ('TOPPADDING', (0,0), (-1,-1), 8),
-    ]))
-    story.append(t_header)
-    story.append(Spacer(1, 15))
-
-    # Construir la tabla con los datos del historial
-    # Seleccionamos las columnas principales para que quepan bien en la hoja
-    table_data = [["N° Remisión", "Fecha", "Cliente", "Tipo", "Cant.", "Total"]]
-    
-    for _, fila in df_rem.iterrows():
-        # Formatear fecha si es un objeto datetime o string
-        fecha_val = str(fila.get("fecha_emision", ""))[:10]
-        total_val = fila.get("total", 0)
-        total_str = f"$ {total_val:,.2f}" if pd.notnull(total_val) else "$ 0.00"
-        
-        table_data.append([
-            str(fila.get("num_remision", "")),
-            fecha_val,
-            str(fila.get("cliente", ""))[:20], # Recortar nombres muy largos para que ajusten
-            str(fila.get("tipo_huevo", "")).upper(),
-            f"{int(fila.get('cantidad', 0)):,}",
-            total_str
-        ])
-
-    t_items = Table(table_data, colWidths=[70, 75, 140, 65, 60, 130])
-    t_items.setStyle(TableStyle([
-        ('LINEBELOW', (0,0), (-1,0), 1.5, colors.black),
-        ('LINEABOVE', (0,0), (-1,0), 1.5, colors.black),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,-1), 8),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (2,1), (2,-1), 'LEFT'), # Alinear nombres de clientes a la izquierda
-        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#c1d5e0")),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#eef4f8"), colors.white]),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-        ('TOPPADDING', (0,0), (-1,-1), 5),
-    ]))
-    story.append(t_items)
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-    
 def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, items_df, total_factura):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -545,56 +476,7 @@ elif st.session_state.seccion_activa == "📊 Stock":
     st.subheader("📦 Stock en Granja")
     st.dataframe(cargar_inventario(), use_container_width=True)
 
-# --- SECCIÓN DE EDICIÓN Y ADICIÓN ---
-                    with st.expander("✏️ Editar este producto o ➕ Agregar otro tipo de huevo"):
-                        if "id" in df_remision_det.columns:
-                            fila_editar = df_remision_det[df_remision_det["id"] == id_a_gestionar].iloc[0]
-                            
-                            st.markdown("### Modificar el registro seleccionado")
-                            with st.form(key=f"form_editar_{id_a_gestionar}"):
-                                ed_cliente = st.text_input("Cliente", value=str(fila_editar.get("cliente", "")))
-                                ed_cedula = st.text_input("Cédula / NIT", value=str(fila_editar.get("cedula_nit", "")))
-                                ed_dir = st.text_input("Dirección / Destino", value=str(fila_editar.get("destino", "")))
-                                ed_tel = st.text_input("Teléfono", value=str(fila_editar.get("telefono", "")))
-                                ed_email = st.text_input("Email", value=str(fila_editar.get("email", "")))
-                                ed_conductor = st.text_input("Conductor", value=str(fila_editar.get("conductor", "")))
-                                
-                                # Selector de clasificación de huevo
-                                tipos_disponibles = ["Yumbo", "Extra", "AA", "A", "B", "C", "Sucio", "Roto"]
-                                valor_actual_tipo = str(fila_editar.get("tipo_huevo", "AA"))
-                                indice_tipo = tipos_disponibles.index(valor_actual_tipo) if valor_actual_tipo in tipos_disponibles else 2
-                                
-                                ed_tipo = st.selectbox("Clasificación de Huevo", tipos_disponibles, index=indice_tipo)
-                                
-                                col_c, col_p = st.columns(2)
-                                with col_c:
-                                    ed_cant = st.number_input("Cantidad", value=int(fila_editar.get("cantidad", 0)), min_value=1)
-                                with col_p:
-                                    ed_prec = st.number_input("Precio Unitario ($)", value=float(fila_editar.get("precio_unitario", 0.0)), min_value=0.0)
-                                
-                                guardar_cambios = st.form_submit_button("💾 Guardar Cambios")
-                                
-                                if guardar_cambios:
-                                    actualizar_remision(
-                                        id_a_gestionar, ed_cliente, ed_cedula, ed_dir, 
-                                        ed_tel, ed_email, ed_conductor, ed_tipo, ed_cant, ed_prec
-                                    )
-                                    st.success("¡Remisión actualizada con éxito!")
-                                    st.rerun()
-
-                            st.markdown("---")
-                            st.markdown("### ➕ Agregar otro tipo de huevo a esta misma remisión")
-                            with st.form(key=f"form_agregar_item_{remision_seleccionada}"):
-                                nuevo_tipo_add = st.selectbox("Nuevo Tipo de Huevo", tipos_disponibles, key="add_tipo")
-                                col_ca, col_pa = st.columns(2)
-                                with col_ca:
-                                    nueva_cant_add = st.number_input("Cantidad", min_value=1, value=30, key="add_cant")
-                                with col_pa:
-                                    nuevo_prec_add = st.number_input("Precio Unitario ($)", min_value=0.0, value=0.0, key="add_prec")
-                                
-                                btn_agregar_extra = st.form_submit_button("➕ Añadir a la Remisión")
-                                
-                                if btn_agregar_extra:
-                                    agregar_item_a_remision(remision_seleccionada, primer_fila, nuevo_tipo_add, nueva_cant_add, nuevo_prec_add)
-                                    st.success("¡Nuevo producto agregado a la remisión con éxito!")
-                                    st.rerun()
+elif st.session_state.seccion_activa == "📜 Historial":
+    st.subheader("📜 Historial de Remisiones")
+    df_historial = cargar_remisiones()
+    st.dataframe(df_historial, use_container_width=True)

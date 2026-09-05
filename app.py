@@ -790,4 +790,5 @@ elif st.session_state.seccion_activa == "📜 Historial":
                             if submit_eliminar:
                                 eliminar_remision_completa(num_sel, df_rem)
                                 st.warning(f"Remisión No. {num_sel:06d} eliminada correctamente.")
-                                st.rerun()v
+                                st.rerun()
+                                

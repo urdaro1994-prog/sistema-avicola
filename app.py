@@ -168,7 +168,7 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
         subtotal = float(item['Subtotal ($)'])
         precio_u = float(item['Precio Unitario ($)'])
 
-        # Mapeo flexible de posibles nombres de columnas en la base de datos
+        # Mapeo de posibles nombres de columnas (EXCLUYENDO 'id' u otros campos automáticos)
         posibles_datos = {
             "num_remision": num_remision,
             "numero_remision": num_remision,
@@ -197,8 +197,12 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
             "galpon": galpon
         }
 
-        # Filtrar solo las columnas que realmente existen en Supabase
-        datos_a_insertar = {k: v for k, v in posibles_datos.items() if k in columnas_existentes}
+        # Filtrar columnas existentes Y excluir explícitamente columnas que generan conflictos automáticos
+        columnas_prohibidas = {"id", "created_at", "updated_at"}
+        datos_a_insertar = {
+            k: v for k, v in posibles_datos.items() 
+            if k in columnas_existentes and k not in columnas_prohibidas
+        }
 
         if datos_a_insertar:
             columnas_sql = ", ".join(datos_a_insertar.keys())

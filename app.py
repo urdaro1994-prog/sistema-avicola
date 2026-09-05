@@ -206,6 +206,7 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
+    # 1. Revertir inventario previo
     for _, row in df_viejos.iterrows():
         c_tipo = str(row.get('tipo_huevo', 'a')).lower()
         c_cant = int(row.get('cantidad', 0))
@@ -213,21 +214,20 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
         if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
         cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
 
-    if 'num_remision' in df_viejos.columns:
-        cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
-    else:
-        cur.execute("DELETE FROM remisiones WHERE id = %s", (num_remision,))
-
+    # 2. Consultar columnas reales en la base de datos
     cur.execute("""
         SELECT column_name, is_generated, identity_generation 
         FROM information_schema.columns 
         WHERE table_name = 'remisiones';
     """)
-    columnas_validas = set()
-    for col_name, is_gen, id_gen in cur.fetchall():
-        if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
-            columnas_validas.add(col_name)
+    filas_cols = cur.fetchall()
+    columnas_totales = [col[0] for col in filas_cols]
+    columnas_validas = {c[0] for c in filas_cols if c[1] != 'ALWAYS' and c[2] != 'ALWAYS'}
 
+    col_filtro = "num_remision" if "num_remision" in columnas_totales else "id"
+    cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
+
+    # 3. Insertar los nuevos registros
     for item in items_nuevos:
         clasif = item['Clasificación'].lower()
         cant = int(item['Cantidad (Huevos)'])
@@ -266,10 +266,11 @@ def eliminar_remision_completa(num_remision, galpon_origen, df_viejos):
         if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
         cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
         
-    if 'num_remision' in df_viejos.columns:
-        cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
-    else:
-        cur.execute("DELETE FROM remisiones WHERE id = %s", (num_remision,))
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
+    cols_existentes = [r[0] for r in cur.fetchall()]
+    col_filtro = "num_remision" if "num_remision" in cols_existentes else "id"
+
+    cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
 
     conn.commit()
     cur.close()
@@ -546,4 +547,3 @@ elif st.session_state.seccion_activa == "📜 Historial":
                     eliminar_remision_completa(num_sel, c_galpon, df_rem)
                     st.warning(f"Remisión No. {num_sel:06d} eliminada. ¡El stock se devolvió al {c_galpon}!")
                     st.rerun()
-                    

@@ -119,37 +119,9 @@ st.markdown("---")
 def get_connection():
     return psycopg2.connect(st.secrets["postgres"]["url"])
 
-def agregar_item_a_remision(num_remision_val, primer_fila, tipo_huevo, cantidad, precio_unitario):
-    conn = get_connection()
-    cur = conn.cursor()
-    total = cantidad * precio_unitario
-    
-    query_insert = """
-        INSERT INTO remisiones (num_remision, fecha_emision, cliente, cedula_nit, destino, telefono, email, conductor, tipo_huevo, cantidad, precio_unitario, total)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """
-    cur.execute(query_insert, (
-        num_remision_val,
-        primer_fila.get("fecha_emision", datetime.now()),
-        primer_fila.get("cliente", ""),
-        primer_fila.get("cedula_nit", ""),
-        primer_fila.get("destino", ""),
-        primer_fila.get("telefono", ""),
-        primer_fila.get("email", ""),
-        primer_fila.get("conductor", "Ivan Herrera"),
-        tipo_huevo,
-        cantidad,
-        precio_unitario,
-        total
-    ))
-    conn.commit()
-    cur.close()
-    conn.close()
-
 def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio):
     conn = get_connection()
     cur = conn.cursor()
-    
     nuevo_total = nueva_cantidad * nuevo_precio
     
     query_update = """
@@ -170,7 +142,14 @@ def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nue
         nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, 
         nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio, nuevo_total, id_registro
     ))
-    
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def eliminar_remision(id_registro):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM remisiones WHERE id = %s", (id_registro,))
     conn.commit()
     cur.close()
     conn.close()
@@ -477,6 +456,94 @@ elif st.session_state.seccion_activa == "📊 Stock":
     st.dataframe(cargar_inventario(), use_container_width=True)
 
 elif st.session_state.seccion_activa == "📜 Historial":
-    st.subheader("📜 Historial de Remisiones")
+    st.subheader("📜 Historial y Gestión de Remisiones")
     df_historial = cargar_remisiones()
-    st.dataframe(df_historial, use_container_width=True)
+    
+    if df_historial.empty:
+        st.info("No hay remisiones registradas todavía.")
+    else:
+        st.dataframe(df_historial, use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("✏️ Modificar o 🗑️ Eliminar Remisión Anterior")
+        
+        # Opciones para seleccionar un registro existente por su ID
+        ids_disponibles = df_historial['id'].tolist()
+        id_seleccionado = st.selectbox("Selecciona el ID de la remisión a gestionar", ids_disponibles)
+        
+        if id_seleccionado:
+            fila_sel = df_historial[df_historial['id'] == id_seleccionado].iloc[0]
+            
+            num_rem_val = fila_sel.get('num_remision', fila_sel.get('id'))
+            
+            with st.form(key=f"form_editar_{id_seleccionado}"):
+                c_cliente = st.text_input("Cliente", value=str(fila_sel.get('cliente', '')))
+                c_cedula = st.text_input("Cédula / NIT", value=str(fila_sel.get('cedula_nit', '')))
+                c_dir = st.text_input("Dirección", value=str(fila_sel.get('destino', '')))
+                c_tel = st.text_input("Teléfono", value=str(fila_sel.get('telefono', '')))
+                c_email = st.text_input("Email", value=str(fila_sel.get('email', '')))
+                c_cond = st.text_input("Conductor", value=str(fila_sel.get('conductor', '')))
+                c_tipo = st.text_input("Tipo de Huevo", value=str(fila_sel.get('tipo_huevo', '')))
+                c_cant = st.number_input("Cantidad", min_value=0, value=int(fila_sel.get('cantidad', 0)))
+                c_precio = st.number_input("Precio Unitario", min_value=0.0, value=float(fila_sel.get('precio_unitario', 0.0)))
+                
+                col_btn1, col_btn2 = st.columns(2)
+                with col_btn1:
+                    submit_actualizar = st.form_submit_button("💾 Actualizar Cambios")
+                with col_btn2:
+                    submit_eliminar = st.form_submit_button("🗑️ Eliminar Registro")
+                
+                if submit_actualizar:
+                    actualizar_remision(
+                        id_seleccionado, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_tipo, c_cant, c_precio
+                    )
+                    st.success(f"¡Remisión ID {id_seleccionado} actualizada con éxito!")
+                    st.rerun()
+                
+                if submit_eliminar:
+                    eliminar_remision(id_seleccionado)
+                    st.warning(f"Remisión ID {id_seleccionado} eliminada.")
+                    st.rerun()
+
+        st.markdown("---")
+        st.subheader("📄 Descargar PDF de Remisión del Historial")
+        id_pdf = st.selectbox("Selecciona el ID para generar su PDF", ids_disponibles, key="select_pdf_historial")
+        if id_pdf:
+            f_sel = df_historial[df_historial['id'] == id_pdf].iloc[0]
+            n_rem = int(f_sel.get('num_remision', f_sel.get('id', 1)))
+            
+            # Formatear fecha de emisión de forma segura
+            f_emision_val = f_sel.get('fecha_emision', datetime.now())
+            if isinstance(f_emision_val, str):
+                fecha_str = f_emision_val[:10]
+            else:
+                fecha_str = pd.to_datetime(f_emision_val).strftime("%d/%m/%Y")
+                
+            cli_datos = {
+                "nombre": str(f_sel.get('cliente', '')),
+                "cedula": str(f_sel.get('cedula_nit', '')),
+                "direccion": str(f_sel.get('destino', '')),
+                "telefono": str(f_sel.get('telefono', '')),
+                "email": str(f_sel.get('email', ''))
+            }
+            
+            df_item_unico = pd.DataFrame([{
+                "Clasificación": f_sel.get('tipo_huevo', 'a'),
+                "Cantidad (Huevos)": f_sel.get('cantidad', 0),
+                "Precio Unitario ($)": f_sel.get('precio_unitario', 0.0),
+                "Subtotal ($)": f_sel.get('total', 0.0)
+            }])
+            tot_val = float(f_sel.get('total', 0.0))
+            
+            pdf_buf = generar_pdf_remision(
+                n_rem, fecha_str, str(f_sel.get('conductor', 'Ivan Herrera')), cli_datos, df_item_unico, tot_val
+            )
+            
+            st.download_button(
+                label=f"📥 Descargar PDF Remisión No. {n_rem:06d}",
+                data=pdf_buf,
+                file_name=f"Remision_{n_rem:06d}_{cli_datos['nombre']}.pdf",
+                mime="application/pdf",
+                key=f"dl_pdf_{id_pdf}"
+            )
+            

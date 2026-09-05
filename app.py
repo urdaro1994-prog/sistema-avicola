@@ -465,7 +465,8 @@ if st.session_state.seccion_activa == "📥 Entrada":
         conteos = {'Yumbo': y, 'Extra': ex, 'AA': aa, 'A': a, 'B': b, 'C': c, 'Sucio': suc, 'Roto': rot}
         registrar_produccion(fecha, galpon, conteos)
         st.success("¡Registro de producción guardado!")
-        elif st.session_state.seccion_activa == "📤 Remisiones":
+        
+  elif st.session_state.seccion_activa == " 📥 Remisiones":
     df_inv = cargar_inventario()  # Carga el inventario estructurado por galpón
     df_clientes = cargar_clientes()
     num_remision_actual = obtener_siguiente_num_remision()

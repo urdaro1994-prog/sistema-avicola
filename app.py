@@ -18,64 +18,58 @@ st.set_page_config(
 )
 
 # --- INYECCIÓN DE METAETIQUETAS PWA VÍA JAVASCRIPT ---
-URL_LOGO = "https://raw.githubusercontent.com/TU_USUARIO/sistema-avicola/main/ESCUDO.png"
-
+# --- INYECCIÓN DE METAETIQUETAS PWA Y FAVICON PARA iOS Y PC ---
 st.components.v1.html(
-    f"""
+    """
     <script>
-        const linkIcon = parent.document.createElement('link');
-        linkIcon.rel = 'icon';
-        linkIcon.type = 'image/png';
-        linkIcon.href = '{URL_LOGO}';
-        parent.document.getElementsByTagName('head')[0].appendChild(linkIcon);
+        // Funcionalidad para convertir el emoji 🥚 en una imagen PNG para iOS/Safari
+        function setEmojiFavicon(emoji) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 192;
+            canvas.height = 192;
+            const ctx = canvas.getContext('2d');
+            ctx.font = '150px serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(emoji, 96, 105);
 
-        const linkApple = parent.document.createElement('link');
-        linkApple.rel = 'apple-touch-icon';
-        linkApple.href = '{URL_LOGO}';
-        parent.document.getElementsByTagName('head')[0].appendChild(linkApple);
+            const faviconUrl = canvas.toDataURL('image/png');
 
+            // Crear o actualizar icono Apple
+            let appleIcon = parent.document.querySelector("link[rel='apple-touch-icon']");
+            if (!appleIcon) {
+                appleIcon = parent.document.createElement('link');
+                appleIcon.rel = 'apple-touch-icon';
+                parent.document.head.appendChild(appleIcon);
+            }
+            appleIcon.href = faviconUrl;
+
+            // Crear o actualizar icono Estándar/Android
+            let favIcon = parent.document.querySelector("link[rel='icon']");
+            if (!favIcon) {
+                favIcon = parent.document.createElement('link');
+                favIcon.rel = 'icon';
+                parent.document.head.appendChild(favIcon);
+            }
+            favIcon.href = faviconUrl;
+        }
+
+        // Ejecutar conversión del emoji
+        setEmojiFavicon('🥚');
+
+        // Metainformación para iOS
         const metaTitle = parent.document.createElement('meta');
         metaTitle.name = 'apple-mobile-web-app-title';
         metaTitle.content = 'App David';
-        parent.document.getElementsByTagName('head')[0].appendChild(metaTitle);
+        parent.document.head.appendChild(metaTitle);
+
+        const metaCapable = parent.document.createElement('meta');
+        metaCapable.name = 'apple-mobile-web-app-capable';
+        metaCapable.content = 'yes';
+        parent.document.head.appendChild(metaCapable);
     </script>
     """,
     height=0,
-)
-
-# --- ESTILOS CSS PARA ESTILO APP MÓVIL ---
-st.markdown(
-    """
-    <style>
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 5rem;
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
-        max-width: 500px;
-    }
-    
-    .stButton>button {
-        width: 100%;
-        border-radius: 12px;
-        height: 3em;
-        font-weight: bold;
-        background-color: #125375;
-        color: white;
-        border: none;
-    }
-    
-    div[data-testid="stDataEditor"] {
-        border-radius: 12px;
-        overflow: hidden;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
 )
 
 # --- ENCABEZADO DE LA APP ---

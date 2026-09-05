@@ -90,11 +90,53 @@ st.markdown(
 def get_connection():
     return psycopg2.connect(st.secrets["postgres"]["url"])
 
+def inicializar_tabla_clientes():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS clientes (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT UNIQUE NOT NULL,
+            cedula_nit TEXT,
+            direccion TEXT,
+            telefono TEXT,
+            email TEXT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def cargar_clientes():
+    inicializar_tabla_clientes()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM clientes ORDER BY nombre ASC", conn)
     conn.close()
     return df
+
+def guardar_cliente(nombre, cedula, direccion, telefono, email):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO clientes (nombre, cedula_nit, direccion, telefono, email)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (nombre) DO UPDATE SET
+            cedula_nit = EXCLUDED.cedula_nit,
+            direccion = EXCLUDED.direccion,
+            telefono = EXCLUDED.telefono,
+            email = EXCLUDED.email;
+    """, (nombre.strip().upper(), cedula, direccion, telefono, email))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def eliminar_cliente(cliente_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM clientes WHERE id = %s", (cliente_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def cargar_inventario():
     conn = get_connection()
@@ -106,13 +148,20 @@ def cargar_remisiones():
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
     conn.close()
+    if not df.empty and 'num_remision' not in df.columns:
+        df['num_remision'] = df['id']
     return df
 
 def obtener_siguiente_num_remision():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT COALESCE(MAX(num_remision), 0) + 1 FROM remisiones")
-    num = cur.fetchone()[0]
+    try:
+        cur.execute("SELECT COALESCE(MAX(num_remision), 0) + 1 FROM remisiones")
+        num = cur.fetchone()[0]
+    except Exception:
+        conn.rollback()
+        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM remisiones")
+        num = cur.fetchone()[0]
     cur.close()
     conn.close()
     return num
@@ -121,10 +170,113 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     conn = get_connection()
     cur = conn.cursor()
     fecha_actual = datetime.now()
+
+    cur.execute("""
+        SELECT column_name, is_generated, identity_generation 
+        FROM information_schema.columns 
+        WHERE table_name = 'remisiones';
+    """)
+    columnas_validas = set()
+    for col_name, is_gen, id_gen in cur.fetchall():
+        if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
+            columnas_validas.add(col_name)
+
     for item in items_venta:
-        cur.execute(f"INSERT INTO remisiones (num_remision, fecha_emision, cliente, cedula_nit, telefono, destino, email, conductor, tipo_huevo, cantidad, precio_unitario, total, galpon) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                    (num_remision, fecha_actual, cliente, cedula, telefono, direccion, email, conductor, item['Clasificación'].lower(), item['Cantidad'], item['Precio'], item['Subtotal'], item['Galpón']))
-        cur.execute(f"UPDATE inventario SET {item['Clasificación'].lower()} = {item['Clasificación'].lower()} - %s WHERE galpon = %s", (item['Cantidad'], item['Galpón']))
+        clasificacion = item['Clasificación'].lower()
+        cantidad = int(item['Cantidad (Huevos)'])
+        subtotal = float(item['Subtotal ($)'])
+        precio_u = float(item['Precio Unitario ($)'])
+        galp_origen = item.get('Galpón', 'Galpón 1')
+
+        datos_insert = {
+            "num_remision": num_remision, "fecha_emision": fecha_actual,
+            "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
+            "destino": direccion, "email": email, "conductor": conductor,
+            "tipo_huevo": clasificacion, "cantidad": cantidad,
+            "precio_unitario": precio_u, "total": subtotal, "galpon": galp_origen
+        }
+        
+        datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
+
+        if datos_reales:
+            cols = ", ".join(datos_reales.keys())
+            vals = tuple(datos_reales.values())
+            placeholders = ", ".join(["%s"] * len(datos_reales))
+            cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
+
+        cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galp_origen))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, df_viejos, items_nuevos):
+    conn = get_connection()
+    cur = conn.cursor()
+    fecha_actual = datetime.now()
+
+    for _, row in df_viejos.iterrows():
+        c_tipo = str(row.get('tipo_huevo', 'a')).lower()
+        c_cant = int(row.get('cantidad', 0))
+        g_bd = row.get('galpon', 'Galpón 1')
+        cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
+
+    cur.execute("""
+        SELECT column_name, is_generated, identity_generation 
+        FROM information_schema.columns 
+        WHERE table_name = 'remisiones';
+    """)
+    filas_cols = cur.fetchall()
+    columnas_totales = [col[0] for col in filas_cols]
+    columnas_validas = {c[0] for c in filas_cols if c[1] != 'ALWAYS' and c[2] != 'ALWAYS'}
+
+    col_filtro = "num_remision" if "num_remision" in columnas_totales else "id"
+    cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
+
+    for item in items_nuevos:
+        clasif = item['Clasificación'].lower()
+        cant = int(item['Cantidad (Huevos)'])
+        subtotal = float(item['Subtotal ($)'])
+        precio_u = float(item['Precio Unitario ($)'])
+        galp_origen = item.get('Galpón', 'Galpón 1')
+
+        datos_insert = {
+            "num_remision": num_remision, "fecha_emision": fecha_actual,
+            "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
+            "destino": direccion, "email": email, "conductor": conductor,
+            "tipo_huevo": clasif, "cantidad": cant,
+            "precio_unitario": precio_u, "total": subtotal, "galpon": galp_origen
+        }
+        
+        datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
+
+        if datos_reales:
+            cols = ", ".join(datos_reales.keys())
+            vals = tuple(datos_reales.values())
+            placeholders = ", ".join(["%s"] * len(datos_reales))
+            cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
+
+        cur.execute(f"UPDATE inventario SET {clasif} = {clasif} - %s WHERE galpon = %s", (cant, galp_origen))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def eliminar_remision_completa(num_remision, df_viejos):
+    conn = get_connection()
+    cur = conn.cursor()
+    for _, row in df_viejos.iterrows():
+        c_tipo = str(row.get('tipo_huevo', 'a')).lower()
+        c_cant = int(row.get('cantidad', 0))
+        g_bd = row.get('galpon', 'Galpón 1')
+        cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
+        
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
+    cols_existentes = [r[0] for r in cur.fetchall()]
+    col_filtro = "num_remision" if "num_remision" in cols_existentes else "id"
+
+    cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
+
     conn.commit()
     cur.close()
     conn.close()
@@ -135,26 +287,77 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story = []
     styles = getSampleStyleSheet()
     style_normal = styles['Normal']
-    header_data = [[Image("ESCUDO.png", width=60, height=60) if os.path.exists("ESCUDO.png") else "🛡️",
-                    Paragraph("<font size=16 color='#ffffff'><b>Remisión de Venta</b></font>", style_normal),
-                    Paragraph("<font size=9 color='#ffffff'><b>Avícola Santa Isabel</b><br/>NIT. 901.786.799-7</font>", style_normal)]]
+    
+    header_data = [
+        [
+            Image("ESCUDO.png", width=60, height=60) if os.path.exists("ESCUDO.png") else "🛡️",
+            Paragraph("<font size=16 color='#ffffff'><b>Remisión de Venta</b></font>", style_normal),
+            Paragraph("<font size=9 color='#ffffff'><b>Avícola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
+        ]
+    ]
     t_header = Table(header_data, colWidths=[80, 260, 200])
-    t_header.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#0f2942")), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('TEXTCOLOR', (0,0), (-1,-1), colors.white)]))
+    t_header.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#0f2942")),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ('TOPPADDING', (0,0), (-1,-1), 10),
+    ]))
     story.append(t_header)
     story.append(Spacer(1, 15))
-    cliente_info = [[Paragraph(f"<b>Remisión:</b> {num_remision:06d}<br/><b>Fecha:</b> {fecha_str}<br/><b>Conductor:</b> {conductor}", style_normal),
-                     Paragraph(f"<b>Cliente:</b> {cliente_datos['nombre']}<br/><b>NIT/CC:</b> {cliente_datos['cedula']}<br/><b>Dir:</b> {cliente_datos['direccion']}", style_normal)]]
-    t_info = Table(cliente_info, colWidths=[240, 300])
+
+    num_str = f"{num_remision:06d}"
+    cliente_info_data = [
+        [
+            Paragraph(f"<b>Remisión No.</b> {num_str}<br/><b>Fecha</b> {fecha_str}<br/><b>Conductor</b> {conductor}", style_normal),
+            Paragraph(f"<b>Datos del cliente</b><br/><b>Nombre/Razón Social:</b> {cliente_datos['nombre']}<br/><b>Cédula/NIT:</b> {cliente_datos['cedula']}<br/><b>Dirección:</b> {cliente_datos['direccion']}<br/><b>Teléfono:</b> {cliente_datos['telefono']}<br/><b>Email:</b> {cliente_datos['email']}", style_normal)
+        ]
+    ]
+    t_info = Table(cliente_info_data, colWidths=[240, 300])
+    t_info.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
     story.append(t_info)
     story.append(Spacer(1, 15))
-    table_data = [["Descripción", "Cantidad", "Precio Unit.", "Total"]]
+
+    table_data = [["Descripción", "Cantidad", "Valor Unitario", "Valor total"]]
     for _, fila in items_df.iterrows():
-        table_data.append([str(fila["Clasificación"]).upper(), f"{int(fila['Cantidad (Huevos)']):,}", f"${fila['Precio Unitario ($)']:,.0f}", f"${fila['Subtotal ($)']:,.0f}"])
+        table_data.append([
+            str(fila["Clasificación"]).upper(),
+            f"{int(fila['Cantidad (Huevos)']):,}",
+            f"$ {fila['Precio Unitario ($)']:,.2f}",
+            f"$ {fila['Subtotal ($)']:,.2f}"
+        ])
+
+    for _ in range(max(0, 5 - len(items_df))):
+        table_data.append(["", "", "", ""])
+
     t_items = Table(table_data, colWidths=[200, 100, 120, 120])
-    t_items.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f26822")), ('TEXTCOLOR', (0,0), (-1,0), colors.white), ('GRID', (0,0), (-1,-1), 0.5, colors.grey)]))
+    t_items.setStyle(TableStyle([
+        ('LINEBELOW', (0,0), (-1,0), 1.5, colors.HexColor("#0f2942")),
+        ('LINEABOVE', (0,0), (-1,0), 1.5, colors.HexColor("#0f2942")),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('ALIGN', (1,0), (-1,-1), 'CENTER'),
+        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#f8fafc"), colors.white]),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+    ]))
     story.append(t_items)
     story.append(Spacer(1, 10))
-    story.append(Paragraph(f"<font size=12><b>TOTAL A PAGAR: ${total_factura:,.0f}</b></font>", styles['Right']))
+
+    totales_data = [
+        ["Subtotal", f"$ {total_factura:,.2f}"],
+        ["IVA", "$ 0.00"],
+        ["Total", f"$ {total_factura:,.2f}"]
+    ]
+    t_totales = Table(totales_data, colWidths=[420, 120])
+    t_totales.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('FONTNAME', (0,2), (-1,2), 'Helvetica-Bold'),
+        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#0f2942")),
+    ]))
+    story.append(t_totales)
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -165,7 +368,7 @@ with col_logo:
     if os.path.exists("ESCUDO.png"): st.image("ESCUDO.png", width=75)
     else: st.markdown("<h1 style='margin: 0;'>🥚</h1>", unsafe_allow_html=True)
 with col_tit:
-    st.markdown('<h2 style="margin: 0; color: #f26822 !important;">AVÍCOLA SANTA ISABEL</h2><p style="margin: 0;">SISTEMA DE GESTIÓN</p>', unsafe_allow_html=True)
+    st.markdown('<h2 style="margin: 0; color: #f26822 !important;">AVÍCOLA SANTA ISABEL</h2><p style="margin: 0;">SISTEMA DE GESTIÓN Y CONTROL</p>', unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -207,65 +410,234 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
         df_inv = cargar_inventario()
         df_clientes = cargar_clientes()
         num_remision_actual = obtener_siguiente_num_remision()
-        st.subheader(f"📋 Nueva Remisión No. {num_remision_actual:06d}")
         
-        cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"])
+        st.subheader(f"📋 Nueva Remisión No. {num_remision_actual:06d}")
+
+        opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
+        cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", opciones_cli)
+
         val_nombre, val_cedula, val_dir, val_tel, val_email = "", "", "CHOACHI", "", ""
+
         if cliente_sel != "-- Escribir cliente nuevo --" and not df_clientes.empty:
             d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
-            val_nombre, val_cedula, val_dir, val_tel, val_email = d_cli['nombre'], d_cli['cedula_nit'], d_cli['direccion'], d_cli['telefono'], d_cli['email']
+            val_nombre = str(d_cli.get("nombre", ""))
+            val_cedula = str(d_cli.get("cedula_nit", ""))
+            val_dir = str(d_cli.get("direccion", "CHOACHI"))
+            val_tel = str(d_cli.get("telefono", ""))
+            val_email = str(d_cli.get("email", ""))
 
-        c_nom = st.text_input("Razón Social *", value=val_nombre)
-        c_ced = st.text_input("Cédula / NIT", value=val_cedula)
-        c_dir = st.text_input("Dirección", value=val_dir)
-        c_tel = st.text_input("Teléfono", value=val_tel)
-        c_em = st.text_input("Email", value=val_email)
-        c_cond = st.text_input("Conductor", value="Ivan Herrera")
+        cliente_nombre = st.text_input("Razón Social / Cliente *", value=val_nombre, placeholder="Ej. RAFAEL GARCIA")
+        cedula_nit = st.text_input("Cédula / NIT", value=val_cedula, placeholder="Ej. 901.786.799-7")
+        direccion = st.text_input("Dirección", value=val_dir)
+        telefono = st.text_input("Teléfono", value=val_tel, placeholder="Ej. 3102397244")
+        email = st.text_input("Email", value=val_email, placeholder="cliente@correo.com")
+        conductor = st.text_input("Conductor", value="Ivan Herrera")
+        
+        guardar_cli_auto = st.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
 
         st.markdown("### 🛒 Detalle del Despacho")
+        st.caption("Añada los productos, especificando la clasificación y de qué galpón se descuenta.")
+        
         opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
         opciones_galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]
         
-        df_base = pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 3000, "Precio Unitario ($)": 370.0, "Galpón Origen": "Galpón 1"}])
-        df_editado = st.data_editor(df_base, num_rows="dynamic", column_config={
-            "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
-            "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=1, step=1, required=True),
-            "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0, step=1, format="$%.0f", required=True),
-            "Galpón Origen": st.column_config.SelectboxColumn("Galpón Origen", options=opciones_galpones, required=True)
-        }, use_container_width=True)
+        df_base = pd.DataFrame([{
+            "Clasificación": "a", 
+            "Cantidad (Huevos)": 3000, 
+            "Precio Unitario ($)": 370.0,
+            "Galpón Origen": "Galpón 1"
+        }])
 
-        if not df_editado.empty:
-            df_editado["Subtotal ($)"] = df_editado["Cantidad (Huevos)"] * df_editado["Precio Unitario ($)"]
-            total_f = df_editado["Subtotal ($)"].sum()
-            st.markdown(f'<div style="background-color:#f26822; padding:10px; border-radius:8px; text-align:right;"><h3>TOTAL: ${total_f:,.0f}</h3></div>', unsafe_allow_html=True)
+        df_editado = st.data_editor(
+            df_base,
+            num_rows="dynamic",
+            column_config={
+                "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+                "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
+                "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True),
+                "Galpón Origen": st.column_config.SelectboxColumn("Galpón Origen", options=opciones_galpones, required=True)
+            },
+            use_container_width=True
+        )
+
+        items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+
+        if not items_validos.empty:
+            items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
             
+            df_agrupado_pdf = items_validos.groupby("Clasificación").agg({
+                "Cantidad (Huevos)": "sum",
+                "Precio Unitario ($)": "mean",
+                "Subtotal ($)": "sum"
+            }).reset_index()
+
+            total_factura = items_validos["Subtotal ($)"].sum()
+            st.markdown(f"""
+                <div style="background-color: #f26822; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #ffffff;">
+                    <h3 style="margin: 0; color: white !important; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.2f}</h3>
+                </div>
+            """, unsafe_allow_html=True)
+
             if st.button("🚀 Confirmar y Generar Remisión"):
-                items_venta = []
-                for _, r in df_editado.iterrows():
-                    items_venta.append({'Clasificación': r['Clasificación'], 'Cantidad': r['Cantidad (Huevos)'], 'Precio': r['Precio Unitario ($)'], 'Subtotal': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']})
-                registrar_venta_multiple(c_nom, c_ced, c_dir, c_tel, c_em, c_cond, num_remision_actual, items_venta)
-                st.success("Remisión guardada!")
-                
-                df_pdf = df_editado.groupby("Clasificación").agg({"Cantidad (Huevos)":"sum", "Precio Unitario ($)":"mean", "Subtotal ($)":"sum"}).reset_index()
-                pdf = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), c_cond, {'nombre':c_nom, 'cedula':c_ced, 'direccion':c_dir}, df_pdf, total_f)
-                st.download_button("📥 Descargar PDF", data=pdf, file_name=f"Remision_{num_remision_actual}.pdf")
+                if not cliente_nombre.strip():
+                    st.error("Por favor ingresa el Nombre del cliente.")
+                else:
+                    errores_stock = []
+                    stock_acumulado_uso = {}
+                    for _, fila in items_validos.iterrows():
+                        c_clasif = fila["Clasificación"]
+                        c_cant = int(fila["Cantidad (Huevos)"])
+                        g_orig = fila["Galpón Origen"]
+                        
+                        key_st = (g_orig, c_clasif)
+                        stock_acumulado_uso[key_st] = stock_acumulado_uso.get(key_st, 0) + c_cant
+
+                    for (g_orig, c_clasif), c_cant in stock_acumulado_uso.items():
+                        stock_disp = df_inv.loc[g_orig, c_clasif]
+                        if c_cant > stock_disp:
+                            errores_stock.append(f"Stock insuficiente en {g_orig} para {c_clasif.upper()}. Disponible: {stock_disp}, Solicitado: {c_cant}")
+
+                    if errores_stock:
+                        for err in errores_stock: st.error(err)
+                    else:
+                        if guardar_cli_auto:
+                            guardar_cliente(cliente_nombre, cedula_nit, direccion, telefono, email)
+
+                        items_dict = []
+                        for _, row in items_validos.iterrows():
+                            items_dict.append({
+                                'Clasificación': row['Clasificación'],
+                                'Cantidad (Huevos)': row['Cantidad (Huevos)'],
+                                'Precio Unitario ($)': row['Precio Unitario ($)'],
+                                'Subtotal ($)': row['Subtotal ($)'],
+                                'Galpón': row['Galpón Origen']
+                            })
+
+                        registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, items_dict)
+                        st.success(f"¡Remisión No. {num_remision_actual:06d} guardada con éxito!")
+                        
+                        datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
+                        pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
+                        st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
+
+    elif st.session_state.seccion_activa == "👥 Clientes":
+        st.subheader("👥 Directorio de Clientes")
+        tab_nuevo, tab_lista = st.tabs(["➕ Agregar Cliente", "📋 Lista de Clientes"])
+        
+        with tab_nuevo:
+            with st.form(key="form_nuevo_cliente"):
+                c_nom = st.text_input("Nombre / Razón Social *")
+                c_ced = st.text_input("Cédula / NIT")
+                c_dir = st.text_input("Dirección", value="CHOACHI")
+                c_tel = st.text_input("Teléfono")
+                c_em = st.text_input("Email")
+                if st.form_submit_button("💾 Guardar Cliente"):
+                    if not c_nom.strip():
+                        st.error("El nombre es obligatorio.")
+                    else:
+                        guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
+                        st.success(f"¡Cliente {c_nom.upper()} guardado!")
+                        st.rerun()
+
+        with tab_lista:
+            df_cli = cargar_clientes()
+            if df_cli.empty:
+                st.info("No hay clientes registrados.")
+            else:
+                for _, r_cli in df_cli.iterrows():
+                    id_c = r_cli['id']
+                    nom_c = r_cli['nombre']
+                    with st.expander(f"👤 {nom_c} ({r_cli.get('cedula_nit', '')})"):
+                        st.write(f"**Teléfono:** {r_cli.get('telefono', '')}")
+                        st.write(f"**Dirección:** {r_cli.get('direccion', '')}")
+                        if st.button(f"🗑️ Eliminar {nom_c}", key=f"del_cli_{id_c}"):
+                            eliminar_cliente(id_c)
+                            st.warning("Cliente eliminado.")
+                            st.rerun()
 
     elif st.session_state.seccion_activa == "📊 Stock":
         st.subheader("📦 Stock Actual en Granja")
         st.dataframe(cargar_inventario(), use_container_width=True)
 
-    elif st.session_state.seccion_activa == "👥 Clientes":
-        st.subheader("👥 Clientes")
-        st.dataframe(cargar_clientes(), use_container_width=True)
-
     elif st.session_state.seccion_activa == "📜 Historial":
-        st.subheader("📜 Historial de Ventas")
-        st.dataframe(cargar_remisiones(), use_container_width=True)
+        st.subheader("📜 Historial de Remisiones")
+        df_historial = cargar_remisiones()
+        
+        if df_historial.empty:
+            st.info("No hay remisiones registradas.")
+        else:
+            busqueda = st.text_input("🔍 Buscar cliente o N° Remisión", placeholder="Ej. RAFAEL GARCIA")
+            df_filtrado = df_historial[
+                df_historial['cliente'].astype(str).str.contains(busqueda, case=False, na=False) |
+                df_historial['num_remision'].astype(str).str.contains(busqueda, case=False, na=False)
+            ] if busqueda.strip() else df_historial
+
+            if df_filtrado.empty:
+                st.warning("No se encontraron coincidencias.")
+            else:
+                nums_remision = sorted(df_filtrado['num_remision'].dropna().unique().astype(int), reverse=True)
+                for num_sel in nums_remision:
+                    df_rem = df_filtrado[df_filtrado['num_remision'] == num_sel]
+                    f_sel = df_rem.iloc[0]
+                    cli_nombre = str(f_sel.get('cliente', ''))
+                    tot_val = df_rem['total'].sum() if 'total' in df_rem.columns else 0.0
+                    fecha_str = str(f_sel.get('fecha_emision', ''))[:10]
+                    
+                    with st.expander(f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.2f} ({fecha_str})"):
+                        tab_pdf, tab_editar = st.tabs(["👁️ Ver / Descargar PDF", "✏️ Editar o Eliminar"])
+                        
+                        items_actuales = []
+                        for _, row in df_rem.iterrows():
+                            items_actuales.append({
+                                "Clasificación": str(row.get('tipo_huevo', 'a')).upper(),
+                                "Cantidad (Huevos)": int(row.get('cantidad', 0)),
+                                "Precio Unitario ($)": float(row.get('precio_unitario', 0.0)),
+                                "Subtotal ($)": float(row.get('total', 0.0)),
+                                "Galpón Origen": str(row.get('galpon', 'Galpón 1'))
+                            })
+                        df_items_original = pd.DataFrame(items_actuales)
+                        df_items_pdf = df_items_original.groupby("Clasificación").agg({"Cantidad (Huevos)": "sum", "Precio Unitario ($)": "mean", "Subtotal ($)": "sum"}).reset_index()
+                        
+                        cli_datos = {"nombre": cli_nombre, "cedula": str(f_sel.get('cedula_nit', '')), "direccion": str(f_sel.get('destino', '')), "telefono": str(f_sel.get('telefono', '')), "email": str(f_sel.get('email', ''))}
+                        conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
+
+                        with tab_pdf:
+                            pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
+                            st.dataframe(df_items_pdf, use_container_width=True, hide_index=True)
+                            st.markdown(f"#### **Total: ${tot_val:,.2f}**")
+                            st.download_button(label=f"📥 Descargar PDF No. {num_sel:06d}", data=pdf_buf, file_name=f"Remision_{num_sel:06d}.pdf", mime="application/pdf", key=f"dl_{num_sel}")
+
+                        with tab_editar:
+                            with st.form(key=f"form_editar_{num_sel}"):
+                                c_cliente = st.text_input("Cliente", value=cli_datos['nombre'], key=f"cli_{num_sel}")
+                                c_cedula = st.text_input("Cédula / NIT", value=cli_datos['cedula'], key=f"ced_{num_sel}")
+                                c_dir = st.text_input("Dirección", value=cli_datos['direccion'], key=f"dir_{num_sel}")
+                                c_tel = st.text_input("Teléfono", value=cli_datos['telefono'], key=f"tel_{num_sel}")
+                                c_email = st.text_input("Email", value=cli_datos['email'], key=f"em_{num_sel}")
+                                c_cond = st.text_input("Conductor", value=conductor_val, key=f"cond_{num_sel}")
+                                
+                                df_editado = st.data_editor(df_items_original[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)", "Galpón Origen"]], num_rows="dynamic", key=f"edit_{num_sel}")
+                                
+                                c_b1, c_b2 = st.columns(2)
+                                with c_b1: sub_act = st.form_submit_button("💾 Actualizar Cambios")
+                                with c_b2: sub_elm = st.form_submit_button("🗑️ Eliminar Remisión")
+                                
+                                if sub_act:
+                                    items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+                                    items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
+                                    items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
+                                    actualizar_remision_completa(num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, df_rem, items_dict)
+                                    st.success("Remisión actualizada!")
+                                    st.rerun()
+                                if sub_elm:
+                                    eliminar_remision_completa(num_sel, df_rem)
+                                    st.warning("Remisión eliminada.")
+                                    st.rerun()
 
 elif st.session_state.sesion_principal == "📝 Registro Diario":
     st.subheader("📝 Registro Diario")
     st.info("💡 Sección lista para alimentación de datos de postura y mortalidad próximamente.")
     with st.form("diario"):
-        f = st.date_input("Fecha")
-        g = st.selectbox("Galpón", ["G1", "G2", "G3"])
+        st.date_input("Fecha")
+        st.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
         st.form_submit_button("Guardar")

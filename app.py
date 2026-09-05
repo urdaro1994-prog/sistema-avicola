@@ -423,7 +423,7 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 
 if st.session_state.sesion_principal == "📦 Stock y Ventas":
     
-    # Sub-navegación interna para Stock y Ventas
+    # Sub-navegación interna que SOLO se muestra al hacer clic en Stock y Ventas
     if "seccion_activa" not in st.session_state:
         st.session_state.seccion_activa = "📤 Remisiones"
 
@@ -762,7 +762,6 @@ elif st.session_state.sesion_principal == "📝 Registro Diario":
     
     st.info("💡 Aquí podremos programar las entradas de postura, mortalidad, alimento o novedades diarias.")
     
-    # Espacio preparado para cuando alimentemos esta sección
     with st.form(key="form_registro_diario_provisional"):
         fecha_reg = st.date_input("Fecha de Registro", datetime.now())
         galpon_reg = st.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])

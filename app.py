@@ -624,7 +624,8 @@ elif st.session_state.seccion_activa == "📜 Historial":
         )
     else:
         st.info("Aún no hay remisiones registradas en la base de datos.")
-        # Columnas para organizar los botones y opciones ordenadamente
+        
+                   # Columnas para organizar los botones y opciones ordenadamente
                     col_btn1, col_btn2 = st.columns(2)
                     
                     with col_btn1:

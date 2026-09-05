@@ -495,47 +495,51 @@ elif st.session_state.seccion_activa == "📜 Historial":
     df_rem = cargar_remisiones()
     
     if not df_rem.empty:
-        # --- BUSCADOR PARA REIMPRIMIR REMISIONES ---
+        # Detectar dinámicamente qué columna usar como identificador de remisión
+        col_criterio = None
+        for posible in ["num_remision", "numero_remision", "remision_num", "id"]:
+            if posible in df_rem.columns:
+                col_criterio = posible
+                break
+
         st.markdown("### 🔍 Buscar Remisión para Reimprimir")
         
-        # Obtenemos los números de remisión únicos disponibles ordenados de mayor a menor
-        if "num_remision" in df_rem.columns:
-            lista_remisiones = sorted(df_rem["num_remision"].dropna().unique(), reverse=True)
-            remision_seleccionada = st.selectbox("Seleccione el N° de Remisión:", lista_remisiones)
+        if col_criterio:
+            lista_remisiones = sorted(df_rem[col_criterio].dropna().unique(), reverse=True)
+            remision_seleccionada = st.selectbox("Seleccione el N° de Remisión / ID:", lista_remisiones)
             
-            if remision_seleccionada:
-                # Filtrar todos los items/filas que pertenecen a esa misma remisión
-                df_remision_det = df_rem[df_rem["num_remision"] == remision_seleccionada]
+            if remision_seleccionada is not None:
+                df_remision_det = df_rem[df_rem[col_criterio] == remision_seleccionada]
                 
                 if not df_remision_det.empty:
-                    # Extraer datos generales de la primera fila de esa remisión
                     primer_fila = df_remision_det.iloc[0]
-                    c_nombre = primer_fila.get("cliente", "")
-                    c_cedula = primer_fila.get("cedula_nit", "")
-                    c_dir = primer_fila.get("destino", primer_fila.get("direccion", "CHOACHI"))
-                    c_tel = primer_fila.get("telefono", "")
-                    c_email = primer_fila.get("email", "")
-                    c_conductor = primer_fila.get("conductor", "Ivan Herrera")
+                    c_nombre = str(primer_fila.get("cliente", "Cliente"))
+                    c_cedula = str(primer_fila.get("cedula_nit", primer_fila.get("cedula", "")))
+                    c_dir = str(primer_fila.get("destino", primer_fila.get("direccion", "CHOACHI")))
+                    c_tel = str(primer_fila.get("telefono", ""))
+                    c_email = str(primer_fila.get("email", ""))
+                    c_conductor = str(primer_fila.get("conductor", "Ivan Herrera"))
                     
-                    # Formatear la fecha
-                    fecha_raw = primer_fila.get("fecha_emision", datetime.now())
+                    fecha_raw = primer_fila.get("fecha_emision", primer_fila.get("fecha", datetime.now()))
                     if pd.notnull(fecha_raw):
-                        fecha_str = pd.to_datetime(fecha_raw).strftime("%d/%m/%Y")
+                        try:
+                            fecha_str = pd.to_datetime(fecha_raw).strftime("%d/%m/%Y")
+                        except:
+                            fecha_str = datetime.now().strftime("%d/%m/%Y")
                     else:
                         fecha_str = datetime.now().strftime("%d/%m/%Y")
 
-                    # Preparar los items en el formato que espera la función generar_pdf_remision
                     items_formateados = []
                     total_factura_rem = 0.0
                     
                     for _, row in df_remision_det.iterrows():
-                        cant = row.get("cantidad", 0)
-                        p_unit = row.get("precio_unitario", 0.0)
-                        subt = row.get("total", cant * p_unit)
+                        cant = int(row.get("cantidad", row.get("cant", 0)))
+                        p_unit = float(row.get("precio_unitario", row.get("precio", 0.0)))
+                        subt = float(row.get("total", row.get("subtotal", cant * p_unit)))
                         total_factura_rem += subt
                         
                         items_formateados.append({
-                            "Clasificación": row.get("tipo_huevo", ""),
+                            "Clasificación": str(row.get("tipo_huevo", row.get("clasificacion", "A"))),
                             "Cantidad (Huevos)": cant,
                             "Precio Unitario ($)": p_unit,
                             "Subtotal ($)": subt
@@ -551,9 +555,10 @@ elif st.session_state.seccion_activa == "📜 Historial":
                         "email": c_email
                     }
                     
-                    # Botón para descargar el PDF individual de esa remisión
+                    # Generar el PDF individual de forma segura
+                    num_ref_pdf = int(remision_seleccionada) if str(remision_seleccionada).isdigit() else 1
                     pdf_reimpresion = generar_pdf_remision(
-                        int(remision_seleccionada), 
+                        num_ref_pdf, 
                         fecha_str, 
                         c_conductor, 
                         datos_cliente_reim, 
@@ -562,35 +567,25 @@ elif st.session_state.seccion_activa == "📜 Historial":
                     )
                     
                     st.download_button(
-                        label=f"📄 Descargar PDF Remisión N° {int(remision_seleccionada):06d}",
+                        label=f"📄 Descargar PDF Remisión / ID: {remision_seleccionada}",
                         data=pdf_reimpresion,
-                        file_name=f"Remision_{int(remision_seleccionada):06d}_{c_nombre}.pdf",
+                        file_name=f"Remision_{remision_seleccionada}_{c_nombre}.pdf",
                         mime="application/pdf"
                     )
-        
+        else:
+            st.warning("No se encontró una columna de numeración válida en el historial.")
+
         st.markdown("---")
         st.markdown("### 📋 Tabla General de Historial")
         
-        # Mostrar la tabla general
         st.dataframe(
             df_rem,
-            column_config={
-                "id": "ID",
-                "num_remision": "N° Remisión",
-                "fecha_emision": "Fecha",
-                "cliente": "Cliente",
-                "tipo_huevo": "Tipo",
-                "cantidad": "Cantidad",
-                "precio_unitario": st.column_config.NumberColumn("P. Unit ($)", format="$%.2f"),
-                "total": st.column_config.NumberColumn("Total ($)", format="$%.2f")
-            },
             use_container_width=True,
             hide_index=True
         )
         
         st.markdown("---")
         
-        # Botón para descargar el reporte de todo el historial completo en PDF
         pdf_historial_buffer = generar_pdf_historial(df_rem)
         st.download_button(
             label="📚 Descargar Historial Completo en PDF",

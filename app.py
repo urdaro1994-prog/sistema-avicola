@@ -49,22 +49,22 @@ st.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS CON CORRECCIÓN DE COLORES DE TEXTO E INPUTS ---
+# --- ESTILOS CSS PERSONALIZADOS (FONDO NARANJA + COMBINACIÓN AZUL/BLANCO) ---
 st.markdown(
     """
     <style>
-    /* Ocultar menús predeterminados */
+    /* Ocultar elementos nativos de Streamlit */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* 1. Fondo principal de la App en Naranja Cáldido */
+    /* Fondo Naranja Degradado Cálido */
     .stApp {
         background: linear-gradient(180deg, #FFF3E0 0%, #FFE0B2 100%) !important;
         background-attachment: fixed;
     }
 
-    /* 2. Tarjeta principal flotante en blanco */
+    /* Tarjeta Central Flotante Blanca */
     .block-container {
         padding-top: 1.2rem;
         padding-bottom: 5rem;
@@ -77,7 +77,7 @@ st.markdown(
         margin-top: 10px;
     }
     
-    /* 3. Corrección de color de etiquetas de texto, inputs y listas desplegables */
+    /* Textos y Etiquetas Visibles en Azul Oscuro Imperial */
     label, .stSelectbox label, .stNumberInput label, .stTextInput label, .stDateInput label {
         color: #0F2C59 !important;
         font-weight: 700 !important;
@@ -96,7 +96,7 @@ st.markdown(
         font-weight: 600 !important;
     }
 
-    /* 4. Botones en Azul Oscuro Imperial con hover Naranja */
+    /* Botones Principales en Azul Oscuro */
     .stButton>button {
         width: 100%;
         border-radius: 12px;
@@ -117,12 +117,11 @@ st.markdown(
         transform: translateY(-1px);
     }
     
-    /* 5. Títulos en Azul Oscuro */
+    /* Títulos e Indicadores */
     h1, h2, h3, p {
         color: #0F2C59 !important;
     }
     
-    /* 6. Divisores en Naranja */
     hr {
         border-top: 2px solid #FF6B00 !important;
         opacity: 0.85;
@@ -134,7 +133,49 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- ENCABEZADO CON TEXTO VISIBLE EN AZUL Y NARANJA ---
+# --- CONEXIÓN A BASE DE DATOS POSTGRESQL ---
+def get_connection():
+    try:
+        conn = psycopg2.connect(st.secrets["postgres"]["url"])
+        return conn
+    except Exception as e:
+        st.error(f"Error de conexión a la base de datos: {e}")
+        return None
+
+# --- INICIALIZACIÓN DE TABLAS EN LA BASE DE DATOS ---
+def init_db():
+    conn = get_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS clientes (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) NOT NULL UNIQUE
+            );
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS inventario (
+                id SERIAL PRIMARY KEY,
+                fecha DATE NOT NULL,
+                tipo_movimiento VARCHAR(20) NOT NULL,
+                producto VARCHAR(50) NOT NULL,
+                cajas INT DEFAULT 0,
+                cubetas INT DEFAULT 0,
+                unidades INT DEFAULT 0,
+                total_huevos INT NOT NULL,
+                cliente VARCHAR(100),
+                precio_unidad NUMERIC(10,2) DEFAULT 0,
+                total_dinero NUMERIC(12,2) DEFAULT 0,
+                consecutivo VARCHAR(20)
+            );
+        """)
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+init_db()
+
+# --- ENCABEZADO AGROAVÍCOLA SANTA ISABEL ---
 col_logo, col_tit = st.columns([1, 3.8])
 with col_logo:
     if os.path.exists("ESCUDO.png"):
@@ -159,63 +200,293 @@ with col_tit:
         </div>
     """, unsafe_allow_html=True)
 
-# --- NAVEGACIÓN Y ESTADO ACTIVO ---
+# --- NAVEGACIÓN Y PESTAÑAS ---
 if "seccion_activa" not in st.session_state:
     st.session_state.seccion_activa = "📤 Remisiones"
 
 c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5)
 with c_nav1:
-    if st.button("📥 Ent.", use_container_width=True): 
-        st.session_state.seccion_activa = "📥 Entrada"
-        st.rerun()
+    if st.button("📥 Ent.", use_container_width=True): st.session_state.seccion_activa = "📥 Entrada"
 with c_nav2:
-    if st.button("📤 Rem.", use_container_width=True): 
-        st.session_state.seccion_activa = "📤 Remisiones"
-        st.rerun()
+    if st.button("📤 Rem.", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
 with c_nav3:
-    if st.button("👥 Cli.", use_container_width=True): 
-        st.session_state.seccion_activa = "👥 Clientes"
-        st.rerun()
+    if st.button("👥 Cli.", use_container_width=True): st.session_state.seccion_activa = "👥 Clientes"
 with c_nav4:
-    if st.button("📊 Stk.", use_container_width=True): 
-        st.session_state.seccion_activa = "📊 Stock"
-        st.rerun()
+    if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
 with c_nav5:
-    if st.button("📜 Hist.", use_container_width=True): 
-        st.session_state.seccion_activa = "📜 Historial"
-        st.rerun()
+    if st.button("📜 Hist.", use_container_width=True): st.session_state.seccion_activa = "📜 Historial"
 
 st.markdown("---")
 
-# --- LÓGICA DE LAS SECCIONES ---
+PRODUCTOS = ["JUMBO", "AAA", "AA", "A", "B", "C", "D", "VENCIDO / ROTO"]
+
+# --- FUNCIONES DE BASE DE DATOS ---
+def obtener_clientes():
+    conn = get_connection()
+    if conn:
+        df = pd.read_sql("SELECT nombre FROM clientes ORDER BY nombre ASC", conn)
+        conn.close()
+        return df["nombre"].tolist()
+    return []
+
+def agregar_cliente(nombre):
+    conn = get_connection()
+    if conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute("INSERT INTO clientes (nombre) VALUES (%s)", (nombre.strip().upper(),))
+            conn.commit()
+            st.success(f"Cliente '{nombre.upper()}' agregado con éxito.")
+        except Exception as e:
+            st.error(f"Error al agregar cliente: {e}")
+        finally:
+            cursor.close()
+            conn.close()
+
+def guardar_movimiento(fecha, tipo, producto, cajas, cubetas, unidades, total_huevos, cliente=None, precio=0, total_dinero=0, consecutivo=None):
+    conn = get_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO inventario (fecha, tipo_movimiento, producto, cajas, cubetas, unidades, total_huevos, cliente, precio_unidad, total_dinero, consecutivo)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (fecha, tipo, producto, cajas, cubetas, unidades, total_huevos, cliente, precio, total_dinero, consecutivo))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+def obtener_siguiente_consecutivo():
+    conn = get_connection()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT MAX(CAST(NULLIF(regexp_replace(consecutivo, '\D', '', 'g'), '') AS INTEGER)) FROM inventario WHERE consecutivo IS NOT NULL")
+        res = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        if res:
+            return f"REM-{(res + 1):04d}"
+    return "REM-0001"
+
+# --- GENERADOR DE PDF REMISIÓN ---
+def generar_pdf_remision(consecutivo, fecha, cliente, df_detalles, total_general):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, leading=18, textColor=colors.HexColor('#0F2C59'), fontName='Helvetica-Bold')
+    sub_style = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.HexColor('#475569'))
+    rem_style = ParagraphStyle('RemStyle', parent=styles['Heading2'], fontSize=14, leading=16, textColor=colors.HexColor('#FF6B00'), alignment=2, fontName='Helvetica-Bold')
+
+    elements = []
+    
+    logo_p = Paragraph("<b>AGROAVÍCOLA SANTA ISABEL</b><br/><font size=8>NIT / REGISTRO: 123456789-0<br/>Contacto: 310 000 0000</font>", title_style)
+    rem_p = Paragraph(f"<b>REMISIÓN</b><br/><font size=11 color='#0F2C59'>Nº {consecutivo}</font><br/><font size=9 color='#475569'>Fecha: {fecha}</font>", rem_style)
+    
+    header_table = Table([[logo_p, rem_p]], colWidths=[330, 220])
+    header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    elements.append(header_table)
+    elements.append(Spacer(1, 15))
+
+    cli_p = Paragraph(f"<b>CLIENTE:</b> {cliente.upper()}", ParagraphStyle('Cli', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#0F2C59')))
+    elements.append(cli_p)
+    elements.append(Spacer(1, 12))
+
+    table_data = [["Producto", "Cajas", "Cubet.", "Unid.", "Total H.", "Val. Unid", "Total ($)"]]
+    for _, row in df_detalles.iterrows():
+        table_data.append([
+            str(row["Producto"]),
+            str(row["Cajas"]),
+            str(row["Cubetas"]),
+            str(row["Unidades"]),
+            str(row["Total Huevos"]),
+            f"${row['Precio Unitario']:,.2f}",
+            f"${row['Total ($)']:,.2f}"
+        ])
+    
+    table_data.append(["TOTAL GENERAL", "", "", "", "", "", f"${total_general:,.2f}"])
+
+    t = Table(table_data, colWidths=[110, 50, 50, 50, 70, 90, 110])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0F2C59')),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 9),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('ALIGN', (0,1), (0,-1), 'LEFT'),
+        ('BOTTOMPADDING', (0,0), (-1,0), 6),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#FFE0B2')),
+        ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 30))
+    
+    firma_data = [["_______________________", "_______________________"], ["Entregado por", "Recibido por (Cliente)"]]
+    tf = Table(firma_data, colWidths=[270, 270])
+    tf.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor('#0F2C59')),
+        ('FONTSIZE', (0,0), (-1,-1), 9)
+    ]))
+    elements.append(tf)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+# --- SECCIONES DE LA APLICACIÓN ---
 seccion = st.session_state.seccion_activa
 
 if seccion == "📥 Entrada":
-    st.subheader("📥 Registro de Entrada de Inventario")
-    st.selectbox("Tipo de Producto / Huevo", ["Huevo Tipo AA", "Huevo Tipo A", "Huevo Tipo B", "Huevo Jumbo"])
-    st.number_input("Cantidad (Cubetas/Cajas)", min_value=1, value=10)
-    if st.button("Guardar Entrada"):
-        st.success("¡Entrada registrada correctamente!")
+    st.subheader("📥 Registro de Entrada de Producción")
+    fecha_ent = st.date_input("Fecha de Entrada", datetime.now())
+    prod_ent = st.selectbox("Tipo de Huevo", PRODUCTOS)
+    
+    c1, c2, c3 = st.columns(3)
+    with c1: cajas = st.number_input("Cajas (360)", min_value=0, value=0, step=1)
+    with c2: cubetas = st.number_input("Cubetas (30)", min_value=0, value=0, step=1)
+    with c3: unidades = st.number_input("Unidades", min_value=0, value=0, step=1)
+    
+    tot_huevos = (cajas * 360) + (cubetas * 30) + unidades
+    st.info(f" Total de Huevos a ingresar: **{tot_huevos:,}** unidades")
+    
+    if st.button("📥 Registrar Entrada", use_container_width=True):
+        if tot_huevos > 0:
+            guardar_movimiento(fecha_ent, "ENTRADA", prod_ent, cajas, cubetas, unidades, tot_huevos)
+            st.success(f"¡Ingresados {tot_huevos:,} huevos de tipo {prod_ent} correctamente!")
+            st.rerun()
+        else:
+            st.warning("Ingrese una cantidad válida mayor a 0.")
 
 elif seccion == "📤 Remisiones":
-    st.subheader("📤 Generación de Remisión")
-    st.selectbox("Seleccionar Cliente", ["Cliente General", "Distribuidora San José", "Supermercado Central"])
-    st.text_input("Observaciones o Nota de Entrega", "Entrega por la mañana")
-    if st.button("Crear Remisión PDF"):
-        st.success("¡Remisión generada con éxito!")
+    st.subheader("📤 Generación de Remisión / Salida")
+    clientes_list = obtener_clientes()
+    
+    if not clientes_list:
+        st.warning("⚠️ No hay clientes registrados. Vaya a la sección '👥 Cli.' para registrar uno.")
+    else:
+        cli_sel = st.selectbox("Seleccionar Cliente", clientes_list)
+        fecha_rem = st.date_input("Fecha de Remisión", datetime.now())
+        consecutivo_actual = obtener_siguiente_consecutivo()
+        st.caption(f"Consecutivo asignado: **{consecutivo_actual}**")
+        
+        st.markdown("---")
+        st.markdown("##### 🛒 Detalle de Productos a Facturar")
+        
+        if "carrito_remision" not in st.session_state:
+            st.session_state.carrito_remision = []
+            
+        with st.form("form_item"):
+            p_sel = st.selectbox("Producto", PRODUCTOS)
+            col_a, col_b, col_c = st.columns(3)
+            with col_a: c_cajas = st.number_input("Cajas", min_value=0, value=0)
+            with col_b: c_cubetas = st.number_input("Cubetas", min_value=0, value=0)
+            with col_c: c_unidades = st.number_input("Unidades", min_value=0, value=0)
+            p_precio = st.number_input("Precio por Huevo ($)", min_value=0.0, value=500.0, step=10.0)
+            
+            btn_add = st.form_submit_button("➕ Agregar al Carrito")
+            if btn_add:
+                t_h = (c_cajas * 360) + (c_cubetas * 30) + c_unidades
+                if t_h > 0:
+                    val_tot = t_h * p_precio
+                    st.session_state.carrito_remision.append({
+                        "Producto": p_sel, "Cajas": c_cajas, "Cubetas": c_cubetas,
+                        "Unidades": c_unidades, "Total Huevos": t_h,
+                        "Precio Unitario": p_precio, "Total ($)": val_tot
+                    })
+                    st.success(f"Añadido {p_sel} ({t_h:,} huevos)")
+                    st.rerun()
+                else:
+                    st.error("Ingrese una cantidad válida.")
+
+        if st.session_state.carrito_remision:
+            df_cart = pd.DataFrame(st.session_state.carrito_remision)
+            st.dataframe(df_cart[["Producto", "Total Huevos", "Precio Unitario", "Total ($)"]], use_container_width=True)
+            tot_remision = df_cart["Total ($)"].sum()
+            st.markdown(f"### **Total Remisión: ${tot_remision:,.2f}**")
+            
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if st.button("🗑️ Vaciar Carrito"):
+                    st.session_state.carrito_remision = []
+                    st.rerun()
+            with col_b2:
+                if st.button("✅ Procesar y Crear PDF", use_container_width=True):
+                    for item in st.session_state.carrito_remision:
+                        guardar_movimiento(
+                            fecha_rem, "SALIDA", item["Producto"],
+                            item["Cajas"], item["Cubetas"], item["Unidades"],
+                            item["Total Huevos"], cli_sel, item["Precio Unitario"],
+                            item["Total ($)"], consecutivo_actual
+                        )
+                    
+                    pdf_buf = generar_pdf_remision(consecutivo_actual, fecha_rem.strftime('%d/%m/%Y'), cli_sel, df_cart, tot_remision)
+                    st.download_button(
+                        label="📄 Descargar Remisión PDF",
+                        data=pdf_buf,
+                        file_name=f"Remision_{consecutivo_actual}_{cli_sel}.pdf",
+                        mime="application/pdf"
+                    )
+                    st.session_state.carrito_remision = []
+                    st.success("¡Remisión procesada y guardada exitosamente!")
 
 elif seccion == "👥 Clientes":
-    st.subheader("👥 Gestión de Clientes")
-    st.text_input("Nombre / Razon Social del Cliente")
-    st.text_input("Teléfono / Contacto")
-    if st.button("Agregar Cliente"):
-        st.success("Cliente guardado correctamente.")
+    st.subheader("👥 Registro y Gestión de Clientes")
+    nuevo_cli = st.text_input("Nombre del Nuevo Cliente / Distribuidor")
+    if st.button("➕ Agregar Cliente", use_container_width=True):
+        if nuevo_cli.strip():
+            agregar_cliente(nuevo_cli)
+            st.rerun()
+        else:
+            st.warning("Por favor ingrese un nombre válido.")
+            
+    st.markdown("---")
+    st.markdown("##### 📜 Clientes Registrados")
+    list_c = obtener_clientes()
+    if list_c:
+        for c in list_c:
+            st.text(f"• {c}")
+    else:
+        st.info("Aún no hay clientes registrados.")
 
 elif seccion == "📊 Stock":
-    st.subheader("📊 Inventario en Stock")
-    data_stock = {"Producto": ["Tipo AA", "Tipo A", "Tipo B"], "Stock Actual": [150, 320, 95]}
-    st.table(pd.DataFrame(data_stock))
+    st.subheader("📊 Inventario Actual en Stock")
+    conn = get_connection()
+    if conn:
+        df_inv = pd.read_sql("SELECT * FROM inventario", conn)
+        conn.close()
+        
+        if not df_inv.empty:
+            resumen = []
+            for p in PRODUCTOS:
+                entradas = df_inv[(df_inv["producto"] == p) & (df_inv["tipo_movimiento"] == "ENTRADA")]["total_huevos"].sum()
+                salidas = df_inv[(df_inv["producto"] == p) & (df_inv["tipo_movimiento"] == "SALIDA")]["total_huevos"].sum()
+                stock_h = entradas - salidas
+                
+                cajas_stk = stock_h // 360
+                rem_cajas = stock_h % 360
+                cubetas_stk = rem_cajas // 30
+                unidades_stk = rem_cajas % 30
+                
+                resumen.append({
+                    "Producto": p,
+                    "Stock (Huevos)": stock_h,
+                    "Cajas": cajas_stk,
+                    "Cubetas": cubetas_stk,
+                    "Unid. Sueltas": unidades_stk
+                })
+            
+            st.dataframe(pd.DataFrame(resumen), use_container_width=True)
+        else:
+            st.info("No hay movimientos registrados en el inventario.")
 
 elif seccion == "📜 Historial":
     st.subheader("📜 Historial de Movimientos")
-    st.info("Aquí aparecerá el registro histórico de entradas y salidas.")
+    conn = get_connection()
+    if conn:
+        df_hist = pd.read_sql("SELECT fecha, consecutivo, tipo_movimiento, cliente, producto, total_huevos, total_dinero FROM inventario ORDER BY id DESC LIMIT 50", conn)
+        conn.close()
+        if not df_hist.empty:
+            st.dataframe(df_hist, use_container_width=True)
+        else:
+            st.info("Historial vacío.")

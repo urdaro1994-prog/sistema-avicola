@@ -223,7 +223,7 @@ import streamlit as st
 col1, col2 = st.columns([1, 4])
 
 with col1:
-    st.image("escudo.png", width=100) # Nombre exacto del archivo subido a GitHub
+    st.image("ESCUDO.png", width=100) # Nombre exacto del archivo subido a GitHub
 
 with col2:
     st.title("Control de Postura y Stock de Huevos")

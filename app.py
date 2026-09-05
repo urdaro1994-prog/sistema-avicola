@@ -12,7 +12,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="App David - Agroavícola Santa Isabel",
+    page_title="App David",
     page_icon="🥚",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -20,8 +20,7 @@ st.set_page_config(
 
 # --- CREAR ÍCONO SVG CON HUEVO PARA APPLE Y ANDROID ---
 svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="22" fill="#0F2C59"/>
-  <circle cx="50" cy="50" r="38" fill="#FF6B00" opacity="0.2"/>
+  <rect width="100" height="100" rx="20" fill="#125375"/>
   <text x="50" y="68" font-size="65" text-anchor="middle">🥚</text>
 </svg>"""
 
@@ -49,158 +48,49 @@ st.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS PERSONALIZADOS (FONDO NARANJA + COMBINACIÓN AZUL/BLANCO) ---
+# --- ESTILOS CSS ---
 st.markdown(
     """
     <style>
-    /* Ocultar elementos nativos de Streamlit */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Fondo Naranja Degradado Cálido */
-    .stApp {
-        background: linear-gradient(180deg, #FFF3E0 0%, #FFE0B2 100%) !important;
-        background-attachment: fixed;
-    }
-
-    /* Tarjeta Central Flotante Blanca */
     .block-container {
-        padding-top: 1.2rem;
+        padding-top: 1rem;
         padding-bottom: 5rem;
-        padding-left: 1rem;
-        padding-right: 1rem;
-        max-width: 520px;
-        background-color: #FFFFFF;
-        border-radius: 22px;
-        box-shadow: 0px 10px 30px rgba(230, 81, 0, 0.18);
-        margin-top: 10px;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+        max-width: 500px;
     }
     
-    /* Textos y Etiquetas Visibles en Azul Oscuro Imperial */
-    label, .stSelectbox label, .stNumberInput label, .stTextInput label, .stDateInput label {
-        color: #0F2C59 !important;
-        font-weight: 700 !important;
-        font-size: 14px !important;
-    }
-    
-    div[data-baseweb="select"] > div, div[data-baseweb="input"] > div {
-        background-color: #FAFAFA !important;
-        border: 1.5px solid #E2E8F0 !important;
-        border-radius: 10px !important;
-        color: #0F2C59 !important;
-    }
-
-    div[data-baseweb="select"] span {
-        color: #0F2C59 !important;
-        font-weight: 600 !important;
-    }
-
-    /* Botones Principales en Azul Oscuro */
     .stButton>button {
         width: 100%;
         border-radius: 12px;
-        height: 3.2em;
-        font-weight: 700;
-        font-size: 14px;
-        background: linear-gradient(135deg, #0F2C59 0%, #1E3A8A 100%);
-        color: #FFFFFF !important;
+        height: 3em;
+        font-weight: bold;
+        background-color: #125375;
+        color: white;
         border: none;
-        box-shadow: 0px 4px 10px rgba(15, 44, 89, 0.25);
-        transition: all 0.25s ease-in-out;
-    }
-    
-    .stButton>button:hover {
-        background: linear-gradient(135deg, #FF6B00 0%, #E65100 100%);
-        color: #FFFFFF !important;
-        box-shadow: 0px 6px 14px rgba(255, 107, 0, 0.35);
-        transform: translateY(-1px);
-    }
-    
-    /* Títulos e Indicadores */
-    h1, h2, h3, p {
-        color: #0F2C59 !important;
-    }
-    
-    hr {
-        border-top: 2px solid #FF6B00 !important;
-        opacity: 0.85;
-        margin-top: 0.8rem !important;
-        margin-bottom: 1.2rem !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- CONEXIÓN A BASE DE DATOS POSTGRESQL ---
-def get_connection():
-    try:
-        conn = psycopg2.connect(st.secrets["postgres"]["url"])
-        return conn
-    except Exception as e:
-        st.error(f"Error de conexión a la base de datos: {e}")
-        return None
-
-# --- INICIALIZACIÓN DE TABLAS EN LA BASE DE DATOS ---
-def init_db():
-    conn = get_connection()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS clientes (
-                id SERIAL PRIMARY KEY,
-                nombre VARCHAR(100) NOT NULL UNIQUE
-            );
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS inventario (
-                id SERIAL PRIMARY KEY,
-                fecha DATE NOT NULL,
-                tipo_movimiento VARCHAR(20) NOT NULL,
-                producto VARCHAR(50) NOT NULL,
-                cajas INT DEFAULT 0,
-                cubetas INT DEFAULT 0,
-                unidades INT DEFAULT 0,
-                total_huevos INT NOT NULL,
-                cliente VARCHAR(100),
-                precio_unidad NUMERIC(10,2) DEFAULT 0,
-                total_dinero NUMERIC(12,2) DEFAULT 0,
-                consecutivo VARCHAR(20)
-            );
-        """)
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-init_db()
-
-# --- ENCABEZADO AGROAVÍCOLA SANTA ISABEL ---
-col_logo, col_tit = st.columns([1, 3.8])
+# --- ENCABEZADO ---
+col_logo, col_tit = st.columns([1, 3])
 with col_logo:
     if os.path.exists("ESCUDO.png"):
-        st.image("ESCUDO.png", width=80)
+        st.image("ESCUDO.png", width=70)
     elif os.path.exists("escudo.png"):
-        st.image("escudo.png", width=80)
+        st.image("escudo.png", width=70)
     else:
-        st.markdown("<div style='font-size: 55px; text-align: center; line-height: 1;'>🛡️</div>", unsafe_allow_html=True)
-
+        st.write("🛡️")
 with col_tit:
-    st.markdown("""
-        <div style='padding-left: 5px;'>
-            <div style='color: #0F2C59; font-size: 26px; font-weight: 900; letter-spacing: 1.2px; line-height: 1.05; font-family: system-ui, -apple-system, sans-serif;'>
-                AGROAVÍCOLA
-            </div>
-            <div style='color: #E65100; font-size: 20px; font-weight: 800; font-style: italic; letter-spacing: 0.5px; line-height: 1.2;'>
-                Santa Isabel
-            </div>
-            <div style='color: #475569; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase;'>
-                Sistema de Control y Gestión
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("### **AGROAVÍCOLA**\n*Santa Isabel*")
 
-# --- NAVEGACIÓN Y PESTAÑAS ---
+# --- NAVEGACIÓN ---
 if "seccion_activa" not in st.session_state:
     st.session_state.seccion_activa = "📤 Remisiones"
 
@@ -210,7 +100,7 @@ with c_nav1:
 with c_nav2:
     if st.button("📤 Rem.", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
 with c_nav3:
-    if st.button("👥 Cli.", use_container_width=True): st.session_state.seccion_activa = "👥 Clientes"
+    if st.button("👥 Clic.", use_container_width=True): st.session_state.seccion_activa = "👥 Clientes"
 with c_nav4:
     if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
 with c_nav5:
@@ -218,275 +108,584 @@ with c_nav5:
 
 st.markdown("---")
 
-PRODUCTOS = ["JUMBO", "AAA", "AA", "A", "B", "C", "D", "VENCIDO / ROTO"]
-
 # --- FUNCIONES DE BASE DE DATOS ---
-def obtener_clientes():
-    conn = get_connection()
-    if conn:
-        df = pd.read_sql("SELECT nombre FROM clientes ORDER BY nombre ASC", conn)
-        conn.close()
-        return df["nombre"].tolist()
-    return []
+def get_connection():
+    return psycopg2.connect(st.secrets["postgres"]["url"])
 
-def agregar_cliente(nombre):
+def inicializar_tabla_clientes():
     conn = get_connection()
-    if conn:
-        cursor = conn.cursor()
-        try:
-            cursor.execute("INSERT INTO clientes (nombre) VALUES (%s)", (nombre.strip().upper(),))
-            conn.commit()
-            st.success(f"Cliente '{nombre.upper()}' agregado con éxito.")
-        except Exception as e:
-            st.error(f"Error al agregar cliente: {e}")
-        finally:
-            cursor.close()
-            conn.close()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS clientes (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT UNIQUE NOT NULL,
+            cedula_nit TEXT,
+            direccion TEXT,
+            telefono TEXT,
+            email TEXT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
-def guardar_movimiento(fecha, tipo, producto, cajas, cubetas, unidades, total_huevos, cliente=None, precio=0, total_dinero=0, consecutivo=None):
+def cargar_clientes():
+    inicializar_tabla_clientes()
     conn = get_connection()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO inventario (fecha, tipo_movimiento, producto, cajas, cubetas, unidades, total_huevos, cliente, precio_unidad, total_dinero, consecutivo)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (fecha, tipo, producto, cajas, cubetas, unidades, total_huevos, cliente, precio, total_dinero, consecutivo))
-        conn.commit()
-        cursor.close()
-        conn.close()
+    df = pd.read_sql_query("SELECT * FROM clientes ORDER BY nombre ASC", conn)
+    conn.close()
+    return df
 
-def obtener_siguiente_consecutivo():
+def guardar_cliente(nombre, cedula, direccion, telefono, email):
     conn = get_connection()
-    if conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT MAX(CAST(NULLIF(regexp_replace(consecutivo, '\D', '', 'g'), '') AS INTEGER)) FROM inventario WHERE consecutivo IS NOT NULL")
-        res = cursor.fetchone()[0]
-        cursor.close()
-        conn.close()
-        if res:
-            return f"REM-{(res + 1):04d}"
-    return "REM-0001"
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO clientes (nombre, cedula_nit, direccion, telefono, email)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (nombre) DO UPDATE SET
+            cedula_nit = EXCLUDED.cedula_nit,
+            direccion = EXCLUDED.direccion,
+            telefono = EXCLUDED.telefono,
+            email = EXCLUDED.email;
+    """, (nombre.strip().upper(), cedula, direccion, telefono, email))
+    conn.commit()
+    cur.close()
+    conn.close()
 
-# --- GENERADOR DE PDF REMISIÓN ---
-def generar_pdf_remision(consecutivo, fecha, cliente, df_detalles, total_general):
+def eliminar_cliente(cliente_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM clientes WHERE id = %s", (cliente_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_inventario():
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM inventario ORDER BY galpon", conn)
+    conn.close()
+    return df.set_index('galpon')
+
+def cargar_remisiones():
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
+    conn.close()
+    if not df.empty and 'num_remision' not in df.columns:
+        df['num_remision'] = df['id']
+    return df
+
+def obtener_siguiente_num_remision():
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT COALESCE(MAX(num_remision), 0) + 1 FROM remisiones")
+        num = cur.fetchone()[0]
+    except Exception:
+        conn.rollback()
+        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM remisiones")
+        num = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return num
+
+def registrar_produccion(fecha, galpon, conteos):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO produccion (fecha, galpon, yumbo, extra, aa, a, b, c, sucio, roto)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (fecha, galpon, conteos['Yumbo'], conteos['Extra'], conteos['AA'], 
+          conteos['A'], conteos['B'], conteos['C'], conteos['Sucio'], conteos['Roto']))
+    
+    cur.execute("""
+        UPDATE inventario SET
+            yumbo = yumbo + %s, extra = extra + %s, aa = aa + %s, a = a + %s,
+            b = b + %s, c = c + %s, sucio = sucio + %s, roto = roto + %s
+        WHERE galpon = %s
+    """, (conteos['Yumbo'], conteos['Extra'], conteos['AA'], conteos['A'],
+          conteos['B'], conteos['C'], conteos['Sucio'], conteos['Roto'], galpon))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, galpon, items_venta):
+    conn = get_connection()
+    cur = conn.cursor()
+    fecha_actual = datetime.now()
+
+    cur.execute("""
+        SELECT column_name, is_generated, identity_generation 
+        FROM information_schema.columns 
+        WHERE table_name = 'remisiones';
+    """)
+    columnas_validas = set()
+    for col_name, is_gen, id_gen in cur.fetchall():
+        if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
+            columnas_validas.add(col_name)
+
+    for item in items_venta:
+        clasificacion = item['Clasificación'].lower()
+        cantidad = int(item['Cantidad (Huevos)'])
+        subtotal = float(item['Subtotal ($)'])
+        precio_u = float(item['Precio Unitario ($)'])
+
+        datos_insert = {
+            "num_remision": num_remision, "fecha_emision": fecha_actual,
+            "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
+            "destino": direccion, "email": email, "conductor": conductor,
+            "tipo_huevo": clasificacion, "cantidad": cantidad,
+            "precio_unitario": precio_u, "total": subtotal, "galpon": galpon
+        }
+        
+        datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
+
+        if datos_reales:
+            cols = ", ".join(datos_reales.keys())
+            vals = tuple(datos_reales.values())
+            placeholders = ", ".join(["%s"] * len(datos_reales))
+            cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
+
+        cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galpon))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, galpon_origen, df_viejos, items_nuevos):
+    conn = get_connection()
+    cur = conn.cursor()
+    fecha_actual = datetime.now()
+
+    for _, row in df_viejos.iterrows():
+        c_tipo = str(row.get('tipo_huevo', 'a')).lower()
+        c_cant = int(row.get('cantidad', 0))
+        g_bd = row.get('galpon', galpon_origen)
+        if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
+        cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
+
+    cur.execute("""
+        SELECT column_name, is_generated, identity_generation 
+        FROM information_schema.columns 
+        WHERE table_name = 'remisiones';
+    """)
+    filas_cols = cur.fetchall()
+    columnas_totales = [col[0] for col in filas_cols]
+    columnas_validas = {c[0] for c in filas_cols if c[1] != 'ALWAYS' and c[2] != 'ALWAYS'}
+
+    col_filtro = "num_remision" if "num_remision" in columnas_totales else "id"
+    cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
+
+    for item in items_nuevos:
+        clasif = item['Clasificación'].lower()
+        cant = int(item['Cantidad (Huevos)'])
+        subtotal = float(item['Subtotal ($)'])
+        precio_u = float(item['Precio Unitario ($)'])
+
+        datos_insert = {
+            "num_remision": num_remision, "fecha_emision": fecha_actual,
+            "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
+            "destino": direccion, "email": email, "conductor": conductor,
+            "tipo_huevo": clasif, "cantidad": cant,
+            "precio_unitario": precio_u, "total": subtotal, "galpon": galpon_origen
+        }
+        
+        datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
+
+        if datos_reales:
+            cols = ", ".join(datos_reales.keys())
+            vals = tuple(datos_reales.values())
+            placeholders = ", ".join(["%s"] * len(datos_reales))
+            cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
+
+        cur.execute(f"UPDATE inventario SET {clasif} = {clasif} - %s WHERE galpon = %s", (cant, galpon_origen))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def eliminar_remision_completa(num_remision, galpon_origen, df_viejos):
+    conn = get_connection()
+    cur = conn.cursor()
+    for _, row in df_viejos.iterrows():
+        c_tipo = str(row.get('tipo_huevo', 'a')).lower()
+        c_cant = int(row.get('cantidad', 0))
+        g_bd = row.get('galpon', galpon_origen)
+        if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
+        cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
+        
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
+    cols_existentes = [r[0] for r in cur.fetchall()]
+    col_filtro = "num_remision" if "num_remision" in cols_existentes else "id"
+
+    cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, items_df, total_factura):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
     styles = getSampleStyleSheet()
+    style_normal = styles['Normal']
     
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, leading=18, textColor=colors.HexColor('#0F2C59'), fontName='Helvetica-Bold')
-    sub_style = ParagraphStyle('SubStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.HexColor('#475569'))
-    rem_style = ParagraphStyle('RemStyle', parent=styles['Heading2'], fontSize=14, leading=16, textColor=colors.HexColor('#FF6B00'), alignment=2, fontName='Helvetica-Bold')
+    header_data = [
+        [
+            Image("ESCUDO.png", width=60, height=60) if os.path.exists("ESCUDO.png") else "🛡️",
+            Paragraph("<font size=16 color='#ffffff'><b>Remisión de venta</b></font>", style_normal),
+            Paragraph("<font size=9 color='#ffffff'><b>Agroavicola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
+        ]
+    ]
+    t_header = Table(header_data, colWidths=[80, 260, 200])
+    t_header.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#125375")),
+        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+        ('TOPPADDING', (0,0), (-1,-1), 10),
+    ]))
+    story.append(t_header)
+    story.append(Spacer(1, 15))
 
-    elements = []
-    
-    logo_p = Paragraph("<b>AGROAVÍCOLA SANTA ISABEL</b><br/><font size=8>NIT / REGISTRO: 123456789-0<br/>Contacto: 310 000 0000</font>", title_style)
-    rem_p = Paragraph(f"<b>REMISIÓN</b><br/><font size=11 color='#0F2C59'>Nº {consecutivo}</font><br/><font size=9 color='#475569'>Fecha: {fecha}</font>", rem_style)
-    
-    header_table = Table([[logo_p, rem_p]], colWidths=[330, 220])
-    header_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
-    elements.append(header_table)
-    elements.append(Spacer(1, 15))
+    num_str = f"{num_remision:06d}"
+    cliente_info_data = [
+        [
+            Paragraph(f"<b>Remisión No.</b> {num_str}<br/><b>Fecha</b> {fecha_str}<br/><b>Conductor</b> {conductor}", style_normal),
+            Paragraph(f"<b>Datos del cliente</b><br/><b>Nombre/Razón Social:</b> {cliente_datos['nombre']}<br/><b>Cédula/NIT:</b> {cliente_datos['cedula']}<br/><b>Dirección:</b> {cliente_datos['direccion']}<br/><b>Teléfono:</b> {cliente_datos['telefono']}<br/><b>Email:</b> {cliente_datos['email']}", style_normal)
+        ]
+    ]
+    t_info = Table(cliente_info_data, colWidths=[240, 300])
+    t_info.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
+    story.append(t_info)
+    story.append(Spacer(1, 15))
 
-    cli_p = Paragraph(f"<b>CLIENTE:</b> {cliente.upper()}", ParagraphStyle('Cli', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#0F2C59')))
-    elements.append(cli_p)
-    elements.append(Spacer(1, 12))
-
-    table_data = [["Producto", "Cajas", "Cubet.", "Unid.", "Total H.", "Val. Unid", "Total ($)"]]
-    for _, row in df_detalles.iterrows():
+    table_data = [["Descripción", "Cantidad", "Valor Unitario", "Valor total"]]
+    for _, fila in items_df.iterrows():
         table_data.append([
-            str(row["Producto"]),
-            str(row["Cajas"]),
-            str(row["Cubetas"]),
-            str(row["Unidades"]),
-            str(row["Total Huevos"]),
-            f"${row['Precio Unitario']:,.2f}",
-            f"${row['Total ($)']:,.2f}"
+            str(fila["Clasificación"]).upper(),
+            f"{int(fila['Cantidad (Huevos)']):,}",
+            f"$ {fila['Precio Unitario ($)']:,.2f}",
+            f"$ {fila['Subtotal ($)']:,.2f}"
         ])
-    
-    table_data.append(["TOTAL GENERAL", "", "", "", "", "", f"${total_general:,.2f}"])
 
-    t = Table(table_data, colWidths=[110, 50, 50, 50, 70, 90, 110])
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#0F2C59')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+    for _ in range(max(0, 5 - len(items_df))):
+        table_data.append(["", "", "", ""])
+
+    t_items = Table(table_data, colWidths=[200, 100, 120, 120])
+    t_items.setStyle(TableStyle([
+        ('LINEBELOW', (0,0), (-1,0), 1.5, colors.black),
+        ('LINEABOVE', (0,0), (-1,0), 1.5, colors.black),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0,0), (-1,0), 9),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('ALIGN', (0,1), (0,-1), 'LEFT'),
-        ('BOTTOMPADDING', (0,0), (-1,0), 6),
-        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#FFE0B2')),
-        ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+        ('ALIGN', (1,0), (-1,-1), 'CENTER'),
+        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#c1d5e0")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#eef4f8"), colors.white]),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
     ]))
-    elements.append(t)
-    elements.append(Spacer(1, 30))
-    
-    firma_data = [["_______________________", "_______________________"], ["Entregado por", "Recibido por (Cliente)"]]
-    tf = Table(firma_data, colWidths=[270, 270])
-    tf.setStyle(TableStyle([
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-        ('TEXTCOLOR', (0,0), (-1,-1), colors.HexColor('#0F2C59')),
-        ('FONTSIZE', (0,0), (-1,-1), 9)
-    ]))
-    elements.append(tf)
+    story.append(t_items)
+    story.append(Spacer(1, 10))
 
-    doc.build(elements)
+    totales_data = [
+        ["Subtotal", f"$ {total_factura:,.2f}"],
+        ["IVA", "$ 0.00"],
+        ["Total", f"$ {total_factura:,.2f}"]
+    ]
+    t_totales = Table(totales_data, colWidths=[420, 120])
+    t_totales.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('FONTNAME', (0,2), (-1,2), 'Helvetica-Bold'),
+        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#125375")),
+    ]))
+    story.append(t_totales)
+    doc.build(story)
     buffer.seek(0)
     return buffer
 
-# --- SECCIONES DE LA APLICACIÓN ---
-seccion = st.session_state.seccion_activa
+# --- SECCIONES ---
 
-if seccion == "📥 Entrada":
-    st.subheader("📥 Registro de Entrada de Producción")
-    fecha_ent = st.date_input("Fecha de Entrada", datetime.now())
-    prod_ent = st.selectbox("Tipo de Huevo", PRODUCTOS)
-    
-    c1, c2, c3 = st.columns(3)
-    with c1: cajas = st.number_input("Cajas (360)", min_value=0, value=0, step=1)
-    with c2: cubetas = st.number_input("Cubetas (30)", min_value=0, value=0, step=1)
-    with c3: unidades = st.number_input("Unidades", min_value=0, value=0, step=1)
-    
-    tot_huevos = (cajas * 360) + (cubetas * 30) + unidades
-    st.info(f" Total de Huevos a ingresar: **{tot_huevos:,}** unidades")
-    
-    if st.button("📥 Registrar Entrada", use_container_width=True):
-        if tot_huevos > 0:
-            guardar_movimiento(fecha_ent, "ENTRADA", prod_ent, cajas, cubetas, unidades, tot_huevos)
-            st.success(f"¡Ingresados {tot_huevos:,} huevos de tipo {prod_ent} correctamente!")
-            st.rerun()
-        else:
-            st.warning("Ingrese una cantidad válida mayor a 0.")
+if st.session_state.seccion_activa == "📥 Entrada":
+    st.subheader("📥 Registro Diario de Postura")
+    fecha = st.date_input("Fecha", datetime.now())
+    galpon = st.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
+    y = st.number_input("Yumbo", min_value=0, value=0)
+    ex = st.number_input("Extra", min_value=0, value=0)
+    aa = st.number_input("AA", min_value=0, value=0)
+    a = st.number_input("A", min_value=0, value=0)
+    b = st.number_input("B", min_value=0, value=0)
+    c = st.number_input("C", min_value=0, value=0)
+    suc = st.number_input("Sucio", min_value=0, value=0)
+    rot = st.number_input("Roto", min_value=0, value=0)
+    if st.button("💾 Guardar Producción"):
+        conteos = {'Yumbo': y, 'Extra': ex, 'AA': aa, 'A': a, 'B': b, 'C': c, 'Sucio': suc, 'Roto': rot}
+        registrar_produccion(fecha, galpon, conteos)
+        st.success("¡Registro de producción guardado!")
 
-elif seccion == "📤 Remisiones":
-    st.subheader("📤 Generación de Remisión / Salida")
-    clientes_list = obtener_clientes()
+elif st.session_state.seccion_activa == "📤 Remisiones":
+    df_inv = cargar_inventario()
+    df_clientes = cargar_clientes()
+    num_remision_actual = obtener_siguiente_num_remision()
     
-    if not clientes_list:
-        st.warning("⚠️ No hay clientes registrados. Vaya a la sección '👥 Cli.' para registrar uno.")
-    else:
-        cli_sel = st.selectbox("Seleccionar Cliente", clientes_list)
-        fecha_rem = st.date_input("Fecha de Remisión", datetime.now())
-        consecutivo_actual = obtener_siguiente_consecutivo()
-        st.caption(f"Consecutivo asignado: **{consecutivo_actual}**")
-        
-        st.markdown("---")
-        st.markdown("##### 🛒 Detalle de Productos a Facturar")
-        
-        if "carrito_remision" not in st.session_state:
-            st.session_state.carrito_remision = []
-            
-        with st.form("form_item"):
-            p_sel = st.selectbox("Producto", PRODUCTOS)
-            col_a, col_b, col_c = st.columns(3)
-            with col_a: c_cajas = st.number_input("Cajas", min_value=0, value=0)
-            with col_b: c_cubetas = st.number_input("Cubetas", min_value=0, value=0)
-            with col_c: c_unidades = st.number_input("Unidades", min_value=0, value=0)
-            p_precio = st.number_input("Precio por Huevo ($)", min_value=0.0, value=500.0, step=10.0)
-            
-            btn_add = st.form_submit_button("➕ Agregar al Carrito")
-            if btn_add:
-                t_h = (c_cajas * 360) + (c_cubetas * 30) + c_unidades
-                if t_h > 0:
-                    val_tot = t_h * p_precio
-                    st.session_state.carrito_remision.append({
-                        "Producto": p_sel, "Cajas": c_cajas, "Cubetas": c_cubetas,
-                        "Unidades": c_unidades, "Total Huevos": t_h,
-                        "Precio Unitario": p_precio, "Total ($)": val_tot
-                    })
-                    st.success(f"Añadido {p_sel} ({t_h:,} huevos)")
-                    st.rerun()
+    st.subheader(f"📋 Remisión No. {num_remision_actual:06d}")
+
+    # SELECTOR DE CLIENTE GUARDADO
+    opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
+    cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", opciones_cli)
+
+    val_nombre, val_cedula, val_dir, val_tel, val_email = "", "", "CHOACHI", "", ""
+
+    if cliente_sel != "-- Escribir cliente nuevo --" and not df_clientes.empty:
+        d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
+        val_nombre = str(d_cli.get("nombre", ""))
+        val_cedula = str(d_cli.get("cedula_nit", ""))
+        val_dir = str(d_cli.get("direccion", "CHOACHI"))
+        val_tel = str(d_cli.get("telefono", ""))
+        val_email = str(d_cli.get("email", ""))
+
+    cliente_nombre = st.text_input("Razón Social / Cliente", value=val_nombre, placeholder="Ej. RAFAEL GARCIA")
+    cedula_nit = st.text_input("Cédula / NIT", value=val_cedula, placeholder="Ej. 901.786.799-7")
+    direccion = st.text_input("Dirección", value=val_dir)
+    telefono = st.text_input("Teléfono", value=val_tel, placeholder="Ej. 3102397244")
+    email = st.text_input("Email", value=val_email, placeholder="cliente@correo.com")
+    conductor = st.text_input("Conductor", value="Ivan Herrera")
+    
+    guardar_cli_auto = st.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
+    galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal_m")
+
+    st.markdown("### 🛒 Detalle del Despacho")
+    opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+    df_base = pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 3000, "Precio Unitario ($)": 370.0}])
+
+    df_editado = st.data_editor(
+        df_base,
+        num_rows="dynamic",
+        column_config={
+            "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+            "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
+            "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True)
+        },
+        use_container_width=True
+    )
+
+    items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+
+    if not items_validos.empty:
+        items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
+        total_factura = items_validos["Subtotal ($)"].sum()
+        st.markdown(f"### **TOTAL: ${total_factura:,.2f}**")
+
+        if st.button("🚀 Confirmar y Generar Remisión"):
+            if not cliente_nombre.strip():
+                st.error("Por favor ingresa el Nombre del cliente.")
+            else:
+                errores_stock = []
+                for _, fila in items_validos.iterrows():
+                    c_clasif = fila["Clasificación"]
+                    c_cant = int(fila["Cantidad (Huevos)"])
+                    stock_disp = df_inv.loc[galpon_v, c_clasif]
+                    if c_cant > stock_disp:
+                        errores_stock.append(f"Stock insuficiente para {c_clasif.upper()}. Disponible: {stock_disp}")
+
+                if errores_stock:
+                    for err in errores_stock: st.error(err)
                 else:
-                    st.error("Ingrese una cantidad válida.")
+                    if guardar_cli_auto:
+                        guardar_cliente(cliente_nombre, cedula_nit, direccion, telefono, email)
 
-        if st.session_state.carrito_remision:
-            df_cart = pd.DataFrame(st.session_state.carrito_remision)
-            st.dataframe(df_cart[["Producto", "Total Huevos", "Precio Unitario", "Total ($)"]], use_container_width=True)
-            tot_remision = df_cart["Total ($)"].sum()
-            st.markdown(f"### **Total Remisión: ${tot_remision:,.2f}**")
-            
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button("🗑️ Vaciar Carrito"):
-                    st.session_state.carrito_remision = []
-                    st.rerun()
-            with col_b2:
-                if st.button("✅ Procesar y Crear PDF", use_container_width=True):
-                    for item in st.session_state.carrito_remision:
-                        guardar_movimiento(
-                            fecha_rem, "SALIDA", item["Producto"],
-                            item["Cajas"], item["Cubetas"], item["Unidades"],
-                            item["Total Huevos"], cli_sel, item["Precio Unitario"],
-                            item["Total ($)"], consecutivo_actual
-                        )
+                    items_dict = items_validos.to_dict(orient="records")
+                    registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, galpon_v, items_dict)
+                    st.success(f"¡Remisión No. {num_remision_actual:06d} guardada con éxito!")
                     
-                    pdf_buf = generar_pdf_remision(consecutivo_actual, fecha_rem.strftime('%d/%m/%Y'), cli_sel, df_cart, tot_remision)
-                    st.download_button(
-                        label="📄 Descargar Remisión PDF",
-                        data=pdf_buf,
-                        file_name=f"Remision_{consecutivo_actual}_{cli_sel}.pdf",
-                        mime="application/pdf"
-                    )
-                    st.session_state.carrito_remision = []
-                    st.success("¡Remisión procesada y guardada exitosamente!")
+                    datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
+                    pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, items_validos, total_factura)
+                    st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
 
-elif seccion == "👥 Clientes":
-    st.subheader("👥 Registro y Gestión de Clientes")
-    nuevo_cli = st.text_input("Nombre del Nuevo Cliente / Distribuidor")
-    if st.button("➕ Agregar Cliente", use_container_width=True):
-        if nuevo_cli.strip():
-            agregar_cliente(nuevo_cli)
-            st.rerun()
-        else:
-            st.warning("Por favor ingrese un nombre válido.")
+elif st.session_state.seccion_activa == "👥 Clientes":
+    st.subheader("👥 Directorio de Clientes")
+    
+    tab_nuevo, tab_lista = st.tabs(["➕ Agregar Cliente", "📋 Lista de Clientes"])
+    
+    with tab_nuevo:
+        with st.form(key="form_nuevo_cliente"):
+            st.markdown("### Datos del Cliente")
+            c_nom = st.text_input("Nombre / Razón Social *", placeholder="Ej. RAFAEL GARCIA")
+            c_ced = st.text_input("Cédula / NIT", placeholder="Ej. 901.786.799-7")
+            c_dir = st.text_input("Dirección", value="CHOACHI")
+            c_tel = st.text_input("Teléfono", placeholder="Ej. 3102397244")
+            c_em = st.text_input("Email", placeholder="cliente@correo.com")
             
-    st.markdown("---")
-    st.markdown("##### 📜 Clientes Registrados")
-    list_c = obtener_clientes()
-    if list_c:
-        for c in list_c:
-            st.text(f"• {c}")
+            if st.form_submit_button("💾 Guardar Cliente"):
+                if not c_nom.strip():
+                    st.error("El nombre del cliente es obligatorio.")
+                else:
+                    guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
+                    st.success(f"¡Cliente {c_nom.upper()} guardado exitosamente!")
+                    st.rerun()
+
+    with tab_lista:
+        df_cli = cargar_clientes()
+        if df_cli.empty:
+            st.info("No hay clientes registrados en la base de datos.")
+        else:
+            st.caption(f"Total registrados: {len(df_cli)}")
+            for _, r_cli in df_cli.iterrows():
+                id_c = r_cli['id']
+                nom_c = r_cli['nombre']
+                ced_c = r_cli.get('cedula_nit', '')
+                tel_c = r_cli.get('telefono', '')
+                dir_c = r_cli.get('direccion', '')
+                em_c = r_cli.get('email', '')
+
+                with st.expander(f"👤 {nom_c} ({ced_c if ced_c else 'Sin Cédula/NIT'})"):
+                    st.write(f"**Teléfono:** {tel_c}")
+                    st.write(f"**Dirección:** {dir_c}")
+                    st.write(f"**Email:** {em_c}")
+                    if st.button(f"🗑️ Eliminar {nom_c}", key=f"del_cli_{id_c}"):
+                        eliminar_cliente(id_c)
+                        st.warning(f"Cliente {nom_c} eliminado.")
+                        st.rerun()
+
+elif st.session_state.seccion_activa == "📊 Stock":
+    st.subheader("📦 Stock en Granja")
+    st.dataframe(cargar_inventario(), use_container_width=True)
+
+elif st.session_state.seccion_activa == "📜 Historial":
+    st.subheader("📜 Historial de Remisiones")
+    df_historial = cargar_remisiones()
+    
+    if df_historial.empty:
+        st.info("No hay remisiones registradas en la base de datos todavía.")
     else:
-        st.info("Aún no hay clientes registrados.")
-
-elif seccion == "📊 Stock":
-    st.subheader("📊 Inventario Actual en Stock")
-    conn = get_connection()
-    if conn:
-        df_inv = pd.read_sql("SELECT * FROM inventario", conn)
-        conn.close()
+        busqueda = st.text_input("🔍 Buscar cliente o N° Remisión", placeholder="Ej. RAFAEL GARCIA o 000001")
         
-        if not df_inv.empty:
-            resumen = []
-            for p in PRODUCTOS:
-                entradas = df_inv[(df_inv["producto"] == p) & (df_inv["tipo_movimiento"] == "ENTRADA")]["total_huevos"].sum()
-                salidas = df_inv[(df_inv["producto"] == p) & (df_inv["tipo_movimiento"] == "SALIDA")]["total_huevos"].sum()
-                stock_h = entradas - salidas
-                
-                cajas_stk = stock_h // 360
-                rem_cajas = stock_h % 360
-                cubetas_stk = rem_cajas // 30
-                unidades_stk = rem_cajas % 30
-                
-                resumen.append({
-                    "Producto": p,
-                    "Stock (Huevos)": stock_h,
-                    "Cajas": cajas_stk,
-                    "Cubetas": cubetas_stk,
-                    "Unid. Sueltas": unidades_stk
-                })
-            
-            st.dataframe(pd.DataFrame(resumen), use_container_width=True)
+        if busqueda.strip():
+            df_filtrado = df_historial[
+                df_historial['cliente'].astype(str).str.contains(busqueda, case=False, na=False) |
+                df_historial['num_remision'].astype(str).str.contains(busqueda, case=False, na=False)
+            ]
         else:
-            st.info("No hay movimientos registrados en el inventario.")
+            df_filtrado = df_historial
 
-elif seccion == "📜 Historial":
-    st.subheader("📜 Historial de Movimientos")
-    conn = get_connection()
-    if conn:
-        df_hist = pd.read_sql("SELECT fecha, consecutivo, tipo_movimiento, cliente, producto, total_huevos, total_dinero FROM inventario ORDER BY id DESC LIMIT 50", conn)
-        conn.close()
-        if not df_hist.empty:
-            st.dataframe(df_hist, use_container_width=True)
+        if df_filtrado.empty:
+            st.warning("No se encontraron remisiones que coincidan con la búsqueda.")
         else:
-            st.info("Historial vacío.")
+            nums_remision = sorted(df_filtrado['num_remision'].dropna().unique().astype(int), reverse=True)
+            st.caption(f"Mostrando {len(nums_remision)} remisión(es)")
+
+            for num_sel in nums_remision:
+                df_rem = df_historial[df_historial['num_remision'] == num_sel]
+                f_sel = df_rem.iloc[0]
+                
+                cli_nombre = str(f_sel.get('cliente', 'Cliente sin nombre'))
+                tot_val = df_rem['total'].sum() if 'total' in df_rem.columns else 0.0
+                f_emision_val = f_sel.get('fecha_emision', datetime.now())
+                fecha_str = f_emision_val[:10] if isinstance(f_emision_val, str) else pd.to_datetime(f_emision_val).strftime("%d/%m/%Y")
+                
+                titulo_expander = f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.2f} ({fecha_str})"
+                
+                with st.expander(titulo_expander):
+                    tab_pdf, tab_editar = st.tabs(["👁️ Ver / Descargar PDF", "✏️ Editar o Eliminar"])
+                    
+                    items_actuales = []
+                    for _, row in df_rem.iterrows():
+                        items_actuales.append({
+                            "Clasificación": str(row.get('tipo_huevo', 'a')).upper(),
+                            "Cantidad (Huevos)": int(row.get('cantidad', 0)),
+                            "Precio Unitario ($)": float(row.get('precio_unitario', 0.0)),
+                            "Subtotal ($)": float(row.get('total', 0.0))
+                        })
+                    df_items_pdf = pd.DataFrame(items_actuales)
+                    
+                    cli_datos = {
+                        "nombre": cli_nombre,
+                        "cedula": str(f_sel.get('cedula_nit', '')),
+                        "direccion": str(f_sel.get('destino', '')),
+                        "telefono": str(f_sel.get('telefono', '')),
+                        "email": str(f_sel.get('email', ''))
+                    }
+                    conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
+                    galpon_val = str(f_sel.get('galpon', 'Galpón 1'))
+
+                    with tab_pdf:
+                        pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
+                        
+                        c_inf1, c_inf2 = st.columns(2)
+                        with c_inf1:
+                            st.write(f"**Cliente:** {cli_nombre.upper()}")
+                            st.write(f"**Cédula/NIT:** {cli_datos['cedula']}")
+                            st.write(f"**Fecha:** {fecha_str}")
+                        with c_inf2:
+                            st.write(f"**Teléfono:** {cli_datos['telefono']}")
+                            st.write(f"**Dirección:** {cli_datos['direccion']}")
+                            st.write(f"**Conductor:** {conductor_val}")
+                        
+                        st.dataframe(
+                            df_items_pdf[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)", "Subtotal ($)"]],
+                            use_container_width=True,
+                            hide_index=True
+                        )
+                        st.markdown(f"#### **Total: ${tot_val:,.2f}**")
+                        
+                        st.download_button(
+                            label=f"📥 Descargar PDF Remisión No. {num_sel:06d}",
+                            data=pdf_buf,
+                            file_name=f"Remision_{num_sel:06d}_{cli_nombre}.pdf",
+                            mime="application/pdf",
+                            key=f"dl_pdf_{num_sel}",
+                            use_container_width=True
+                        )
+
+                    with tab_editar:
+                        with st.form(key=f"form_editar_{num_sel}"):
+                            c_cliente = st.text_input("Cliente", value=cli_datos['nombre'], key=f"cli_{num_sel}")
+                            c_cedula = st.text_input("Cédula / NIT", value=cli_datos['cedula'], key=f"ced_{num_sel}")
+                            c_dir = st.text_input("Dirección", value=cli_datos['direccion'], key=f"dir_{num_sel}")
+                            c_tel = st.text_input("Teléfono", value=cli_datos['telefono'], key=f"tel_{num_sel}")
+                            c_email = st.text_input("Email", value=cli_datos['email'], key=f"em_{num_sel}")
+                            c_cond = st.text_input("Conductor", value=conductor_val, key=f"cond_{num_sel}")
+                            idx_galpon = ["Galpón 1", "Galpón 2", "Galpón 3"].index(galpon_val) if galpon_val in ["Galpón 1", "Galpón 2", "Galpón 3"] else 0
+                            c_galpon = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], index=idx_galpon, key=f"gal_{num_sel}")
+                            
+                            st.markdown("### 🛒 Productos")
+                            df_base_edit = df_items_pdf[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)"]].copy()
+                            df_base_edit["Clasificación"] = df_base_edit["Clasificación"].str.lower()
+                            opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+                            
+                            df_editado = st.data_editor(
+                                df_base_edit,
+                                num_rows="dynamic",
+                                column_config={
+                                    "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+                                    "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
+                                    "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True)
+                                },
+                                use_container_width=True,
+                                key=f"editor_{num_sel}"
+                            )
+                            
+                            col_btn1, col_btn2 = st.columns(2)
+                            with col_btn1:
+                                submit_actualizar = st.form_submit_button("💾 Actualizar Cambios")
+                            with col_btn2:
+                                submit_eliminar = st.form_submit_button("🗑️ Eliminar Remisión")
+                            
+                            if submit_actualizar:
+                                items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+                                if items_validos.empty:
+                                    st.error("Debe haber al menos un producto válido.")
+                                else:
+                                    items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
+                                    items_dict = items_validos.to_dict(orient="records")
+                                    
+                                    actualizar_remision_completa(
+                                        num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_galpon, df_rem, items_dict
+                                    )
+                                    st.success(f"¡Remisión No. {num_sel:06d} actualizada con éxito!")
+                                    st.rerun()
+                            
+                            if submit_eliminar:
+                                eliminar_remision_completa(num_sel, c_galpon, df_rem)
+                                st.warning(f"Remisión No. {num_sel:06d} eliminada correctamente.")
+                                st.rerun()

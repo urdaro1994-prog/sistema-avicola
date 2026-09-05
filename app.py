@@ -1,4 +1,12 @@
 import streamlit as st
+
+st.set_page_config(
+    page_title="App David",
+    page_icon="🥚",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
+import streamlit as st
 import pandas as pd
 import psycopg2
 import os

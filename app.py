@@ -56,24 +56,24 @@ st.markdown(
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Fondo general de toda la aplicación (Azul grisáceo más oscuro y visible) */
+    /* Fondo general de toda la aplicación (Azul grisáceo de la parte exterior) */
     .stApp {
         background-color: #c8d6e5 !important;
     }
     
-    /* Contenedor central (Tarjeta) con un tono diferente para que contraste */
+    /* Contenedor central (La tarjeta que marcaste) ahora de color naranja */
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 5rem;
         padding-left: 1.2rem;
         padding-right: 1.2rem;
         max-width: 540px;
-        background-color: #f1f5f9 !important; /* Gris muy suave, puedes cambiarlo si prefieres otro */
+        background-color: #f26822 !important; /* Tarjeta central en color naranja */
         border-radius: 16px;
-        box-shadow: 0 10px 35px rgba(15, 41, 66, 0.2);
+        box-shadow: 0 10px 35px rgba(15, 41, 66, 0.3);
         margin-top: 1rem;
         margin-bottom: 2rem;
-        border: 1px solid #cbd5e1;
+        border: 1px solid #d9531e;
     }
     
     .stButton>button {
@@ -83,18 +83,17 @@ st.markdown(
         font-weight: 600;
         background-color: #0f2942;
         color: white;
-        border: 2px solid #f26822;
+        border: 2px solid #ffffff;
         transition: all 0.2s ease-in-out;
     }
     
     .stButton>button:hover {
-        background-color: #f26822;
-        color: white;
+        background-color: #ffffff;
+        color: #0f2942;
         border-color: #0f2942;
     }
 
-    h1, h2, h3 {
-        color: #0f2942;
+    h1, h2, h3, p, label {
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
     </style>
@@ -115,7 +114,7 @@ with col_tit:
     st.markdown("""
         <div style="padding-top: 5px;">
             <h2 style="margin: 0; color: #0f2942; font-size: 22px; font-weight: 800;">AVÍCOLA SANTA ISABEL</h2>
-            <p style="margin: 0; color: #f26822; font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">SISTEMA DE GESTIÓN Y CONTROL</p>
+            <p style="margin: 0; color: #ffffff; font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">SISTEMA DE GESTIÓN Y CONTROL</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -428,7 +427,7 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     t_totales.setStyle(TableStyle([
         ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
         ('FONTNAME', (0,2), (-1,2), 'Helvetica-Bold'),
-        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#f26822")),
+        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#0f2942")),
     ]))
     story.append(t_totales)
     doc.build(story)
@@ -528,7 +527,7 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
 
         total_factura = items_validos["Subtotal ($)"].sum()
         st.markdown(f"""
-            <div style="background-color: #0f2942; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #f26822;">
+            <div style="background-color: #0f2942; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #ffffff;">
                 <h3 style="margin: 0; color: white; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.2f}</h3>
             </div>
         """, unsafe_allow_html=True)

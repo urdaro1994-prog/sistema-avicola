@@ -27,25 +27,20 @@ svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
 b64_svg = base64.b64encode(svg_huevo.encode('utf-8')).decode('utf-8')
 data_uri = f"data:image/svg+xml;base64,{b64_svg}"
 
-# --- INYECCIÓN DIRECTA EN EL DOM DE SAFARI (IPHONE) ---
 st.markdown(f"""
     <script>
         var doc = window.parent.document;
-        
         var oldIcons = doc.querySelectorAll("link[rel*='icon'], link[rel*='apple']");
         oldIcons.forEach(function(el) {{ el.remove(); }});
-
         var appleIcon = doc.createElement('link');
         appleIcon.rel = 'apple-touch-icon';
         appleIcon.href = '{data_uri}';
         doc.head.appendChild(appleIcon);
-
         var icon = doc.createElement('link');
         icon.rel = 'icon';
         icon.type = 'image/svg+xml';
         icon.href = '{data_uri}';
         doc.head.appendChild(icon);
-
         var metaTitle = doc.createElement('meta');
         metaTitle.name = 'apple-mobile-web-app-title';
         metaTitle.content = 'App David';
@@ -53,7 +48,7 @@ st.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS DE LA APP ---
+# --- ESTILOS CSS ---
 st.markdown(
     """
     <style>
@@ -83,7 +78,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- ENCABEZADO DE LA APP ---
+# --- ENCABEZADO ---
 col_logo, col_tit = st.columns([1, 3])
 with col_logo:
     if os.path.exists("ESCUDO.png"):
@@ -95,23 +90,19 @@ with col_logo:
 with col_tit:
     st.markdown("### **AGROAVÍCOLA**\n*Santa Isabel*")
 
-# --- NAVEGACIÓN INFERIOR ---
+# --- NAVEGACIÓN ---
 if "seccion_activa" not in st.session_state:
     st.session_state.seccion_activa = "📤 Remisiones"
 
 c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(4)
 with c_nav1:
-    if st.button("📥 Entrada", use_container_width=True):
-        st.session_state.seccion_activa = "📥 Entrada"
+    if st.button("📥 Entrada", use_container_width=True): st.session_state.seccion_activa = "📥 Entrada"
 with c_nav2:
-    if st.button("📤 Remisión", use_container_width=True):
-        st.session_state.seccion_activa = "📤 Remisiones"
+    if st.button("📤 Remisión", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
 with c_nav3:
-    if st.button("📊 Stock", use_container_width=True):
-        st.session_state.seccion_activa = "📊 Stock"
+    if st.button("📊 Stock", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
 with c_nav4:
-    if st.button("📜 Historial", use_container_width=True):
-        st.session_state.seccion_activa = "📜 Historial"
+    if st.button("📜 Historial", use_container_width=True): st.session_state.seccion_activa = "📜 Historial"
 
 st.markdown("---")
 
@@ -119,40 +110,17 @@ st.markdown("---")
 def get_connection():
     return psycopg2.connect(st.secrets["postgres"]["url"])
 
-def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio):
+def cargar_inventario():
     conn = get_connection()
-    cur = conn.cursor()
-    nuevo_total = nueva_cantidad * nuevo_precio
-    
-    query_update = """
-        UPDATE remisiones 
-        SET cliente = %s, 
-            cedula_nit = %s, 
-            destino = %s, 
-            telefono = %s, 
-            email = %s, 
-            conductor = %s, 
-            tipo_huevo = %s,
-            cantidad = %s, 
-            precio_unitario = %s, 
-            total = %s 
-        WHERE id = %s
-    """
-    cur.execute(query_update, (
-        nuevo_cliente, nueva_cedula, nueva_dir, nueva_tel, nuevo_email, 
-        nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio, nuevo_total, id_registro
-    ))
-    conn.commit()
-    cur.close()
+    df = pd.read_sql_query("SELECT * FROM inventario ORDER BY galpon", conn)
     conn.close()
+    return df.set_index('galpon')
 
-def eliminar_remision(id_registro):
+def cargar_remisiones():
     conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM remisiones WHERE id = %s", (id_registro,))
-    conn.commit()
-    cur.close()
+    df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
     conn.close()
+    return df
 
 def obtener_siguiente_num_remision():
     conn = get_connection()
@@ -193,80 +161,98 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
-    cur.execute("""
-        SELECT column_name, is_generated, identity_generation 
-        FROM information_schema.columns 
-        WHERE table_name = 'remisiones';
-    """)
-    
-    columnas_validas = set()
-    for col_name, is_gen, id_gen in cur.fetchall():
-        if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
-            columnas_validas.add(col_name)
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
+    columnas_validas = {row[0] for row in cur.fetchall()}
 
     for item in items_venta:
-        clasificacion = item['Clasificación']
+        clasificacion = item['Clasificación'].lower()
         cantidad = int(item['Cantidad (Huevos)'])
         subtotal = float(item['Subtotal ($)'])
         precio_u = float(item['Precio Unitario ($)'])
 
-        posibles_datos = {
-            "num_remision": num_remision,
-            "numero_remision": num_remision,
-            "remision_num": num_remision,
-            "fecha_emision": fecha_actual,
-            "fecha": fecha_actual,
-            "cliente": cliente,
-            "nombre_cliente": cliente,
-            "cedula_nit": cedula,
-            "cedula": cedula,
-            "nit": cedula,
-            "telefono": telefono,
-            "destino": direccion,
-            "direccion": direccion,
-            "email": email,
-            "conductor": conductor,
-            "tipo_huevo": clasificacion,
-            "clasificacion": clasificacion,
-            "tipo": clasificacion,
-            "cantidad": cantidad,
-            "precio_unitario": precio_u,
-            "precio_u": precio_u,
-            "precio": precio_u,
-            "total": subtotal,
-            "subtotal": subtotal,
-            "galpon": galpon
+        datos_insert = {
+            "num_remision": num_remision, "fecha_emision": fecha_actual,
+            "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
+            "destino": direccion, "email": email, "conductor": conductor,
+            "tipo_huevo": clasificacion, "cantidad": cantidad,
+            "precio_unitario": precio_u, "total": subtotal, "galpon": galpon
         }
+        datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
 
-        datos_a_insertar = {k: v for k, v in posibles_datos.items() if k in columnas_validas}
+        if datos_reales:
+            cols = ", ".join(datos_reales.keys())
+            vals = tuple(datos_reales.values())
+            placeholders = ", ".join(["%s"] * len(datos_reales))
+            cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
 
-        if datos_a_insertar:
-            columnas_sql = ", ".join(datos_a_insertar.keys())
-            placeholders_sql = ", ".join(["%s"] * len(datos_a_insertar))
-            valores_sql = tuple(datos_a_insertar.values())
-
-            query_insert = f"INSERT INTO remisiones ({columnas_sql}) VALUES ({placeholders_sql})"
-            cur.execute(query_insert, valores_sql)
-
-        col_inv = clasificacion.lower()
-        query_update = f"UPDATE inventario SET {col_inv} = {col_inv} - %s WHERE galpon = %s"
-        cur.execute(query_update, (cantidad, galpon))
+        cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galpon))
 
     conn.commit()
     cur.close()
     conn.close()
 
-def cargar_inventario():
+def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, galpon_origen, df_viejos, items_nuevos):
     conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM inventario ORDER BY galpon", conn)
-    conn.close()
-    return df.set_index('galpon')
+    cur = conn.cursor()
+    fecha_actual = datetime.now()
 
-def cargar_remisiones():
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
+    # 1. Devolver el inventario viejo
+    for _, row in df_viejos.iterrows():
+        c_tipo = str(row.get('tipo_huevo', 'a')).lower()
+        c_cant = int(row.get('cantidad', 0))
+        g_bd = row.get('galpon', galpon_origen)
+        if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
+        cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
+
+    # 2. Borrar remisión vieja
+    cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
+
+    # 3. Insertar nuevos items y descontar inventario
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
+    columnas_validas = {row[0] for row in cur.fetchall()}
+
+    for item in items_nuevos:
+        clasif = item['Clasificación'].lower()
+        cant = int(item['Cantidad (Huevos)'])
+        subtotal = float(item['Subtotal ($)'])
+        precio_u = float(item['Precio Unitario ($)'])
+
+        datos_insert = {
+            "num_remision": num_remision, "fecha_emision": fecha_actual,
+            "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
+            "destino": direccion, "email": email, "conductor": conductor,
+            "tipo_huevo": clasif, "cantidad": cant,
+            "precio_unitario": precio_u, "total": subtotal, "galpon": galpon_origen
+        }
+        datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
+
+        if datos_reales:
+            cols = ", ".join(datos_reales.keys())
+            vals = tuple(datos_reales.values())
+            placeholders = ", ".join(["%s"] * len(datos_reales))
+            cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
+
+        cur.execute(f"UPDATE inventario SET {clasif} = {clasif} - %s WHERE galpon = %s", (cant, galpon_origen))
+
+    conn.commit()
+    cur.close()
     conn.close()
-    return df
+
+def eliminar_remision_completa(num_remision, galpon_origen, df_viejos):
+    conn = get_connection()
+    cur = conn.cursor()
+    # Devolver inventario
+    for _, row in df_viejos.iterrows():
+        c_tipo = str(row.get('tipo_huevo', 'a')).lower()
+        c_cant = int(row.get('cantidad', 0))
+        g_bd = row.get('galpon', galpon_origen)
+        if pd.isna(g_bd) or not g_bd: g_bd = galpon_origen
+        cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
+        
+    cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, items_df, total_factura):
     buffer = io.BytesIO()
@@ -345,18 +331,16 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
         ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#125375")),
     ]))
     story.append(t_totales)
-
     doc.build(story)
     buffer.seek(0)
     return buffer
 
-# --- SECCIONES DE LA APLICACIÓN ---
+# --- SECCIONES ---
 
 if st.session_state.seccion_activa == "📥 Entrada":
     st.subheader("📥 Registro Diario de Postura")
     fecha = st.date_input("Fecha", datetime.now())
     galpon = st.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
-    
     y = st.number_input("Yumbo", min_value=0, value=0)
     ex = st.number_input("Extra", min_value=0, value=0)
     aa = st.number_input("AA", min_value=0, value=0)
@@ -365,7 +349,6 @@ if st.session_state.seccion_activa == "📥 Entrada":
     c = st.number_input("C", min_value=0, value=0)
     suc = st.number_input("Sucio", min_value=0, value=0)
     rot = st.number_input("Roto", min_value=0, value=0)
-        
     if st.button("💾 Guardar Producción"):
         conteos = {'Yumbo': y, 'Extra': ex, 'AA': aa, 'A': a, 'B': b, 'C': c, 'Sucio': suc, 'Roto': rot}
         registrar_produccion(fecha, galpon, conteos)
@@ -374,7 +357,6 @@ if st.session_state.seccion_activa == "📥 Entrada":
 elif st.session_state.seccion_activa == "📤 Remisiones":
     df_inv = cargar_inventario()
     num_remision_actual = obtener_siguiente_num_remision()
-
     st.subheader(f"📋 Remisión No. {num_remision_actual:06d}")
     
     cliente_nombre = st.text_input("Razón Social / Cliente", placeholder="Ej. RAFAEL GARCIA")
@@ -405,7 +387,6 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
     if not items_validos.empty:
         items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
         total_factura = items_validos["Subtotal ($)"].sum()
-
         st.markdown(f"### **TOTAL: ${total_factura:,.2f}**")
 
         if st.button("🚀 Confirmar y Generar Remisión"):
@@ -421,35 +402,15 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
                         errores_stock.append(f"Stock insuficiente para {c_clasif.upper()}. Disponible: {stock_disp}")
 
                 if errores_stock:
-                    for err in errores_stock:
-                        st.error(err)
+                    for err in errores_stock: st.error(err)
                 else:
                     items_dict = items_validos.to_dict(orient="records")
-                    registrar_venta_multiple(
-                        cliente_nombre, cedula_nit, direccion, telefono, email, conductor, 
-                        num_remision_actual, galpon_v, items_dict
-                    )
+                    registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, galpon_v, items_dict)
+                    st.success(f"¡Remisión No. {num_remision_actual:06d} guardada!")
                     
-                    st.success(f"¡Remisión No. {num_remision_actual:06d} guardada en Supabase!")
-                    
-                    fecha_hoy_str = datetime.now().strftime("%d/%m/%Y")
-                    datos_cliente = {
-                        "nombre": cliente_nombre,
-                        "cedula": cedula_nit,
-                        "direccion": direccion,
-                        "telefono": telefono,
-                        "email": email
-                    }
-                    pdf_buffer = generar_pdf_remision(
-                        num_remision_actual, fecha_hoy_str, conductor, datos_cliente, items_validos, total_factura
-                    )
-
-                    st.download_button(
-                        label="📄 Descargar Remisión PDF",
-                        data=pdf_buffer,
-                        file_name=f"Remision_{num_remision_actual:06d}_{cliente_nombre}.pdf",
-                        mime="application/pdf"
-                    )
+                    datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
+                    pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, items_validos, total_factura)
+                    st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
 
 elif st.session_state.seccion_activa == "📊 Stock":
     st.subheader("📦 Stock en Granja")
@@ -459,28 +420,34 @@ elif st.session_state.seccion_activa == "📜 Historial":
     st.subheader("📜 Historial y Gestión de Remisiones")
     df_historial = cargar_remisiones()
     
-    if df_historial.empty:
-        st.info("No hay remisiones registradas todavía.")
+    if df_historial.empty or 'num_remision' not in df_historial.columns:
+        st.info("No hay remisiones registradas con la nueva estructura todavía.")
     else:
         st.dataframe(df_historial, use_container_width=True)
-        
         st.markdown("---")
-        st.subheader("👁️ Ver y Gestionar Remisión del Historial")
+        st.subheader("👁️ Ver y Editar Remisión Completa")
         
-        ids_disponibles = df_historial['id'].tolist()
-        id_seleccionado = st.selectbox("Selecciona el ID de la remisión", ids_disponibles)
+        # Agrupamos por num_remision en vez de id para poder cargar la factura completa
+        lista_nums = df_historial['num_remision'].dropna().unique().astype(int).tolist()
+        num_sel = st.selectbox("Selecciona el Número de Remisión", lista_nums)
         
-        if id_seleccionado:
-            f_sel = df_historial[df_historial['id'] == id_seleccionado].iloc[0]
-            n_rem = int(f_sel.get('num_remision', f_sel.get('id', 1)))
+        if num_sel:
+            # Filtramos todos los items (filas) que pertenecen a esa remisión
+            df_rem = df_historial[df_historial['num_remision'] == num_sel]
+            f_sel = df_rem.iloc[0] # Tomamos los datos del cliente de la primera fila
             
-            # Formatear fecha
-            f_emision_val = f_sel.get('fecha_emision', datetime.now())
-            if isinstance(f_emision_val, str):
-                fecha_str = f_emision_val[:10]
-            else:
-                fecha_str = pd.to_datetime(f_emision_val).strftime("%d/%m/%Y")
-                
+            # Reconstruir la lista de items
+            items_actuales = []
+            for _, row in df_rem.iterrows():
+                items_actuales.append({
+                    "Clasificación": str(row.get('tipo_huevo', 'a')),
+                    "Cantidad (Huevos)": int(row.get('cantidad', 0)),
+                    "Precio Unitario ($)": float(row.get('precio_unitario', 0.0)),
+                    "Subtotal ($)": float(row.get('total', 0.0))
+                })
+            df_items_pdf = pd.DataFrame(items_actuales)
+            tot_val = df_items_pdf["Subtotal ($)"].sum()
+            
             cli_datos = {
                 "nombre": str(f_sel.get('cliente', '')),
                 "cedula": str(f_sel.get('cedula_nit', '')),
@@ -489,61 +456,77 @@ elif st.session_state.seccion_activa == "📜 Historial":
                 "email": str(f_sel.get('email', ''))
             }
             
-            df_item_unico = pd.DataFrame([{
-                "Clasificación": f_sel.get('tipo_huevo', 'a'),
-                "Cantidad (Huevos)": f_sel.get('cantidad', 0),
-                "Precio Unitario ($)": f_sel.get('precio_unitario', 0.0),
-                "Subtotal ($)": f_sel.get('total', 0.0)
-            }])
-            tot_val = float(f_sel.get('total', 0.0))
+            f_emision_val = f_sel.get('fecha_emision', datetime.now())
+            fecha_str = f_emision_val[:10] if isinstance(f_emision_val, str) else pd.to_datetime(f_emision_val).strftime("%d/%m/%Y")
+            conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
+            galpon_val = str(f_sel.get('galpon', 'Galpón 1'))
             
-            # Generar PDF en buffer
-            pdf_buf = generar_pdf_remision(
-                n_rem, fecha_str, str(f_sel.get('conductor', 'Ivan Herrera')), cli_datos, df_item_unico, tot_val
-            )
-            
-            # --- VISUALIZAR PDF EN PANTALLA ---
+            # --- 1. VISOR PDF INCORPORADO ---
+            pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
             base64_pdf = base64.b64encode(pdf_buf.getvalue()).decode('utf-8')
             pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="500px" type="application/pdf"></iframe>'
             st.markdown(pdf_display, unsafe_allow_html=True)
             
-            st.markdown("")
             st.download_button(
-                label=f"📥 Descargar PDF Remisión No. {n_rem:06d}",
+                label=f"📥 Descargar PDF Remisión No. {num_sel:06d}",
                 data=pdf_buf,
-                file_name=f"Remision_{n_rem:06d}_{cli_datos['nombre']}.pdf",
+                file_name=f"Remision_{num_sel:06d}_{cli_datos['nombre']}.pdf",
                 mime="application/pdf",
-                key=f"dl_pdf_{id_seleccionado}"
+                key=f"dl_pdf_{num_sel}"
             )
             
             st.markdown("---")
-            st.subheader("✏️ Modificar o 🗑️ Eliminar esta Remisión")
+            st.subheader("✏️ Editar Contenido de la Remisión")
             
-            with st.form(key=f"form_editar_{id_seleccionado}"):
-                c_cliente = st.text_input("Cliente", value=str(f_sel.get('cliente', '')))
-                c_cedula = st.text_input("Cédula / NIT", value=str(f_sel.get('cedula_nit', '')))
-                c_dir = st.text_input("Dirección", value=str(f_sel.get('destino', '')))
-                c_tel = st.text_input("Teléfono", value=str(f_sel.get('telefono', '')))
-                c_email = st.text_input("Email", value=str(f_sel.get('email', '')))
-                c_cond = st.text_input("Conductor", value=str(f_sel.get('conductor', '')))
-                c_tipo = st.text_input("Tipo de Huevo", value=str(f_sel.get('tipo_huevo', '')))
-                c_cant = st.number_input("Cantidad", min_value=0, value=int(f_sel.get('cantidad', 0)))
-                c_precio = st.number_input("Precio Unitario", min_value=0.0, value=float(f_sel.get('precio_unitario', 0.0)))
+            with st.form(key=f"form_editar_{num_sel}"):
+                c_cliente = st.text_input("Cliente", value=cli_datos['nombre'])
+                c_cedula = st.text_input("Cédula / NIT", value=cli_datos['cedula'])
+                c_dir = st.text_input("Dirección", value=cli_datos['direccion'])
+                c_tel = st.text_input("Teléfono", value=cli_datos['telefono'])
+                c_email = st.text_input("Email", value=cli_datos['email'])
+                c_cond = st.text_input("Conductor", value=conductor_val)
+                idx_galpon = ["Galpón 1", "Galpón 2", "Galpón 3"].index(galpon_val) if galpon_val in ["Galpón 1", "Galpón 2", "Galpón 3"] else 0
+                c_galpon = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], index=idx_galpon)
+                
+                st.markdown("### 🛒 Productos (Edita, Agrega o Elimina)")
+                
+                # --- 2. EL EDITOR DINÁMICO REGRESA ---
+                df_base_edit = df_items_pdf[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)"]].copy()
+                opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+                
+                df_editado = st.data_editor(
+                    df_base_edit,
+                    num_rows="dynamic", # Permite añadir/quitar filas
+                    column_config={
+                        "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+                        "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
+                        "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True)
+                    },
+                    use_container_width=True
+                )
                 
                 col_btn1, col_btn2 = st.columns(2)
                 with col_btn1:
                     submit_actualizar = st.form_submit_button("💾 Actualizar Cambios")
                 with col_btn2:
-                    submit_eliminar = st.form_submit_button("🗑️ Eliminar Registro")
+                    submit_eliminar = st.form_submit_button("🗑️ Eliminar Completa")
                 
                 if submit_actualizar:
-                    actualizar_remision(
-                        id_seleccionado, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_tipo, c_cant, c_precio
-                    )
-                    st.success(f"¡Remisión ID {id_seleccionado} actualizada con éxito!")
-                    st.rerun()
+                    items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+                    if items_validos.empty:
+                        st.error("Debe haber al menos un producto válido.")
+                    else:
+                        items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
+                        items_dict = items_validos.to_dict(orient="records")
+                        
+                        # Actualiza DB y devuelve/descuenta el inventario automáticamente
+                        actualizar_remision_completa(
+                            num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_galpon, df_rem, items_dict
+                        )
+                        st.success(f"¡Remisión No. {num_sel:06d} actualizada con éxito!")
+                        st.rerun()
                 
                 if submit_eliminar:
-                    eliminar_remision(id_seleccionado)
-                    st.warning(f"Remisión ID {id_seleccionado} eliminada.")
+                    eliminar_remision_completa(num_sel, c_galpon, df_rem)
+                    st.warning(f"Remisión No. {num_sel:06d} eliminada. ¡El stock se devolvió al {c_galpon}!")
                     st.rerun()

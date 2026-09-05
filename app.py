@@ -10,6 +10,19 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # --- CONFIGURACIÓN DE PÁGINA ---
+import streamlit as st
+import pandas as pd
+import psycopg2
+import os
+from datetime import datetime
+import io
+import base64
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+# --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
     page_title="App David",
     page_icon="🥚",
@@ -17,59 +30,75 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- INYECCIÓN DE METAETIQUETAS PWA VÍA JAVASCRIPT ---
-# --- INYECCIÓN DE METAETIQUETAS PWA Y FAVICON PARA iOS Y PC ---
-st.components.v1.html(
-    """
+# --- CREAR ÍCONO SVG CON HUEVO PARA APPLE Y ANDROID ---
+# Generamos un SVG nativo del huevo para que iOS lo reconozca como imagen HD
+svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" rx="20" fill="#125375"/>
+  <text x="50" y="68" font-size="65" text-anchor="middle">🥚</text>
+</svg>"""
+
+b64_svg = base64.b64encode(svg_huevo.encode('utf-8')).decode('utf-8')
+data_uri = f"data:image/svg+xml;base64,{b64_svg}"
+
+# --- INYECCIÓN DIRECTA EN EL DOM DE SAFARI (IPHONE) ---
+st.markdown(f"""
     <script>
-        // Funcionalidad para convertir el emoji 🥚 en una imagen PNG para iOS/Safari
-        function setEmojiFavicon(emoji) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 192;
-            canvas.height = 192;
-            const ctx = canvas.getContext('2d');
-            ctx.font = '150px serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(emoji, 96, 105);
+        // Forzar cambio del apple-touch-icon en el marco principal de Safari
+        var doc = window.parent.document;
+        
+        // Eliminar referencias viejas de Streamlit
+        var oldIcons = doc.querySelectorAll("link[rel*='icon'], link[rel*='apple']");
+        oldIcons.forEach(function(el) {{ el.remove(); }});
 
-            const faviconUrl = canvas.toDataURL('image/png');
+        // Crear Apple Touch Icon (iPhone / iPad)
+        var appleIcon = doc.createElement('link');
+        appleIcon.rel = 'apple-touch-icon';
+        appleIcon.href = '{data_uri}';
+        doc.head.appendChild(appleIcon);
 
-            // Crear o actualizar icono Apple
-            let appleIcon = parent.document.querySelector("link[rel='apple-touch-icon']");
-            if (!appleIcon) {
-                appleIcon = parent.document.createElement('link');
-                appleIcon.rel = 'apple-touch-icon';
-                parent.document.head.appendChild(appleIcon);
-            }
-            appleIcon.href = faviconUrl;
+        // Crear Favicon estándar
+        var icon = doc.createElement('link');
+        icon.rel = 'icon';
+        icon.type = 'image/svg+xml';
+        icon.href = '{data_uri}';
+        doc.head.appendChild(icon);
 
-            // Crear o actualizar icono Estándar/Android
-            let favIcon = parent.document.querySelector("link[rel='icon']");
-            if (!favIcon) {
-                favIcon = parent.document.createElement('link');
-                favIcon.rel = 'icon';
-                parent.document.head.appendChild(favIcon);
-            }
-            favIcon.href = faviconUrl;
-        }
-
-        // Ejecutar conversión del emoji
-        setEmojiFavicon('🥚');
-
-        // Metainformación para iOS
-        const metaTitle = parent.document.createElement('meta');
+        // Definir título en la pantalla de inicio
+        var metaTitle = doc.createElement('meta');
         metaTitle.name = 'apple-mobile-web-app-title';
         metaTitle.content = 'App David';
-        parent.document.head.appendChild(metaTitle);
-
-        const metaCapable = parent.document.createElement('meta');
-        metaCapable.name = 'apple-mobile-web-app-capable';
-        metaCapable.content = 'yes';
-        parent.document.head.appendChild(metaCapable);
+        doc.head.appendChild(metaTitle);
     </script>
+""", unsafe_allow_html=True)
+
+# --- ESTILOS CSS DE LA APP ---
+st.markdown(
+    """
+    <style>
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 5rem;
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+        max-width: 500px;
+    }
+    
+    .stButton>button {
+        width: 100%;
+        border-radius: 12px;
+        height: 3em;
+        font-weight: bold;
+        background-color: #125375;
+        color: white;
+        border: none;
+    }
+    </style>
     """,
-    height=0,
+    unsafe_allow_html=True
 )
 
 # --- ENCABEZADO DE LA APP ---

@@ -3,12 +3,12 @@
   "name": "App David",
   "icons": [
     {
-      "src": "egg.png",
+      "src": "LOGO.png",
       "type": "image/png",
       "sizes": "192x192"
     },
     {
-      "src": "egg.png",
+      "src": "LOGO.png",
       "type": "image/png",
       "sizes": "512x512"
     }

@@ -116,11 +116,10 @@ with c_nav4:
 st.markdown("---")
 
 # --- FUNCIONES DE BASE DE DATOS ---
-def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, nuevo_conductor, nueva_cantidad, nuevo_precio):
+def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio):
     conn = get_connection()
     cur = conn.cursor()
     
-    # Recalcular el subtotal automáticamente basado en la nueva cantidad y precio
     nuevo_total = nueva_cantidad * nuevo_precio
     
     query_update = """
@@ -131,14 +130,15 @@ def actualizar_remision(id_registro, nuevo_cliente, nueva_cedula, nueva_dir, nue
             telefono = %s, 
             email = %s, 
             conductor = %s, 
+            tipo_huevo = %s,
             cantidad = %s, 
             precio_unitario = %s, 
             total = %s 
         WHERE id = %s
     """
     cur.execute(query_update, (
-        nuevo_cliente, nueva_cedula, nueva_dir, nuevo_tel, nuevo_email, 
-        nuevo_conductor, nueva_cantidad, nuevo_precio, nuevo_total, id_registro
+        nuevo_cliente, nueva_cedula, nueva_dir, nueva_tel, nuevo_email, 
+        nuevo_conductor, nuevo_tipo_huevo, nueva_cantidad, nuevo_precio, nuevo_total, id_registro
     ))
     
     conn.commit()

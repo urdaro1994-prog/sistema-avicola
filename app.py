@@ -491,9 +491,87 @@ elif st.session_state.seccion_activa == "📊 Stock":
     st.dataframe(cargar_inventario(), use_container_width=True)
 
 elif st.session_state.seccion_activa == "📜 Historial":
-    st.subheader("📜 Historial de Remisiones Guardadas")
+    st.subheader("📜 Historial y Descarga de Remisiones")
     df_rem = cargar_remisiones()
+    
     if not df_rem.empty:
+        # --- BUSCADOR PARA REIMPRIMIR REMISIONES ---
+        st.markdown("### 🔍 Buscar Remisión para Reimprimir")
+        
+        # Obtenemos los números de remisión únicos disponibles ordenados de mayor a menor
+        if "num_remision" in df_rem.columns:
+            lista_remisiones = sorted(df_rem["num_remision"].dropna().unique(), reverse=True)
+            remision_seleccionada = st.selectbox("Seleccione el N° de Remisión:", lista_remisiones)
+            
+            if remision_seleccionada:
+                # Filtrar todos los items/filas que pertenecen a esa misma remisión
+                df_remision_det = df_rem[df_rem["num_remision"] == remision_seleccionada]
+                
+                if not df_remision_det.empty:
+                    # Extraer datos generales de la primera fila de esa remisión
+                    primer_fila = df_remision_det.iloc[0]
+                    c_nombre = primer_fila.get("cliente", "")
+                    c_cedula = primer_fila.get("cedula_nit", "")
+                    c_dir = primer_fila.get("destino", primer_fila.get("direccion", "CHOACHI"))
+                    c_tel = primer_fila.get("telefono", "")
+                    c_email = primer_fila.get("email", "")
+                    c_conductor = primer_fila.get("conductor", "Ivan Herrera")
+                    
+                    # Formatear la fecha
+                    fecha_raw = primer_fila.get("fecha_emision", datetime.now())
+                    if pd.notnull(fecha_raw):
+                        fecha_str = pd.to_datetime(fecha_raw).strftime("%d/%m/%Y")
+                    else:
+                        fecha_str = datetime.now().strftime("%d/%m/%Y")
+
+                    # Preparar los items en el formato que espera la función generar_pdf_remision
+                    items_formateados = []
+                    total_factura_rem = 0.0
+                    
+                    for _, row in df_remision_det.iterrows():
+                        cant = row.get("cantidad", 0)
+                        p_unit = row.get("precio_unitario", 0.0)
+                        subt = row.get("total", cant * p_unit)
+                        total_factura_rem += subt
+                        
+                        items_formateados.append({
+                            "Clasificación": row.get("tipo_huevo", ""),
+                            "Cantidad (Huevos)": cant,
+                            "Precio Unitario ($)": p_unit,
+                            "Subtotal ($)": subt
+                        })
+                    
+                    df_items_pdf = pd.DataFrame(items_formateados)
+                    
+                    datos_cliente_reim = {
+                        "nombre": c_nombre,
+                        "cedula": c_cedula,
+                        "direccion": c_dir,
+                        "telefono": c_tel,
+                        "email": c_email
+                    }
+                    
+                    # Botón para descargar el PDF individual de esa remisión
+                    pdf_reimpresion = generar_pdf_remision(
+                        int(remision_seleccionada), 
+                        fecha_str, 
+                        c_conductor, 
+                        datos_cliente_reim, 
+                        df_items_pdf, 
+                        total_factura_rem
+                    )
+                    
+                    st.download_button(
+                        label=f"📄 Descargar PDF Remisión N° {int(remision_seleccionada):06d}",
+                        data=pdf_reimpresion,
+                        file_name=f"Remision_{int(remision_seleccionada):06d}_{c_nombre}.pdf",
+                        mime="application/pdf"
+                    )
+        
+        st.markdown("---")
+        st.markdown("### 📋 Tabla General de Historial")
+        
+        # Mostrar la tabla general
         st.dataframe(
             df_rem,
             column_config={
@@ -512,10 +590,10 @@ elif st.session_state.seccion_activa == "📜 Historial":
         
         st.markdown("---")
         
-        # --- BOTÓN PARA DESCARGAR EL HISTORIAL EN PDF ---
+        # Botón para descargar el reporte de todo el historial completo en PDF
         pdf_historial_buffer = generar_pdf_historial(df_rem)
         st.download_button(
-            label="📄 Descargar Historial Completo en PDF",
+            label="📚 Descargar Historial Completo en PDF",
             data=pdf_historial_buffer,
             file_name=f"Historial_Remisiones_{datetime.now().strftime('%Y-%m-%d')}.pdf",
             mime="application/pdf"

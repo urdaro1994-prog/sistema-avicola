@@ -8,7 +8,7 @@ import base64
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import getSampleStyleSheet
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -81,15 +81,6 @@ st.markdown(
     }
     
     .stSubheader { color: #f26822 !important; font-weight: bold !important; }
-    
-    /* Estilo para el botón de regresar (un poco más discreto o diferente si se desea) */
-    .back-button button {
-        background-color: transparent !important;
-        border: 1px solid #f26822 !important;
-        color: #f26822 !important;
-        height: 2.5em !important;
-        margin-bottom: 20px !important;
-    }
     </style>
     """,
     unsafe_allow_html=True
@@ -174,7 +165,7 @@ with col_logo:
     if os.path.exists("ESCUDO.png"): st.image("ESCUDO.png", width=75)
     else: st.markdown("<h1 style='margin: 0;'>🥚</h1>", unsafe_allow_html=True)
 with col_tit:
-    st.markdown('<h2 style="margin: 0; color: #f26822 !important;">AVÍCOLA SANTA ISABEL</h2><p style="margin: 0;">SISTEMA DE GESTIÓN Dashboard 2.0</p>', unsafe_allow_html=True)
+    st.markdown('<h2 style="margin: 0; color: #f26822 !important;">AVÍCOLA SANTA ISABEL</h2><p style="margin: 0;">SISTEMA DE GESTIÓN</p>', unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -182,7 +173,6 @@ st.markdown("---")
 if "sesion_principal" not in st.session_state:
     st.session_state.sesion_principal = None
 
-# Solo mostrar los dos botones si no hay ninguna sesión activa
 if st.session_state.sesion_principal is None:
     c_prin1, c_prin2 = st.columns(2)
     with c_prin1:
@@ -195,7 +185,6 @@ if st.session_state.sesion_principal is None:
             st.session_state.sesion_principal = "📝 Registro Diario"
             st.rerun()
 else:
-    # BOTÓN PARA REGRESAR SIEMPRE VISIBLE CUANDO ESTÉS EN UNA SESIÓN
     if st.button("⬅️ Regresar al Menú Principal"):
         st.session_state.sesion_principal = None
         st.rerun()
@@ -220,9 +209,9 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
         num_remision_actual = obtener_siguiente_num_remision()
         st.subheader(f"📋 Nueva Remisión No. {num_remision_actual:06d}")
         
-        cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist())
+        cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"])
         val_nombre, val_cedula, val_dir, val_tel, val_email = "", "", "CHOACHI", "", ""
-        if cliente_sel != "-- Escribir cliente nuevo --":
+        if cliente_sel != "-- Escribir cliente nuevo --" and not df_clientes.empty:
             d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
             val_nombre, val_cedula, val_dir, val_tel, val_email = d_cli['nombre'], d_cli['cedula_nit'], d_cli['direccion'], d_cli['telefono'], d_cli['email']
 
@@ -257,7 +246,6 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                 registrar_venta_multiple(c_nom, c_ced, c_dir, c_tel, c_em, c_cond, num_remision_actual, items_venta)
                 st.success("Remisión guardada!")
                 
-                # Agrupamos para el PDF
                 df_pdf = df_editado.groupby("Clasificación").agg({"Cantidad (Huevos)":"sum", "Precio Unitario ($)":"mean", "Subtotal ($)":"sum"}).reset_index()
                 pdf = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), c_cond, {'nombre':c_nom, 'cedula':c_ced, 'direccion':c_dir}, df_pdf, total_f)
                 st.download_button("📥 Descargar PDF", data=pdf, file_name=f"Remision_{num_remision_actual}.pdf")
@@ -281,7 +269,3 @@ elif st.session_state.sesion_principal == "📝 Registro Diario":
         f = st.date_input("Fecha")
         g = st.selectbox("Galpón", ["G1", "G2", "G3"])
         st.form_submit_button("Guardar")
-
-¡Espero que esta nueva estructura te resulte mucho más cómoda para trabajar! Avísame qué te gustaría agregar a la parte de **Registro Diario**.
-
-Su slide deck sobre la **Nueva Navegación Dashboard** para Avícola Santa Isabel está listo. No dude en revisarlo para entender la nueva lógica de arquitectura.

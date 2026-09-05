@@ -161,8 +161,16 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
-    columnas_validas = {row[0] for row in cur.fetchall()}
+    # CORRECCIÓN: Filtrar las columnas generadas (identity generation, generated always, etc.)
+    cur.execute("""
+        SELECT column_name, is_generated, identity_generation 
+        FROM information_schema.columns 
+        WHERE table_name = 'remisiones';
+    """)
+    columnas_validas = set()
+    for col_name, is_gen, id_gen in cur.fetchall():
+        if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
+            columnas_validas.add(col_name)
 
     for item in items_venta:
         clasificacion = item['Clasificación'].lower()
@@ -177,6 +185,7 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
             "tipo_huevo": clasificacion, "cantidad": cantidad,
             "precio_unitario": precio_u, "total": subtotal, "galpon": galpon
         }
+        
         datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
 
         if datos_reales:
@@ -208,8 +217,16 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
     cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
 
     # 3. Insertar nuevos items y descontar inventario
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
-    columnas_validas = {row[0] for row in cur.fetchall()}
+    # CORRECCIÓN: Filtrar las columnas generadas
+    cur.execute("""
+        SELECT column_name, is_generated, identity_generation 
+        FROM information_schema.columns 
+        WHERE table_name = 'remisiones';
+    """)
+    columnas_validas = set()
+    for col_name, is_gen, id_gen in cur.fetchall():
+        if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
+            columnas_validas.add(col_name)
 
     for item in items_nuevos:
         clasif = item['Clasificación'].lower()
@@ -224,6 +241,7 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
             "tipo_huevo": clasif, "cantidad": cant,
             "precio_unitario": precio_u, "total": subtotal, "galpon": galpon_origen
         }
+        
         datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
 
         if datos_reales:
@@ -427,16 +445,13 @@ elif st.session_state.seccion_activa == "📜 Historial":
         st.markdown("---")
         st.subheader("👁️ Ver y Editar Remisión Completa")
         
-        # Agrupamos por num_remision en vez de id para poder cargar la factura completa
         lista_nums = df_historial['num_remision'].dropna().unique().astype(int).tolist()
         num_sel = st.selectbox("Selecciona el Número de Remisión", lista_nums)
         
         if num_sel:
-            # Filtramos todos los items (filas) que pertenecen a esa remisión
             df_rem = df_historial[df_historial['num_remision'] == num_sel]
-            f_sel = df_rem.iloc[0] # Tomamos los datos del cliente de la primera fila
+            f_sel = df_rem.iloc[0] 
             
-            # Reconstruir la lista de items
             items_actuales = []
             for _, row in df_rem.iterrows():
                 items_actuales.append({
@@ -461,7 +476,7 @@ elif st.session_state.seccion_activa == "📜 Historial":
             conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
             galpon_val = str(f_sel.get('galpon', 'Galpón 1'))
             
-            # --- 1. VISOR PDF INCORPORADO ---
+            # --- VISOR PDF INCORPORADO ---
             pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
             base64_pdf = base64.b64encode(pdf_buf.getvalue()).decode('utf-8')
             pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="500px" type="application/pdf"></iframe>'
@@ -490,13 +505,12 @@ elif st.session_state.seccion_activa == "📜 Historial":
                 
                 st.markdown("### 🛒 Productos (Edita, Agrega o Elimina)")
                 
-                # --- 2. EL EDITOR DINÁMICO REGRESA ---
                 df_base_edit = df_items_pdf[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)"]].copy()
                 opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
                 
                 df_editado = st.data_editor(
                     df_base_edit,
-                    num_rows="dynamic", # Permite añadir/quitar filas
+                    num_rows="dynamic",
                     column_config={
                         "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
                         "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
@@ -519,7 +533,6 @@ elif st.session_state.seccion_activa == "📜 Historial":
                         items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
                         items_dict = items_validos.to_dict(orient="records")
                         
-                        # Actualiza DB y devuelve/descuenta el inventario automáticamente
                         actualizar_remision_completa(
                             num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_galpon, df_rem, items_dict
                         )

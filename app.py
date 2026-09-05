@@ -129,17 +129,20 @@ with col_tit:
 
 st.markdown("---")
 
-# --- NAVEGACIÓN PRINCIPAL ENTRE SESIONES ---
+# --- NAVEGACIÓN PRINCIPAL ENTRE SESIONES (Inicia en None para mostrar solo los 2 botones) ---
 if "sesion_principal" not in st.session_state:
-    st.session_state.sesion_principal = "📦 Stock y Ventas"
+    st.session_state.sesion_principal = None
 
 c_prin1, c_prin2 = st.columns(2)
 with c_prin1:
     if st.button("📦 Stock y Ventas", use_container_width=True):
         st.session_state.sesion_principal = "📦 Stock y Ventas"
+        st.session_state.seccion_activa = "📤 Remisiones"
+        st.rerun()
 with c_prin2:
     if st.button("📝 Registro Diario", use_container_width=True):
         st.session_state.sesion_principal = "📝 Registro Diario"
+        st.rerun()
 
 st.markdown("---")
 
@@ -769,3 +772,6 @@ elif st.session_state.sesion_principal == "📝 Registro Diario":
         
         if st.form_submit_button("Guardar Registro Diario"):
             st.success("¡Espacio preparado con éxito para recibir la lógica de registro diario!")
+
+else:
+    st.info("👆 Selecciona una de las opciones de arriba para comenzar.")

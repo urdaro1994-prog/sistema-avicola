@@ -158,9 +158,18 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
-    # Obtener los nombres de las columnas reales en la tabla 'remisiones'
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
-    columnas_existentes = set(row[0] for row in cur.fetchall())
+    # Consultar columnas existentes y su estado de generación en Supabase
+    cur.execute("""
+        SELECT column_name, is_generated, identity_generation 
+        FROM information_schema.columns 
+        WHERE table_name = 'remisiones';
+    """)
+    
+    # Filtrar solo las columnas donde el sistema permite insertar datos libremente
+    columnas_validas = set()
+    for col_name, is_gen, id_gen in cur.fetchall():
+        if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
+            columnas_validas.add(col_name)
 
     for item in items_venta:
         clasificacion = item['Clasificación']
@@ -168,7 +177,6 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
         subtotal = float(item['Subtotal ($)'])
         precio_u = float(item['Precio Unitario ($)'])
 
-        # Mapeo de posibles nombres de columnas (EXCLUYENDO 'id' u otros campos automáticos)
         posibles_datos = {
             "num_remision": num_remision,
             "numero_remision": num_remision,
@@ -197,12 +205,8 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
             "galpon": galpon
         }
 
-        # Filtrar columnas existentes Y excluir explícitamente columnas que generan conflictos automáticos
-        columnas_prohibidas = {"id", "created_at", "updated_at"}
-        datos_a_insertar = {
-            k: v for k, v in posibles_datos.items() 
-            if k in columnas_existentes and k not in columnas_prohibidas
-        }
+        # Seleccionar únicamente los campos que la base de datos acepta para inserción manual
+        datos_a_insertar = {k: v for k, v in posibles_datos.items() if k in columnas_validas}
 
         if datos_a_insertar:
             columnas_sql = ", ".join(datos_a_insertar.keys())

@@ -56,7 +56,7 @@ def cargar_ventas():
     return df
 
 # --- INTERFAZ DE USUARIO ---
-st.title("ESCUDO.png HUEVONADA URIEL DAVID")
+st.title("HUEVONADA URIEL DAVID")
 
 tab1, tab2, tab3 = st.tabs(["📥 Entrada Producción", "📤 Salida / Ventas", "📊 Inventario Real"])
 
@@ -217,3 +217,13 @@ with tab3:
     st.dataframe(cargar_inventario(), use_container_width=True)
     st.header("Historial de Ventas")
     st.dataframe(cargar_ventas(), use_container_width=True)
+import streamlit as st
+
+# Crear columnas para ubicar el logo a la izquierda del título
+col1, col2 = st.columns([1, 4])
+
+with col1:
+    st.image("escudo.png", width=100) # Nombre exacto del archivo subido a GitHub
+
+with col2:
+    st.title("Control de Postura y Stock de Huevos")

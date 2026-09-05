@@ -392,7 +392,7 @@ if st.session_state.sesion_principal is None:
     with c_prin1:
         if st.button("📦 Stock y Ventas", use_container_width=True):
             st.session_state.sesion_principal = "📦 Stock y Ventas"
-            st.session_state.seccion_activa = "📤 Remisiones"
+            st.session_state.seccion_activa = "📥 Entradas"
             st.rerun()
     with c_prin2:
         if st.button("📝 Registro Diario", use_container_width=True):
@@ -407,11 +407,11 @@ else:
 if st.session_state.sesion_principal == "📦 Stock y Ventas":
     c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5)
     with c_nav1:
-        if st.button("📤 Rem.", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
-    with c_nav2:
         if st.button("📥 Entr.", use_container_width=True): st.session_state.seccion_activa = "📥 Entradas"
-    with c_nav3:
+    with c_nav2:
         if st.button("👥 Clic.", use_container_width=True): st.session_state.seccion_activa = "👥 Clientes"
+    with c_nav3:
+        if st.button("📤 Vent.", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
     with c_nav4:
         if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
     with c_nav5:
@@ -419,7 +419,79 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
 
     st.markdown("---")
 
-    if st.session_state.seccion_activa == "📤 Remisiones":
+    if st.session_state.seccion_activa == "📥 Entradas":
+        st.subheader("📥 Entrada de Producción / Clasificación")
+        st.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
+        
+        galpon_destino = st.selectbox("Seleccione el Galpón de Destino", ["Galpón 1", "Galpón 2", "Galpón 3"])
+        
+        opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+        df_base_entrada = pd.DataFrame([
+            {"Clasificación": "a", "Cantidad": 1000}
+        ])
+        
+        df_entrada_editado = st.data_editor(
+            df_base_entrada,
+            num_rows="dynamic",
+            column_config={
+                "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+                "Cantidad": st.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, required=True)
+            },
+            use_container_width=True,
+            key="editor_entradas_stock"
+        )
+        
+        if st.button("➕ Registrar Entrada al Inventario"):
+            entradas_validas = df_entrada_editado[df_entrada_editado["Cantidad"] > 0].copy()
+            if entradas_validas.empty:
+                st.warning("Debe ingresar al menos un ítem con cantidad mayor a 0.")
+            else:
+                lista_items_entrada = []
+                for _, r in entradas_validas.iterrows():
+                    lista_items_entrada.append({
+                        "Clasificación": r["Clasificación"],
+                        "Cantidad": int(r["Cantidad"])
+                    })
+                registrar_entrada_inventario(galpon_destino, lista_items_entrada)
+                st.success(f"¡Entrada registrada correctamente en {galpon_destino}!")
+                st.rerun()
+
+    elif st.session_state.seccion_activa == "👥 Clientes":
+        st.subheader("👥 Directorio de Clientes")
+        tab_nuevo, tab_lista = st.tabs(["➕ Agregar Cliente", "📋 Lista de Clientes"])
+        
+        with tab_nuevo:
+            with st.form(key="form_nuevo_cliente"):
+                c_nom = st.text_input("Nombre / Razón Social *")
+                c_ced = st.text_input("Cédula / NIT")
+                c_dir = st.text_input("Dirección", value="CHOACHI")
+                c_tel = st.text_input("Teléfono")
+                c_em = st.text_input("Email")
+                if st.form_submit_button("💾 Guardar Cliente"):
+                    if not c_nom.strip():
+                        st.error("El nombre es obligatorio.")
+                    else:
+                        guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
+                        st.success(f"¡Cliente {c_nom.upper()} guardado!")
+                        st.rerun()
+
+        with tab_lista:
+            df_cli = cargar_clientes()
+            if df_cli.empty:
+                st.info("No hay clientes registrados.")
+            else:
+                for _, r_cli in df_cli.iterrows():
+                    id_c = r_cli['id']
+                    nom_c = r_cli['nombre']
+                    with st.expander(f"👤 {nom_c} ({r_cli.get('cedula_nit', '')})"):
+                        st.write(f"**Teléfono:** {r_cli.get('telefono', '')}")
+                        st.write(f"**Dirección:** {r_cli.get('direccion', '')}")
+                        if st.button(f"🗑️ Eliminar {nom_c}", key=f"del_cli_{id_c}"):
+                            eliminar_cliente(id_c)
+                            st.warning("Cliente eliminado.")
+                            st.rerun()
+
+    elif st.session_state.seccion_activa == "📤 Remisiones":
         df_inv = cargar_inventario()
         df_clientes = cargar_clientes()
         num_remision_actual = obtener_siguiente_num_remision()
@@ -532,78 +604,6 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                         datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
                         pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
                         st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
-
-    elif st.session_state.seccion_activa == "📥 Entradas":
-        st.subheader("📥 Entrada de Producción / Clasificación")
-        st.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
-        
-        galpon_destino = st.selectbox("Seleccione el Galpón de Destino", ["Galpón 1", "Galpón 2", "Galpón 3"])
-        
-        opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
-        df_base_entrada = pd.DataFrame([
-            {"Clasificación": "a", "Cantidad": 1000}
-        ])
-        
-        df_entrada_editado = st.data_editor(
-            df_base_entrada,
-            num_rows="dynamic",
-            column_config={
-                "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
-                "Cantidad": st.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, required=True)
-            },
-            use_container_width=True,
-            key="editor_entradas_stock"
-        )
-        
-        if st.button("➕ Registrar Entrada al Inventario"):
-            entradas_validas = df_entrada_editado[df_entrada_editado["Cantidad"] > 0].copy()
-            if entradas_validas.empty:
-                st.warning("Debe ingresar al menos un ítem con cantidad mayor a 0.")
-            else:
-                lista_items_entrada = []
-                for _, r in entradas_validas.iterrows():
-                    lista_items_entrada.append({
-                        "Clasificación": r["Clasificación"],
-                        "Cantidad": int(r["Cantidad"])
-                    })
-                registrar_entrada_inventario(galpon_destino, lista_items_entrada)
-                st.success(f"¡Entrada registrada correctamente en {galpon_destino}!")
-                st.rerun()
-
-    elif st.session_state.seccion_activa == "👥 Clientes":
-        st.subheader("👥 Directorio de Clientes")
-        tab_nuevo, tab_lista = st.tabs(["➕ Agregar Cliente", "📋 Lista de Clientes"])
-        
-        with tab_nuevo:
-            with st.form(key="form_nuevo_cliente"):
-                c_nom = st.text_input("Nombre / Razón Social *")
-                c_ced = st.text_input("Cédula / NIT")
-                c_dir = st.text_input("Dirección", value="CHOACHI")
-                c_tel = st.text_input("Teléfono")
-                c_em = st.text_input("Email")
-                if st.form_submit_button("💾 Guardar Cliente"):
-                    if not c_nom.strip():
-                        st.error("El nombre es obligatorio.")
-                    else:
-                        guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
-                        st.success(f"¡Cliente {c_nom.upper()} guardado!")
-                        st.rerun()
-
-        with tab_lista:
-            df_cli = cargar_clientes()
-            if df_cli.empty:
-                st.info("No hay clientes registrados.")
-            else:
-                for _, r_cli in df_cli.iterrows():
-                    id_c = r_cli['id']
-                    nom_c = r_cli['nombre']
-                    with st.expander(f"👤 {nom_c} ({r_cli.get('cedula_nit', '')})"):
-                        st.write(f"**Teléfono:** {r_cli.get('telefono', '')}")
-                        st.write(f"**Dirección:** {r_cli.get('direccion', '')}")
-                        if st.button(f"🗑️ Eliminar {nom_c}", key=f"del_cli_{id_c}"):
-                            eliminar_cliente(id_c)
-                            st.warning("Cliente eliminado.")
-                            st.rerun()
 
     elif st.session_state.seccion_activa == "📊 Stock":
         st.subheader("📦 Stock Actual en Granja")

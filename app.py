@@ -7,7 +7,7 @@ from datetime import datetime
 # Configuración de la página
 st.set_page_config(page_title="HUEVONADA URIEL DAVID", layout="wide")
 
-# --- ENCABEZADO CON ESCUDO Y TÍTULO NUEVO ---
+# --- ENCABEZADO CON ESCUDO Y TÍTULO ---
 col_logo, col_titulo = st.columns([1, 5])
 
 with col_logo:
@@ -117,21 +117,18 @@ with tab2:
         galpon_v = st.selectbox("Galpón Origen", ["Galpón 1", "Galpón 2", "Galpón 3"], key="v_gal")
 
     st.markdown("---")
-    st.subheader("🛒 Tabla de Detalle de Venta")
-    st.caption("Agrega o modifica las filas directamente en la tabla para registrar diferentes clasificaciones y precios:")
+    st.subheader("🛒 Ingreso de ítems para la venta")
+    st.caption("Selecciona la clasificación, cantidad y precio por fila. Haz clic en el botón '+' al final de la tabla para agregar más filas.")
 
-    # Opciones de clasificaciones disponibles
     opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
     
-    # Crear estructura base para la tabla interactiva
     df_base = pd.DataFrame([
         {"Clasificación": "yumbo", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0.0}
     ])
 
-    # Editor interactivo de datos
     df_editado = st.data_editor(
         df_base,
-        num_rows="dynamic", # Permite añadir o eliminar filas con el botón (+) abajo de la tabla
+        num_rows="dynamic",
         column_config={
             "Clasificación": st.column_config.SelectboxColumn(
                 "Clasificación",
@@ -155,24 +152,49 @@ with tab2:
         use_container_width=True
     )
 
-    # Cálculo automático de subtotales por fila y total general
-    if not df_editado.empty:
-        df_editado["Subtotal ($)"] = df_editado["Cantidad (Huevos)"] * df_editado["Precio Unitario ($)"]
-        total_factura = df_editado["Subtotal ($)"].sum()
+    # Filtrar solo ítems con cantidad > 0
+    items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+
+    if not items_validos.empty:
+        items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
+        items_validos["Cubetas (30)"] = items_validos["Cantidad (Huevos)"] // 30
+        items_validos["Sueltos"] = items_validos["Cantidad (Huevos)"] % 30
+        total_huevos = items_validos["Cantidad (Huevos)"].sum()
+        total_factura = items_validos["Subtotal ($)"].sum()
+
+        st.markdown("---")
+        st.subheader("🧾 Vista Previa de la Factura / Recibo")
         
+        # Tarjeta de encabezado de la factura
+        col_f1, col_f2, col_f3 = st.columns(3)
+        col_f1.metric("Cliente", cliente if cliente.strip() else "—")
+        col_f2.metric("Origen", galpon_v)
+        col_f3.metric("Total Huevos", f"{total_huevos:,} uds")
+
+        # Tabla de desglose de la factura
+        st.dataframe(
+            items_validos[[
+                "Clasificación", 
+                "Cantidad (Huevos)", 
+                "Cubetas (30)", 
+                "Sueltos", 
+                "Precio Unitario ($)", 
+                "Subtotal ($)"
+            ]],
+            use_container_width=True,
+            column_config={
+                "Precio Unitario ($)": st.column_config.NumberColumn(format="$%.2f"),
+                "Subtotal ($)": st.column_config.NumberColumn(format="$%.2f")
+            }
+        )
+
         st.markdown(f"### **TOTAL FACTURA: ${total_factura:,.2f}**")
 
         if st.button("🚀 Confirmar y Guardar Venta Completa", type="primary"):
-            # Filtrar solo las filas que tengan cantidad > 0
-            items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0]
-            
-            # Validaciones
             if not cliente.strip():
                 st.error("Por favor ingresa el nombre del cliente.")
-            elif items_validos.empty:
-                st.warning("Debes ingresar al menos un ítem con cantidad mayor a 0.")
             else:
-                # Verificar disponibilidad de stock antes de procesar
+                # Verificar disponibilidad de stock
                 errores_stock = []
                 for _, fila in items_validos.iterrows():
                     c_clasif = fila["Clasificación"]

@@ -48,7 +48,7 @@ st.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS CON NUEVO FONDO ---
+# --- ESTILOS CSS CON COLORES PERSONALIZADOS ---
 st.markdown(
     """
     <style>
@@ -56,23 +56,24 @@ st.markdown(
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* Fondo general de la aplicación (Tono gris-azulado suave) */
+    /* Fondo general de toda la aplicación (Azul grisáceo más oscuro y visible) */
     .stApp {
-        background-color: #dbe4ec !important;
+        background-color: #c8d6e5 !important;
     }
     
-    /* Contenedor central (Tarjeta) */
+    /* Contenedor central (Tarjeta) con un tono diferente para que contraste */
     .block-container {
         padding-top: 1.5rem;
         padding-bottom: 5rem;
         padding-left: 1.2rem;
         padding-right: 1.2rem;
         max-width: 540px;
-        background-color: #f8fafc !important;
+        background-color: #f1f5f9 !important; /* Gris muy suave, puedes cambiarlo si prefieres otro */
         border-radius: 16px;
-        box-shadow: 0 8px 30px rgba(15, 41, 66, 0.12);
+        box-shadow: 0 10px 35px rgba(15, 41, 66, 0.2);
         margin-top: 1rem;
         margin-bottom: 2rem;
+        border: 1px solid #cbd5e1;
     }
     
     .stButton>button {

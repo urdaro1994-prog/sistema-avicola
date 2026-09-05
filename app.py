@@ -12,7 +12,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="App David",
+    page_title="App David - Agroavícola Santa Isabel",
     page_icon="🥚",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -20,7 +20,8 @@ st.set_page_config(
 
 # --- CREAR ÍCONO SVG CON HUEVO PARA APPLE Y ANDROID ---
 svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="20" fill="#125375"/>
+  <rect width="100" height="100" rx="22" fill="#0F2C59"/>
+  <circle cx="50" cy="50" r="38" fill="#FF6B00" opacity="0.2"/>
   <text x="50" y="68" font-size="65" text-anchor="middle">🥚</text>
 </svg>"""
 
@@ -48,7 +49,7 @@ st.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS CON COMBINACIÓN AZUL Y NARANJA ---
 st.markdown(
     """
     <style>
@@ -61,34 +62,87 @@ st.markdown(
         padding-bottom: 5rem;
         padding-left: 0.8rem;
         padding-right: 0.8rem;
-        max-width: 500px;
+        max-width: 520px;
     }
     
+    /* Botones de acción principales en Naranja Vibrante */
     .stButton>button {
         width: 100%;
         border-radius: 12px;
-        height: 3em;
-        font-weight: bold;
-        background-color: #125375;
+        height: 3.2em;
+        font-weight: 700;
+        font-size: 15px;
+        background: linear-gradient(135deg, #FF6B00 0%, #E65100 100%);
         color: white;
         border: none;
+        box-shadow: 0px 3px 8px rgba(255, 107, 0, 0.25);
+        transition: all 0.25s ease-in-out;
+    }
+    
+    .stButton>button:hover {
+        background: linear-gradient(135deg, #0F2C59 0%, #1E3A8A 100%);
+        color: #FFFFFF;
+        box-shadow: 0px 4px 12px rgba(15, 44, 89, 0.35);
+        transform: translateY(-1px);
+    }
+    
+    /* Subtítulos en Azul Oscuro */
+    h2, h3 {
+        color: #0F2C59 !important;
+        font-weight: 800 !important;
+    }
+    
+    /* Líneas divisorias con toque naranja */
+    hr {
+        border-top: 2px solid #FF6B00 !important;
+        opacity: 0.8;
+        margin-top: 1rem !important;
+        margin-bottom: 1.2rem !important;
+    }
+    
+    /* Pestañas de Streamlit en Azul y Naranja */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #F1F5F9;
+        border-radius: 8px;
+        color: #0F2C59;
+        font-weight: 600;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #0F2C59 !important;
+        color: #FFFFFF !important;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- ENCABEZADO ---
-col_logo, col_tit = st.columns([1, 3])
+# --- ENCABEZADO PRINCIPAL ---
+col_logo, col_tit = st.columns([1, 3.8])
 with col_logo:
     if os.path.exists("ESCUDO.png"):
-        st.image("ESCUDO.png", width=70)
+        st.image("ESCUDO.png", width=80)
     elif os.path.exists("escudo.png"):
-        st.image("escudo.png", width=70)
+        st.image("escudo.png", width=80)
     else:
-        st.write("🛡️")
+        st.markdown("<div style='font-size: 55px; text-align: center; line-height: 1;'>🛡️</div>", unsafe_allow_html=True)
+
 with col_tit:
-    st.markdown("### **AGROAVÍCOLA**\n*Santa Isabel*")
+    st.markdown("""
+        <div style='padding-left: 5px;'>
+            <div style='color: #0F2C59; font-size: 27px; font-weight: 900; letter-spacing: 1.5px; line-height: 1.05; font-family: system-ui, -apple-system, sans-serif;'>
+                AGROAVÍCOLA
+            </div>
+            <div style='color: #FF6B00; font-size: 21px; font-weight: 700; font-style: italic; letter-spacing: 0.5px; line-height: 1.2;'>
+                Santa Isabel
+            </div>
+            <div style='color: #64748B; font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;'>
+                Sistema de Control y Gestión
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
 # --- NAVEGACIÓN ---
 if "seccion_activa" not in st.session_state:
@@ -333,13 +387,13 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     header_data = [
         [
             Image("ESCUDO.png", width=60, height=60) if os.path.exists("ESCUDO.png") else "🛡️",
-            Paragraph("<font size=16 color='#ffffff'><b>Remisión de venta</b></font>", style_normal),
-            Paragraph("<font size=9 color='#ffffff'><b>Agroavicola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
+            Paragraph("<font size=16 color='#ffffff'><b>Remisión de Venta</b></font>", style_normal),
+            Paragraph("<font size=9 color='#ffffff'><b>Agroavícola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
         ]
     ]
     t_header = Table(header_data, colWidths=[80, 260, 200])
     t_header.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#125375")),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#0F2C59")),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
@@ -352,8 +406,8 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     num_str = f"{num_remision:06d}"
     cliente_info_data = [
         [
-            Paragraph(f"<b>Remisión No.</b> {num_str}<br/><b>Fecha</b> {fecha_str}<br/><b>Conductor</b> {conductor}", style_normal),
-            Paragraph(f"<b>Datos del cliente</b><br/><b>Nombre/Razón Social:</b> {cliente_datos['nombre']}<br/><b>Cédula/NIT:</b> {cliente_datos['cedula']}<br/><b>Dirección:</b> {cliente_datos['direccion']}<br/><b>Teléfono:</b> {cliente_datos['telefono']}<br/><b>Email:</b> {cliente_datos['email']}", style_normal)
+            Paragraph(f"<b>Remisión No.</b> <font color='#FF6B00'><b>{num_str}</b></font><br/><b>Fecha:</b> {fecha_str}<br/><b>Conductor:</b> {conductor}", style_normal),
+            Paragraph(f"<b>Datos del Cliente</b><br/><b>Nombre/Razón Social:</b> {cliente_datos['nombre']}<br/><b>Cédula/NIT:</b> {cliente_datos['cedula']}<br/><b>Dirección:</b> {cliente_datos['direccion']}<br/><b>Teléfono:</b> {cliente_datos['telefono']}<br/><b>Email:</b> {cliente_datos['email']}", style_normal)
         ]
     ]
     t_info = Table(cliente_info_data, colWidths=[240, 300])
@@ -361,7 +415,7 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story.append(t_info)
     story.append(Spacer(1, 15))
 
-    table_data = [["Descripción", "Cantidad", "Valor Unitario", "Valor total"]]
+    table_data = [["Descripción", "Cantidad", "Valor Unitario", "Valor Total"]]
     for _, fila in items_df.iterrows():
         table_data.append([
             str(fila["Clasificación"]).upper(),
@@ -375,12 +429,13 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 
     t_items = Table(table_data, colWidths=[200, 100, 120, 120])
     t_items.setStyle(TableStyle([
-        ('LINEBELOW', (0,0), (-1,0), 1.5, colors.black),
-        ('LINEABOVE', (0,0), (-1,0), 1.5, colors.black),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0F2C59")),
+        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+        ('LINEBELOW', (0,0), (-1,0), 2, colors.HexColor("#FF6B00")),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('ALIGN', (1,0), (-1,-1), 'CENTER'),
-        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#c1d5e0")),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#eef4f8"), colors.white]),
+        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#cbd5e1")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#f8fafc"), colors.white]),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ('TOPPADDING', (0,0), (-1,-1), 6),
@@ -391,13 +446,14 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     totales_data = [
         ["Subtotal", f"$ {total_factura:,.2f}"],
         ["IVA", "$ 0.00"],
-        ["Total", f"$ {total_factura:,.2f}"]
+        ["Total Factura", f"$ {total_factura:,.2f}"]
     ]
     t_totales = Table(totales_data, colWidths=[420, 120])
     t_totales.setStyle(TableStyle([
         ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
         ('FONTNAME', (0,2), (-1,2), 'Helvetica-Bold'),
-        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#125375")),
+        ('TEXTCOLOR', (1,2), (1,2), colors.HexColor("#0F2C59")),
+        ('LINEABOVE', (0,2), (-1,2), 1.5, colors.HexColor("#FF6B00")),
     ]))
     story.append(t_totales)
     doc.build(story)
@@ -421,7 +477,7 @@ if st.session_state.seccion_activa == "📥 Entrada":
     if st.button("💾 Guardar Producción"):
         conteos = {'Yumbo': y, 'Extra': ex, 'AA': aa, 'A': a, 'B': b, 'C': c, 'Sucio': suc, 'Roto': rot}
         registrar_produccion(fecha, galpon, conteos)
-        st.success("¡Registro de producción guardado!")
+        st.success("¡Registro de producción guardado con éxito!")
 
 elif st.session_state.seccion_activa == "📤 Remisiones":
     df_inv = cargar_inventario()
@@ -474,7 +530,7 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
     if not items_validos.empty:
         items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
         total_factura = items_validos["Subtotal ($)"].sum()
-        st.markdown(f"### **TOTAL: ${total_factura:,.2f}**")
+        st.markdown(f"### **TOTAL: <font color='#FF6B00'>${total_factura:,.2f}</font>**", unsafe_allow_html=True)
 
         if st.button("🚀 Confirmar y Generar Remisión"):
             if not cliente_nombre.strip():
@@ -626,7 +682,7 @@ elif st.session_state.seccion_activa == "📜 Historial":
                             use_container_width=True,
                             hide_index=True
                         )
-                        st.markdown(f"#### **Total: ${tot_val:,.2f}**")
+                        st.markdown(f"#### **Total: <font color='#FF6B00'>${tot_val:,.2f}</font>**", unsafe_allow_html=True)
                         
                         st.download_button(
                             label=f"📥 Descargar PDF Remisión No. {num_sel:06d}",

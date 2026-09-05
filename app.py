@@ -1,24 +1,4 @@
 import streamlit as st
-
-st.set_page_config(
-    page_title="App David",
-    page_icon="🥚",
-    layout="centered",
-    initial_sidebar_state="collapsed"
-)
-import streamlit as st
-import pandas as pd
-import psycopg2
-import os
-from datetime import datetime
-import io
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-
-# --- CONFIGURACIÓN DE PÁGINA ---
-import streamlit as st
 import pandas as pd
 import psycopg2
 import os
@@ -39,7 +19,6 @@ st.set_page_config(
 )
 
 # --- CREAR ÍCONO SVG CON HUEVO PARA APPLE Y ANDROID ---
-# Generamos un SVG nativo del huevo para que iOS lo reconozca como imagen HD
 svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <rect width="100" height="100" rx="20" fill="#125375"/>
   <text x="50" y="68" font-size="65" text-anchor="middle">🥚</text>
@@ -48,30 +27,23 @@ svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
 b64_svg = base64.b64encode(svg_huevo.encode('utf-8')).decode('utf-8')
 data_uri = f"data:image/svg+xml;base64,{b64_svg}"
 
-# --- INYECCIÓN DIRECTA EN EL DOM DE SAFARI (IPHONE) ---
 st.markdown(f"""
     <script>
-        // Forzar cambio del apple-touch-icon en el marco principal de Safari
         var doc = window.parent.document;
-        
-        // Eliminar referencias viejas de Streamlit
         var oldIcons = doc.querySelectorAll("link[rel*='icon'], link[rel*='apple']");
         oldIcons.forEach(function(el) {{ el.remove(); }});
 
-        // Crear Apple Touch Icon (iPhone / iPad)
         var appleIcon = doc.createElement('link');
         appleIcon.rel = 'apple-touch-icon';
         appleIcon.href = '{data_uri}';
         doc.head.appendChild(appleIcon);
 
-        // Crear Favicon estándar
         var icon = doc.createElement('link');
         icon.rel = 'icon';
         icon.type = 'image/svg+xml';
         icon.href = '{data_uri}';
         doc.head.appendChild(icon);
 
-        // Definir título en la pantalla de inicio
         var metaTitle = doc.createElement('meta');
         metaTitle.name = 'apple-mobile-web-app-title';
         metaTitle.content = 'App David';
@@ -125,7 +97,7 @@ with col_tit:
 if "seccion_activa" not in st.session_state:
     st.session_state.seccion_activa = "📤 Remisiones"
 
-c_nav1, c_nav2, c_nav3 = st.columns(3)
+c_nav1, c_nav2, c_nav3, c_nav4 = st.columns(4)
 with c_nav1:
     if st.button("📥 Entrada", use_container_width=True):
         st.session_state.seccion_activa = "📥 Entrada"
@@ -135,6 +107,9 @@ with c_nav2:
 with c_nav3:
     if st.button("📊 Stock", use_container_width=True):
         st.session_state.seccion_activa = "📊 Stock"
+with c_nav4:
+    if st.button("📜 Historial", use_container_width=True):
+        st.session_state.seccion_activa = "📜 Historial"
 
 st.markdown("---")
 
@@ -375,7 +350,7 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
                         num_remision_actual, galpon_v, items_dict
                     )
                     
-                    st.success(f"¡Remisión No. {num_remision_actual:06d} lista!")
+                    st.success(f"¡Remisión No. {num_remision_actual:06d} guardada en Supabase!")
                     
                     fecha_hoy_str = datetime.now().strftime("%d/%m/%Y")
                     datos_cliente = {
@@ -399,6 +374,24 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
 elif st.session_state.seccion_activa == "📊 Stock":
     st.subheader("📦 Stock en Granja")
     st.dataframe(cargar_inventario(), use_container_width=True)
-    
-    st.subheader("📜 Historial de Ventas")
-    st.dataframe(cargar_ventas(), use_container_width=True)
+
+elif st.session_state.seccion_activa == "📜 Historial":
+    st.subheader("📜 Historial de Remisiones Guardadas")
+    df_v = cargar_ventas()
+    if not df_v.empty:
+        st.dataframe(
+            df_v,
+            column_config={
+                "id": "ID",
+                "num_remision": "N° Remisión",
+                "cliente": "Cliente",
+                "galpon_origen": "Origen",
+                "clasificacion": "Tipo Huevo",
+                "cantidad_huevos": "Cantidad",
+                "total_dinero": st.column_config.NumberColumn("Total ($)", format="$%.2f")
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("Aún no hay ventas registradas.")

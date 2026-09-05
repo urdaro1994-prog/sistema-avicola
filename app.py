@@ -12,7 +12,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="App David",
+    page_title="Avícola Santa Isabel",
     page_icon="🥚",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -20,7 +20,7 @@ st.set_page_config(
 
 # --- CREAR ÍCONO SVG CON HUEVO PARA APPLE Y ANDROID ---
 svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="20" fill="#125375"/>
+  <rect width="100" height="100" rx="20" fill="#0f2942"/>
   <text x="50" y="68" font-size="65" text-anchor="middle">🥚</text>
 </svg>"""
 
@@ -43,12 +43,12 @@ st.markdown(f"""
         doc.head.appendChild(icon);
         var metaTitle = doc.createElement('meta');
         metaTitle.name = 'apple-mobile-web-app-title';
-        metaTitle.content = 'App David';
+        metaTitle.content = 'Avícola Santa Isabel';
         doc.head.appendChild(metaTitle);
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS PROFESIONALES (NARANJA Y AZUL OSCURO) ---
 st.markdown(
     """
     <style>
@@ -56,39 +56,83 @@ st.markdown(
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
+    :root {
+        --azul-oscuro: #0f2942;
+        --naranja-acento: #f26822;
+        --naranja-hover: #d95316;
+        --fondo-claro: #f4f7f6;
+    }
+
+    .stApp {
+        background-color: var(--fondo-claro);
+    }
+    
     .block-container {
-        padding-top: 1rem;
+        padding-top: 1.5rem;
         padding-bottom: 5rem;
-        padding-left: 0.8rem;
-        padding-right: 0.8rem;
-        max-width: 500px;
+        padding-left: 1.2rem;
+        padding-right: 1.2rem;
+        max-width: 540px;
+        background-color: #ffffff;
+        border-radius: 16px;
+        box-shadow: 0 6px 24px rgba(15, 41, 66, 0.08);
+        margin-top: 1rem;
+        margin-bottom: 2rem;
     }
     
     .stButton>button {
         width: 100%;
-        border-radius: 12px;
-        height: 3em;
-        font-weight: bold;
-        background-color: #125375;
+        border-radius: 10px;
+        height: 3.2em;
+        font-weight: 600;
+        background-color: var(--azul-oscuro);
         color: white;
-        border: none;
+        border: 2px solid var(--naranja-acento);
+        transition: all 0.2s ease-in-out;
+    }
+    
+    .stButton>button:hover {
+        background-color: var(--naranja-acento);
+        color: white;
+        border-color: var(--azul-oscuro);
+    }
+
+    h1, h2, h3 {
+        color: var(--azul-oscuro);
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+
+    .brand-container {
+        background: linear-gradient(135deg, #0f2942 0%, #1a446c 100%);
+        padding: 16px;
+        border-radius: 12px;
+        color: white;
+        margin-bottom: 1.5rem;
+        border-bottom: 4px solid var(--naranja-acento);
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# --- ENCABEZADO ---
-col_logo, col_tit = st.columns([1, 3])
+# --- ENCABEZADO PROFESIONAL ---
+col_logo, col_tit = st.columns([1, 3.5])
 with col_logo:
     if os.path.exists("ESCUDO.png"):
-        st.image("ESCUDO.png", width=70)
+        st.image("ESCUDO.png", width=75)
     elif os.path.exists("escudo.png"):
-        st.image("escudo.png", width=70)
+        st.image("escudo.png", width=75)
     else:
-        st.write("🛡️")
+        st.markdown("<h1 style='text-align: center; margin: 0;'>🥚</h1>", unsafe_allow_html=True)
 with col_tit:
-    st.markdown("### **AGROAVÍCOLA**\n*Santa Isabel*")
+    st.markdown("""
+        <div style="padding-top: 5px;">
+            <h2 style="margin: 0; color: #0f2942; font-size: 22px; font-weight: 800;">AVÍCOLA SANTA ISABEL</h2>
+            <p style="margin: 0; color: #f26822; font-size: 13px; font-weight: 600; letter-spacing: 0.5px;">SISTEMA DE GESTIÓN Y CONTROL</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("---")
 
 # --- NAVEGACIÓN ---
 if "seccion_activa" not in st.session_state:
@@ -209,11 +253,6 @@ def registrar_produccion(fecha, galpon, conteos):
     conn.close()
 
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, items_venta):
-    """
-    Registra la venta distribuyendo automáticamente el inventario según disponibilidad o por galpón asignado,
-    guardando el galpón de origen internamente en la base de datos sin alteración visual en la remisión.
-    items_venta es una lista de diccionarios: {'Clasificación': ..., 'Cantidad (Huevos)': ..., 'Precio Unitario ($)': ..., 'Galpón': ...}
-    """
     conn = get_connection()
     cur = conn.cursor()
     fecha_actual = datetime.now()
@@ -262,7 +301,6 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
     cur = conn.cursor()
     fecha_actual = datetime.now()
 
-    # Revertir stock anterior
     for _, row in df_viejos.iterrows():
         c_tipo = str(row.get('tipo_huevo', 'a')).lower()
         c_cant = int(row.get('cantidad', 0))
@@ -339,13 +377,13 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     header_data = [
         [
             Image("ESCUDO.png", width=60, height=60) if os.path.exists("ESCUDO.png") else "🛡️",
-            Paragraph("<font size=16 color='#ffffff'><b>Remisión de venta</b></font>", style_normal),
-            Paragraph("<font size=9 color='#ffffff'><b>Agroavicola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
+            Paragraph("<font size=16 color='#ffffff'><b>Remisión de Venta</b></font>", style_normal),
+            Paragraph("<font size=9 color='#ffffff'><b>Avícola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
         ]
     ]
     t_header = Table(header_data, colWidths=[80, 260, 200])
     t_header.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#125375")),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#0f2942")),
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
@@ -381,12 +419,12 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 
     t_items = Table(table_data, colWidths=[200, 100, 120, 120])
     t_items.setStyle(TableStyle([
-        ('LINEBELOW', (0,0), (-1,0), 1.5, colors.black),
-        ('LINEABOVE', (0,0), (-1,0), 1.5, colors.black),
+        ('LINEBELOW', (0,0), (-1,0), 1.5, colors.HexColor("#0f2942")),
+        ('LINEABOVE', (0,0), (-1,0), 1.5, colors.HexColor("#0f2942")),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
         ('ALIGN', (1,0), (-1,-1), 'CENTER'),
-        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#c1d5e0")),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#eef4f8"), colors.white]),
+        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#f8fafc"), colors.white]),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ('TOPPADDING', (0,0), (-1,-1), 6),
@@ -403,7 +441,7 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     t_totales.setStyle(TableStyle([
         ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
         ('FONTNAME', (0,2), (-1,2), 'Helvetica-Bold'),
-        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#125375")),
+        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#f26822")),
     ]))
     story.append(t_totales)
     doc.build(story)
@@ -414,27 +452,34 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 
 if st.session_state.seccion_activa == "📥 Entrada":
     st.subheader("📥 Registro Diario de Postura")
-    fecha = st.date_input("Fecha", datetime.now())
-    galpon = st.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
-    y = st.number_input("Yumbo", min_value=0, value=0)
-    ex = st.number_input("Extra", min_value=0, value=0)
-    aa = st.number_input("AA", min_value=0, value=0)
-    a = st.number_input("A", min_value=0, value=0)
-    b = st.number_input("B", min_value=0, value=0)
-    c = st.number_input("C", min_value=0, value=0)
-    suc = st.number_input("Sucio", min_value=0, value=0)
-    rot = st.number_input("Roto", min_value=0, value=0)
+    st.markdown("Ingrese la cantidad de huevos recolectados por clasificación y galpón.")
+    
+    fecha = st.date_input("Fecha de Registro", datetime.now())
+    galpon = st.selectbox("Seleccione Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
+    
+    col_e1, col_e2 = st.columns(2)
+    with col_e1:
+        y = st.number_input("Yumbo", min_value=0, value=0)
+        ex = st.number_input("Extra", min_value=0, value=0)
+        aa = st.number_input("AA", min_value=0, value=0)
+        a = st.number_input("A", min_value=0, value=0)
+    with col_e2:
+        b = st.number_input("B", min_value=0, value=0)
+        c = st.number_input("C", min_value=0, value=0)
+        suc = st.number_input("Sucio", min_value=0, value=0)
+        rot = st.number_input("Roto", min_value=0, value=0)
+
     if st.button("💾 Guardar Producción"):
         conteos = {'Yumbo': y, 'Extra': ex, 'AA': aa, 'A': a, 'B': b, 'C': c, 'Sucio': suc, 'Roto': rot}
         registrar_produccion(fecha, galpon, conteos)
-        st.success("¡Registro de producción guardado!")
+        st.success("¡Registro de producción guardado con éxito!")
 
 elif st.session_state.seccion_activa == "📤 Remisiones":
     df_inv = cargar_inventario()
     df_clientes = cargar_clientes()
     num_remision_actual = obtener_siguiente_num_remision()
     
-    st.subheader(f"📋 Remisión No. {num_remision_actual:06d}")
+    st.subheader(f"📋 Nueva Remisión No. {num_remision_actual:06d}")
 
     opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
     cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", opciones_cli)
@@ -449,7 +494,7 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
         val_tel = str(d_cli.get("telefono", ""))
         val_email = str(d_cli.get("email", ""))
 
-    cliente_nombre = st.text_input("Razón Social / Cliente", value=val_nombre, placeholder="Ej. RAFAEL GARCIA")
+    cliente_nombre = st.text_input("Razón Social / Cliente *", value=val_nombre, placeholder="Ej. RAFAEL GARCIA")
     cedula_nit = st.text_input("Cédula / NIT", value=val_cedula, placeholder="Ej. 901.786.799-7")
     direccion = st.text_input("Dirección", value=val_dir)
     telefono = st.text_input("Teléfono", value=val_tel, placeholder="Ej. 3102397244")
@@ -459,7 +504,7 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
     guardar_cli_auto = st.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
 
     st.markdown("### 🛒 Detalle del Despacho")
-    st.caption("Selecciona el tipo de huevo, la cantidad, el precio unitario y el galpón de origen para cada línea.")
+    st.caption("Añada los productos, especificando de qué galpón se descuenta el inventario.")
     
     opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
     opciones_galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]
@@ -488,22 +533,25 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
     if not items_validos.empty:
         items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
         
-        # Agrupar para la vista y PDF limpio (sin mostrar el galpón)
+        # Agrupar para la vista y PDF limpio sin desglosar galpones
         df_agrupado_pdf = items_validos.groupby("Clasificación").agg({
             "Cantidad (Huevos)": "sum",
-            "Precio Unitario ($)": "mean", # O el promedio/precio ingresado
+            "Precio Unitario ($)": "mean",
             "Subtotal ($)": "sum"
         }).reset_index()
 
         total_factura = items_validos["Subtotal ($)"].sum()
-        st.markdown(f"### **TOTAL: ${total_factura:,.2f}**")
+        st.markdown(f"""
+            <div style="background-color: #0f2942; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #f26822;">
+                <h3 style="margin: 0; color: white; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.2f}</h3>
+            </div>
+        """, unsafe_allow_html=True)
 
         if st.button("🚀 Confirmar y Generar Remisión"):
             if not cliente_nombre.strip():
                 st.error("Por favor ingresa el Nombre del cliente.")
             else:
                 errores_stock = []
-                # Validar stock por galpón acumulado en la tabla de edición
                 stock_acumulado_uso = {}
                 for _, fila in items_validos.iterrows():
                     c_clasif = fila["Clasificación"]
@@ -524,7 +572,6 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
                     if guardar_cli_auto:
                         guardar_cliente(cliente_nombre, cedula_nit, direccion, telefono, email)
 
-                    # Preparar formato para la base de datos (con su galpón individual)
                     items_dict = []
                     for _, row in items_validos.iterrows():
                         items_dict.append({
@@ -539,8 +586,6 @@ elif st.session_state.seccion_activa == "📤 Remisiones":
                     st.success(f"¡Remisión No. {num_remision_actual:06d} guardada con éxito!")
                     
                     datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
-                    
-                    # Generamos el PDF usando el dataframe agrupado para que no muestre galpones
                     pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
                     st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
 
@@ -590,7 +635,8 @@ elif st.session_state.seccion_activa == "👥 Clientes":
                         st.rerun()
 
 elif st.session_state.seccion_activa == "📊 Stock":
-    st.subheader("📦 Stock en Granja")
+    st.subheader("📦 Stock Actual en Granja")
+    st.markdown("Inventario disponible distribuido por galpón.")
     st.dataframe(cargar_inventario(), use_container_width=True)
 
 elif st.session_state.seccion_activa == "📜 Historial":
@@ -641,7 +687,6 @@ elif st.session_state.seccion_activa == "📜 Historial":
                         })
                     df_items_original = pd.DataFrame(items_actuales)
                     
-                    # Agrupar para el PDF en el historial para ocultar los galpones desglosados
                     df_items_pdf = df_items_original.groupby("Clasificación").agg({
                         "Cantidad (Huevos)": "sum",
                         "Precio Unitario ($)": "mean",
@@ -745,4 +790,4 @@ elif st.session_state.seccion_activa == "📜 Historial":
                             if submit_eliminar:
                                 eliminar_remision_completa(num_sel, df_rem)
                                 st.warning(f"Remisión No. {num_sel:06d} eliminada correctamente.")
-                                st.rerun()
+                                st.rerun()v

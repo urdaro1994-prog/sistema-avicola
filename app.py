@@ -1210,10 +1210,102 @@ else:
                                                 str_app.warning("Remisión y registro de cartera eliminados.")
                                                 str_app.rerun()
 
-    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
-        str_app.subheader("📝 Registro Diario")
-        str_app.info("💡 Sección lista para alimentación de datos de postura y mortalidad próximamente.")
-        with str_app.form("diario"):
-            str_app.date_input("Fecha")
-            str_app.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
-            str_app.form_submit_button("Guardar")
+   elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+        str_app.subheader("📝 Registro Diario - Control Zootécnico (Hy-Line)")
+        
+        AVES_INICIALES_GALPON_1 = 16000  # Puedes ajustar o hacer dinámico según el galpón si lo requieres
+        
+        if rol_actual == "Invitado":
+            str_app.warning("👀 Modo Invitado: Visualización de registros diarios.")
+            df_reg = cargar_registros_diarios()
+            if df_reg.empty:
+                str_app.info("No hay registros diarios guardados.")
+            else:
+                str_app.dataframe(df_reg, use_container_width=True)
+        else:
+            tab_reg_nuevo, tab_reg_historial = str_app.tabs(["➕ Registrar Día", "📋 Historial y Formato Estilo Plantilla"])
+            
+            with tab_reg_nuevo:
+                str_app.caption("Ingrese los datos diarios de mortalidad, consumo de alimento y clasificación de huevos.")
+                
+                with str_app.form(key="form_registro_diario_hyline"):
+                    col_f1, col_f2, col_f3 = str_app.columns(3)
+                    with col_f1:
+                        fecha_diaria = str_app.date_input("📅 Fecha", value=date.today())
+                    with col_f2:
+                        galpon_diario = str_app.selectbox("🏠 Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
+                    with col_f3:
+                        semana_vida = str_app.number_input("🐣 Semana de Vida", min_value=1, max_value=100, value=25, step=1)
+                    
+                    str_app.markdown("---")
+                    col_m1, col_m2 = str_app.columns(2)
+                    with col_m1:
+                        mortalidad_dia = str_app.number_input("🕊️ Mortalidad del Día (Aves)", min_value=0, step=1, value=0)
+                    with col_m2:
+                        alimento_dia = str_app.number_input("🌾 Alimento Consumido Total (Kg)", min_value=0.0, step=0.5, value=170.0, format="%.1f")
+                    
+                    str_app.markdown("#### 🥚 Producción de Huevos por Clasificación (Unidades)")
+                    
+                    c_p1, c_p2, c_p3, c_p4 = str_app.columns(4)
+                    with c_p1:
+                        p_yumbo = str_app.number_input("Yumbo", min_value=0, step=1, value=0)
+                        p_a = str_app.number_input("A", min_value=0, step=1, value=0)
+                    with c_p2:
+                        p_extra = str_app.number_input("Extra", min_value=0, step=1, value=0)
+                        p_b = str_app.number_input("B", min_value=0, step=1, value=0)
+                    with c_p3:
+                        p_aa = str_app.number_input("AA", min_value=0, step=1, value=0)
+                        p_c = str_app.number_input("C", min_value=0, step=1, value=0)
+                    with c_p4:
+                        p_sucio = str_app.number_input("Sucio", min_value=0, step=1, value=0)
+                        p_roto = str_app.number_input("Roto", min_value=0, step=1, value=0)
+
+                    observaciones_dia = str_app.text_area("📌 Observaciones / Novedades del Galpón", placeholder="Ej. Buen clima, ajuste de tolvas, aplicación de vitaminas...")
+                    
+                    sumar_al_stock = str_app.checkbox("📥 Sumar automáticamente esta producción de huevos al Inventario de la Granja", value=True)
+                    
+                    btn_guardar_diario = str_app.form_submit_button("💾 Guardar Registro Diario")
+
+                    if btn_guardar_diario:
+                        huevos_dict = {
+                            'yumbo': p_yumbo, 'extra': p_extra, 'aa': p_aa, 'a': p_a,
+                            'b': p_b, 'c': p_c, 'sucio': p_sucio, 'roto': p_roto
+                        }
+                        
+                        guardar_registro_diario(fecha_diaria, galpon_diario, semana_vida, mortalidad_dia, alimento_dia, huevos_dict, observaciones_dia)
+                        
+                        if sumar_al_stock:
+                            items_entrada_auto = []
+                            for k, v in huevos_dict.items():
+                                if v > 0:
+                                    items_entrada_auto.append({'Clasificación': k, 'Cantidad': v})
+                            if items_entrada_auto:
+                                registrar_entrada_inventario(galpon_diario, items_entrada_auto)
+
+                        str_app.success(f"¡Registro diario de {galpon_diario} guardado y zootécnicamente actualizado!")
+                        str_app.rerun()
+
+            with tab_reg_historial:
+                str_app.markdown("### 📊 Historial y Resumen Estilo Plantilla")
+                df_hist_reg = cargar_registros_diarios()
+                
+                if df_hist_reg.empty:
+                    str_app.info("No hay registros diarios guardados en la base de datos.")
+                else:
+                    df_hist_reg['Total Huevos'] = (
+                        df_hist_reg['yumbo'] + df_hist_reg['extra'] + df_hist_reg['aa'] + 
+                        df_hist_reg['a'] + df_hist_reg['b'] + df_hist_reg['c'] + 
+                        df_hist_reg['sucio'] + df_hist_reg['roto']
+                    )
+                    df_hist_reg['Cartones (30u)'] = (df_hist_reg['Total Huevos'] / 30).round(1)
+                    df_hist_reg['% Postura'] = ((df_hist_reg['Total Huevos'] / AVES_INICIALES_GALPON_1) * 100).round(2)
+                    df_hist_reg['g/Ave/Día'] = ((df_hist_reg['alimento_kg'] * 1000) / AVES_INICIALES_GALPON_1).round(1)
+                    
+                    columnas_ordenadas = [
+                        'fecha', 'galpon', 'semana', 'mortalidad', 'alimento_kg', 'g/Ave/Día', 
+                        'Total Huevos', 'Cartones (30u)', '% Postura', 
+                        'yumbo', 'extra', 'aa', 'a', 'b', 'c', 'sucio', 'roto', 'observaciones'
+                    ]
+                    cols_presentes = [c for c in columnas_ordenadas if c in df_hist_reg.columns]
+                    
+                    str_app.dataframe(df_hist_reg[cols_presentes], use_container_width=True, hide_index=True)

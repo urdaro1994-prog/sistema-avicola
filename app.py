@@ -18,13 +18,15 @@ str_app.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# --- ICONO PERSONALIZADO ---
-svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <rect width="100" height="100" rx="20" fill="#0f2942"/>
-  <text x="50" y="68" font-size="65" text-anchor="middle">🥚</text>
-</svg>"""
-b64_svg = base64.b64encode(svg_huevo.encode('utf-8')).decode('utf-8')
-data_uri = f"data:image/svg+xml;base64,{b64_svg}"
+# --- ICONO PERSONALIZADO (FAVICON) ---
+if os.path.exists("LOGOASI.png"):
+    with open("LOGOASI.png", "rb") as f:
+        b64_svg = base64.b64encode(f.read()).decode('utf-8')
+    data_uri = f"data:image/png;base64,{b64_svg}"
+else:
+    svg_huevo = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#0f2942"/><text x="50" y="68" font-size="65" text-anchor="middle">🥚</text></svg>"""
+    b64_svg = base64.b64encode(svg_huevo.encode('utf-8')).decode('utf-8')
+    data_uri = f"data:image/svg+xml;base64,{b64_svg}"
 
 str_app.markdown(f"""
     <script>
@@ -37,7 +39,7 @@ str_app.markdown(f"""
         doc.head.appendChild(appleIcon);
         var icon = doc.createElement('link');
         icon.rel = 'icon';
-        icon.type = 'image/svg+xml';
+        icon.type = 'image/x-icon';
         icon.href = '{data_uri}';
         doc.head.appendChild(icon);
     </script>
@@ -141,12 +143,10 @@ def inicializar_tablas_cartera():
 def reiniciar_sistema_completo():
     conn = get_connection()
     cur = conn.cursor()
-    # Vaciar tablas transaccionales y maestras de prueba
     cur.execute("DELETE FROM abonos_cartera;")
     cur.execute("DELETE FROM cartera;")
     cur.execute("DELETE FROM remisiones;")
     cur.execute("DELETE FROM clientes;")
-    # Resetear inventario a 0 en todos los galpones
     cur.execute("""
         UPDATE inventario SET 
             yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
@@ -458,7 +458,8 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 
     num_str = f"{num_remision:06d}"
 
-    img_logo = Image("ESCUDO.png", width=50, height=50) if os.path.exists("ESCUDO.png") else Paragraph("<b>🥚</b>", style_title)
+    # Cambio al nuevo logo LOGOASI.png
+    img_logo = Image("LOGOASI.png", width=55, height=55) if os.path.exists("LOGOASI.png") else Paragraph("<b>🥚</b>", style_title)
     
     header_data = [
         [
@@ -578,7 +579,7 @@ PASS_INVITADO = "invitado123"
 if str_app.session_state.usuario_autenticado is None:
     col_logo_l, col_tit_l = str_app.columns([1, 3.5])
     with col_logo_l:
-        if os.path.exists("ESCUDO.png"): str_app.image("ESCUDO.png", width=75)
+        if os.path.exists("LOGOASI.png"): str_app.image("LOGOASI.png", width=75)
         else: str_app.markdown("<h1 style='margin: 0;'>🥚</h1>", unsafe_allow_html=True)
     with col_tit_l:
         str_app.markdown('<h2 style="margin: 0; color: #f26822 !important;">AVÍCOLA SANTA ISABEL</h2><p style="margin: 0;">CONTROL DE ACCESO</p>', unsafe_allow_html=True)
@@ -609,7 +610,7 @@ else:
     # --- ENCABEZADO ---
     col_logo, col_tit = str_app.columns([1, 3.5])
     with col_logo:
-        if os.path.exists("ESCUDO.png"): str_app.image("ESCUDO.png", width=75)
+        if os.path.exists("LOGOASI.png"): str_app.image("LOGOASI.png", width=75)
         else: str_app.markdown("<h1 style='margin: 0;'>🥚</h1>", unsafe_allow_html=True)
     with col_tit:
         rol_actual = str_app.session_state.usuario_autenticado

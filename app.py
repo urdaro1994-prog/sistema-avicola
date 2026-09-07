@@ -1190,8 +1190,8 @@ else:
                                                 eliminar_remision_completa(num_sel, df_rem)
                                                 str_app.warning("Remisión y registro de cartera eliminados.")
                                                 str_app.rerun()
-
-elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+                                                
+    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
     str_app.subheader("📝 Registro Diario de Producción - Granja San Lorenzo")
     str_app.caption("Control diario de aves, consumo de alimento y postura para el Lote 200 (Hy-Line Brown).")
     

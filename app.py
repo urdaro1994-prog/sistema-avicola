@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import os
-from datetime import datetime
+from datetime import datetime, date
 import io
 import base64
 from reportlab.lib.pagesizes import letter
@@ -255,11 +255,10 @@ def obtener_abonos_con_comprobante(num_remision):
     conn.close()
     return filas
 
-def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, items_venta):
+def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, fecha_remision, items_venta):
     inicializar_tablas_cartera()
     conn = get_connection()
     cur = conn.cursor()
-    fecha_actual = datetime.now()
 
     cur.execute("""
         SELECT column_name, is_generated, identity_generation 
@@ -282,7 +281,7 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
         total_venta_acumulado += subtotal
 
         datos_insert = {
-            "num_remision": num_remision, "fecha_emision": fecha_actual,
+            "num_remision": num_remision, "fecha_emision": fecha_remision,
             "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
             "destino": direccion, "email": email, "conductor": conductor,
             "tipo_huevo": clasificacion, "cantidad": cantidad,
@@ -611,6 +610,9 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
         
         st.subheader(f"📋 Nueva Remisión No. {num_remision_actual:06d}")
 
+        # --- Selector de Fecha de la Remisión ---
+        fecha_remision = st.date_input("📅 Fecha de la Remisión", value=date.today())
+
         opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
         cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", opciones_cli)
 
@@ -711,11 +713,11 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                                 'Galpón': row['Galpón Origen']
                             })
 
-                        registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, items_dict)
+                        registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, fecha_remision, items_dict)
                         st.success(f"¡Remisión No. {num_remision_actual:06d} guardada y deuda creada en cartera con éxito!")
                         
                         datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
-                        pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
+                        pdf_buffer = generar_pdf_remision(num_remision_actual, fecha_remision.strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
                         st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
 
     elif st.session_state.seccion_activa == "💰 Cartera":

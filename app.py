@@ -107,6 +107,30 @@ def inicializar_tabla_clientes():
     cur.close()
     conn.close()
 
+def inicializar_tablas_cartera():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS cartera (
+            num_remision INT PRIMARY KEY,
+            cliente TEXT,
+            total NUMERIC,
+            saldo NUMERIC,
+            estado TEXT DEFAULT 'PENDIENTE'
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS abonos_cartera (
+            id SERIAL PRIMARY KEY,
+            num_remision INT,
+            fecha_abono TIMESTAMP,
+            monto NUMERIC
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def cargar_clientes():
     inicializar_tabla_clientes()
     conn = get_connection()
@@ -177,7 +201,49 @@ def obtener_siguiente_num_remision():
     conn.close()
     return num
 
+def cargar_cartera():
+    inicializar_tablas_cartera()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM cartera ORDER BY num_remision DESC", conn)
+    conn.close()
+    return df
+
+def registrar_abono(num_remision, monto_abono):
+    inicializar_tablas_cartera()
+    conn = get_connection()
+    cur = conn.cursor()
+    fecha_actual = datetime.now()
+    cur.execute("""
+        INSERT INTO abonos_cartera (num_remision, fecha_abono, monto)
+        VALUES (%s, %s, %s)
+    """, (num_remision, fecha_actual, monto_abono))
+    
+    cur.execute("SELECT total FROM cartera WHERE num_remision = %s", (num_remision,))
+    res = cur.fetchone()
+    if res:
+        total = float(res[0])
+        cur.execute("SELECT COALESCE(SUM(monto), 0) FROM abonos_cartera WHERE num_remision = %s", (num_remision,))
+        total_abonos = float(cur.fetchone()[0])
+        nuevo_saldo = max(0.0, total - total_abonos)
+        nuevo_estado = 'PAGADA' if nuevo_saldo <= 0 else 'PENDIENTE'
+        
+        cur.execute("""
+            UPDATE cartera SET saldo = %s, estado = %s WHERE num_remision = %s
+        """, (nuevo_saldo, nuevo_estado, num_remision))
+        
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_abonos(num_remision):
+    inicializar_tablas_cartera()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM abonos_cartera WHERE num_remision = %s ORDER BY fecha_abono DESC", conn, params=(num_remision,))
+    conn.close()
+    return df
+
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, items_venta):
+    inicializar_tablas_cartera()
     conn = get_connection()
     cur = conn.cursor()
     fecha_actual = datetime.now()
@@ -192,12 +258,15 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
         if is_gen != 'ALWAYS' and id_gen != 'ALWAYS':
             columnas_validas.add(col_name)
 
+    total_venta_acumulado = 0.0
+
     for item in items_venta:
         clasificacion = item['Clasificación'].lower()
         cantidad = int(item['Cantidad (Huevos)'])
         subtotal = float(item['Subtotal ($)'])
         precio_u = float(item['Precio Unitario ($)'])
         galp_origen = item.get('Galpón', 'Galpón 1')
+        total_venta_acumulado += subtotal
 
         datos_insert = {
             "num_remision": num_remision, "fecha_emision": fecha_actual,
@@ -217,11 +286,21 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
 
         cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galp_origen))
 
+    cur.execute("""
+        INSERT INTO cartera (num_remision, cliente, total, saldo, estado)
+        VALUES (%s, %s, %s, %s, 'PENDIENTE')
+        ON CONFLICT (num_remision) DO UPDATE SET
+            cliente = EXCLUDED.cliente,
+            total = EXCLUDED.total,
+            saldo = EXCLUDED.saldo;
+    """, (num_remision, cliente.strip().upper(), total_venta_acumulado, total_venta_acumulado))
+
     conn.commit()
     cur.close()
     conn.close()
 
 def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, df_viejos, items_nuevos):
+    inicializar_tablas_cartera()
     conn = get_connection()
     cur = conn.cursor()
     fecha_actual = datetime.now()
@@ -244,12 +323,14 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
     col_filtro = "num_remision" if "num_remision" in columnas_totales else "id"
     cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
 
+    nuevo_total_calc = 0.0
     for item in items_nuevos:
         clasif = item['Clasificación'].lower()
         cant = int(item['Cantidad (Huevos)'])
         subtotal = float(item['Subtotal ($)'])
         precio_u = float(item['Precio Unitario ($)'])
         galp_origen = item.get('Galpón', 'Galpón 1')
+        nuevo_total_calc += subtotal
 
         datos_insert = {
             "num_remision": num_remision, "fecha_emision": fecha_actual,
@@ -269,6 +350,21 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
 
         cur.execute(f"UPDATE inventario SET {clasif} = {clasif} - %s WHERE galpon = %s", (cant, galp_origen))
 
+    cur.execute("SELECT COALESCE(SUM(monto), 0) FROM abonos_cartera WHERE num_remision = %s", (num_remision,))
+    total_abonos = float(cur.fetchone()[0])
+    nuevo_saldo = max(0.0, nuevo_total_calc - total_abonos)
+    nuevo_estado = 'PAGADA' if nuevo_saldo <= 0 else 'PENDIENTE'
+
+    cur.execute("""
+        INSERT INTO cartera (num_remision, cliente, total, saldo, estado)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (num_remision) DO UPDATE SET
+            cliente = EXCLUDED.cliente,
+            total = EXCLUDED.total,
+            saldo = EXCLUDED.saldo,
+            estado = EXCLUDED.estado;
+    """, (num_remision, cliente.strip().upper(), nuevo_total_calc, nuevo_saldo, nuevo_estado))
+
     conn.commit()
     cur.close()
     conn.close()
@@ -287,6 +383,8 @@ def eliminar_remision_completa(num_remision, df_viejos):
     col_filtro = "num_remision" if "num_remision" in cols_existentes else "id"
 
     cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
+    cur.execute("DELETE FROM cartera WHERE num_remision = %s", (num_remision,))
+    cur.execute("DELETE FROM abonos_cartera WHERE num_remision = %s", (num_remision,))
 
     conn.commit()
     cur.close()
@@ -405,7 +503,7 @@ else:
 
 # --- CONTENIDO DE LAS SESIONES ---
 if st.session_state.sesion_principal == "📦 Stock y Ventas":
-    c_nav1, c_nav2, c_nav3, c_nav4, c_nav5 = st.columns(5)
+    c_nav1, c_nav2, c_nav3, c_nav4, c_nav5, c_nav6 = st.columns(6)
     with c_nav1:
         if st.button("📥 Entr.", use_container_width=True): st.session_state.seccion_activa = "📥 Entradas"
     with c_nav2:
@@ -413,8 +511,10 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
     with c_nav3:
         if st.button("📤 Vent.", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
     with c_nav4:
-        if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
+        if st.button("💰 Cart.", use_container_width=True): st.session_state.seccion_activa = "💰 Cartera"
     with c_nav5:
+        if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
+    with c_nav6:
         if st.button("📜 Hist.", use_container_width=True): st.session_state.seccion_activa = "📜 Historial"
 
     st.markdown("---")
@@ -599,11 +699,73 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                             })
 
                         registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, items_dict)
-                        st.success(f"¡Remisión No. {num_remision_actual:06d} guardada con éxito!")
+                        st.success(f"¡Remisión No. {num_remision_actual:06d} guardada y deuda creada en cartera con éxito!")
                         
                         datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
                         pdf_buffer = generar_pdf_remision(num_remision_actual, datetime.now().strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
                         st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
+
+    elif st.session_state.seccion_activa == "💰 Cartera":
+        st.subheader("💰 Control de Cartera y Abonos")
+        st.caption("Gestione las deudas pendientes por factura y registre los abonos de los clientes.")
+
+        df_cartera = cargar_cartera()
+        if df_cartera.empty:
+            st.info("No hay deudas ni facturas registradas en cartera.")
+        else:
+            total_por_cobrar = df_cartera[df_cartera['estado'] == 'PENDIENTE']['saldo'].astype(float).sum()
+            total_general_facturado = df_cartera['total'].astype(float).sum()
+
+            st.markdown(f"""
+                <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
+                    <p style="margin: 0; font-size: 14px;">Total Facturado: <b>${total_general_facturado:,.2f}</b></p>
+                    <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Pendiente por Cobrar: <b>${total_por_cobrar:,.2f}</b></p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            busqueda_cartera = st.text_input("🔍 Buscar cliente o N° Remisión en Cartera", placeholder="Ej. RAFAEL GARCIA")
+            df_cart_filtrado = df_cartera[
+                df_cartera['cliente'].astype(str).str.contains(busqueda_cartera, case=False, na=False) |
+                df_cartera['num_remision'].astype(str).str.contains(busqueda_cartera, case=False, na=False)
+            ] if busqueda_cartera.strip() else df_cartera
+
+            if df_cart_filtrado.empty:
+                st.warning("No se encontraron registros de cartera con ese criterio.")
+            else:
+                for _, row_cart in df_cart_filtrado.iterrows():
+                    num_r = int(row_cart['num_remision'])
+                    cli_c = str(row_cart['cliente'])
+                    tot_c = float(row_cart['total'])
+                    saldo_c = float(row_cart['saldo'])
+                    estado_c = str(row_cart['estado'])
+
+                    color_estado = "🟢 PAGADA" if estado_c == 'PAGADA' else "🔴 PENDIENTE"
+
+                    with st.expander(f"Remisión N° {num_r:06d} — {cli_c} | Saldo: ${saldo_c:,.2f} ({color_estado})"):
+                        st.write(f"**Total Factura:** ${tot_c:,.2f}")
+                        st.write(f"**Saldo Pendiente:** ${saldo_c:,.2f}")
+                        st.write(f"**Estado:** {estado_c}")
+
+                        st.markdown("---")
+                        st.markdown("##### 💵 Registrar Abono")
+                        with st.form(key=f"form_abono_{num_r}"):
+                            monto_abono = st.number_input("Monto del Abono ($)", min_value=0.0, max_value=max(0.0, saldo_c), step=1000.0, format="%.2f")
+                            btn_guardar_abono = st.form_submit_button("📥 Guardar Abono")
+
+                            if btn_guardar_abono:
+                                if monto_abono <= 0:
+                                    st.error("El monto del abono debe ser mayor a 0.")
+                                else:
+                                    registrar_abono(num_r, monto_abono)
+                                    st.success(f"¡Abono de ${monto_abono:,.2f} registrado con éxito!")
+                                    st.rerun()
+
+                        st.markdown("##### 📜 Historial de Abonos")
+                        df_abonos_hist = cargar_abonos(num_r)
+                        if df_abonos_hist.empty:
+                            st.info("No hay abonos registrados para esta factura.")
+                        else:
+                            st.dataframe(df_abonos_hist[['fecha_abono', 'monto']], use_container_width=True, hide_index=True)
 
     elif st.session_state.seccion_activa == "📊 Stock":
         st.subheader("📦 Stock Actual en Granja")
@@ -670,18 +832,18 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                                 
                                 c_b1, c_b2 = st.columns(2)
                                 with c_b1: sub_act = st.form_submit_button("💾 Actualizar Cambios")
-                                with c_b2: sub_elm = st.form_submit_button("🗑️ Eliminar Remisión")
+                                with c_b2: sub_elm = st.form_submit_button("🗑️ Remoción / Eliminar Remisión")
                                 
                                 if sub_act:
                                     items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
                                     items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
                                     items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
                                     actualizar_remision_completa(num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, df_rem, items_dict)
-                                    st.success("Remisión actualizada!")
+                                    st.success("Remisión y cartera actualizadas!")
                                     st.rerun()
                                 if sub_elm:
                                     eliminar_remision_completa(num_sel, df_rem)
-                                    st.warning("Remisión eliminada.")
+                                    st.warning("Remisión y registro de cartera eliminados.")
                                     st.rerun()
 
 elif st.session_state.sesion_principal == "📝 Registro Diario":

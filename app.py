@@ -686,13 +686,13 @@ PASS_ADMIN = "admin123"
 PASS_INVITADO = "invitado123"
 
 if str_app.session_state.usuario_autenticado is None:
-col_logo, col_tit = str_app.columns([1, 3.5])
+    col_logo, col_tit = str_app.columns([1, 3.5])
     with col_logo:
         if os.path.exists("LOGOASI.png"):
             str_app.image("LOGOASI.png", width=110)
         else:
             str_app.markdown("<h1 style='margin: 0;'>🥚</h1>", unsafe_allow_html=True)
-    with col_tit_l:
+    with col_tit:
         str_app.markdown('<h2 style="margin: 0; color: #f26822 !important;">AVÍCOLA SANTA ISABEL</h2><p style="margin: 0;">CONTROL DE ACCESO</p>', unsafe_allow_html=True)
 
     str_app.markdown("---")

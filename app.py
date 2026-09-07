@@ -140,6 +140,50 @@ def inicializar_tablas_cartera():
     cur.close()
     conn.close()
 
+def inicializar_tabla_gastos():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS gastos (
+            id SERIAL PRIMARY KEY,
+            fecha DATE,
+            galpon TEXT,
+            categoria TEXT,
+            descripcion TEXT,
+            valor NUMERIC
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def registrar_gasto(fecha, galpon, categoria, descripcion, valor):
+    inicializar_tabla_gastos()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO gastos (fecha, galpon, categoria, descripcion, valor)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (fecha, galpon, categoria, descripcion, valor))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_gastos():
+    inicializar_tabla_gastos()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM gastos ORDER BY fecha DESC, id DESC", conn)
+    conn.close()
+    return df
+
+def eliminar_gasto(gasto_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM gastos WHERE id = %s", (gasto_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def reiniciar_sistema_completo():
     conn = get_connection()
     cur = conn.cursor()
@@ -147,6 +191,7 @@ def reiniciar_sistema_completo():
     cur.execute("DELETE FROM cartera;")
     cur.execute("DELETE FROM remisiones;")
     cur.execute("DELETE FROM clientes;")
+    cur.execute("DELETE FROM gastos;")
     cur.execute("""
         UPDATE inventario SET 
             yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
@@ -651,7 +696,7 @@ else:
                     str_app.session_state.confirmar_reinicio = True
                     str_app.rerun()
             else:
-                str_app.warning("⚠️ ¿Estás completamente seguro? Esto borrará todas las remisiones, abonos, clientes y pondrá el stock en 0 para iniciar con datos reales.")
+                str_app.warning("⚠️ ¿Estás completamente seguro? Esto borrará todas las remisiones, abonos, clientes, gastos y pondrá el stock en 0 para iniciar con datos reales.")
                 c_conf1, c_conf2 = str_app.columns(2)
                 with c_conf1:
                     if str_app.button("✅ Sí, borrar todo", use_container_width=True):
@@ -687,6 +732,9 @@ else:
                 if str_app.button("📊 Ver Stock Actual", use_container_width=True):
                     str_app.session_state.seccion_activa = "📊 Stock"
                     str_app.rerun()
+                if str_app.button("💸 Control de Gastos", use_container_width=True):
+                    str_app.session_state.seccion_activa = "💸 Gastos"
+                    str_app.rerun()
             with col_m2:
                 if str_app.button("👥 Clientes", use_container_width=True):
                     str_app.session_state.seccion_activa = "👥 Clientes"
@@ -697,10 +745,9 @@ else:
                 if str_app.button("⚖️ Inventario Físico", use_container_width=True):
                     str_app.session_state.seccion_activa = "⚖️ Inventario Fisico"
                     str_app.rerun()
-            
-            if str_app.button("📜 Historial de Remisiones", use_container_width=True):
-                str_app.session_state.seccion_activa = "📜 Historial"
-                str_app.rerun()
+                if str_app.button("📜 Historial de Remisiones", use_container_width=True):
+                    str_app.session_state.seccion_activa = "📜 Historial"
+                    str_app.rerun()
 
         else:
             if str_app.button("🔙 Volver al Menú de Stock"):
@@ -792,6 +839,62 @@ else:
                         actualizar_inventario_fisico(galpon_fisico, nuevo_stock_dict)
                         str_app.success(f"¡Inventario físico de {galpon_fisico} aplicado con éxito! Las mermas han sido ajustadas.")
                         str_app.rerun()
+
+            elif str_app.session_state.seccion_activa == "💸 Gastos":
+                str_app.subheader("💸 Control de Gastos por Galpón")
+                if rol_actual == "Invitado":
+                    str_app.warning("👀 Modo Invitado: Solo puedes visualizar los gastos registrados.")
+                else:
+                    with str_app.form(key="form_registrar_gasto"):
+                        c_fecha_g = str_app.date_input("Fecha del Gasto", value=date.today())
+                        c_galpon_g = str_app.selectbox("Galpón Asociado", ["Galpón 1", "Galpón 2", "Galpón 3", "General / Granja"])
+                        c_categoria_g = str_app.selectbox("Categoría de Gasto", ["Alimento", "Medicamentos / Sanidad", "Personal / Mano de Obra", "Mantenimiento / Reparaciones", "Servicios Públicos", "Otros"])
+                        c_desc_g = str_app.text_input("Descripción del Gasto", placeholder="Ej. Compra de concentrado fase 1")
+                        c_valor_g = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
+                        
+                        btn_guardar_gasto = str_app.form_submit_button("💾 Guardar Gasto")
+                        if btn_guardar_gasto:
+                            if c_valor_g <= 0:
+                                str_app.error("El valor del gasto debe ser mayor a 0.")
+                            else:
+                                registrar_gasto(c_fecha_g, c_galpon_g, c_categoria_g, c_desc_g, c_valor_g)
+                                str_app.success("¡Gasto registrado con éxito!")
+                                str_app.rerun()
+
+                str_app.markdown("---")
+                str_app.markdown("### 📋 Historial y Resumen de Gastos")
+                df_gastos = cargar_gastos()
+                if df_gastos.empty:
+                    str_app.info("No hay gastos registrados en el sistema.")
+                else:
+                    total_gastos_gen = df_gastos['valor'].astype(float).sum()
+                    str_app.markdown(f"""
+                        <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
+                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Gastos Acumulados: <b>${total_gastos_gen:,.0f}</b></p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    resumen_galpon = df_gastos.groupby('galpon')['valor'].sum().reset_index()
+                    resumen_galpon.columns = ['Galpón', 'Total Gastos ($)']
+                    str_app.markdown("#### 📊 Resumen de Gastos por Galpón")
+                    str_app.dataframe(resumen_galpon, use_container_width=True, hide_index=True)
+
+                    str_app.markdown("#### 📑 Detalle de Gastos")
+                    for _, row_g in df_gastos.iterrows():
+                        g_id = row_g['id']
+                        g_fecha = str(row_g['fecha'])[:10]
+                        g_galp = row_g['galpon']
+                        g_cat = row_g['categoria']
+                        g_desc = row_g['descripcion']
+                        g_val = float(row_g['valor'])
+
+                        with str_app.expander(f"📅 {g_fecha} — [{g_galp}] {g_cat}: ${g_val:,.0f}"):
+                            str_app.write(f"**Descripción:** {g_desc}")
+                            if rol_actual == "Administrador":
+                                if str_app.button(f"🗑️ Eliminar Gasto #{g_id}", key=f"del_gasto_{g_id}"):
+                                    eliminar_gasto(g_id)
+                                    str_app.warning("Gasto eliminado.")
+                                    str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "👥 Clientes":
                 str_app.subheader("👥 Directorio de Clientes")

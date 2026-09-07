@@ -533,11 +533,9 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 if "usuario_autenticado" not in str_app.session_state:
     str_app.session_state.usuario_autenticado = None
 
-# Contraseñas configurables (puedes cambiarlas aquí fácilmente)
 PASS_ADMIN = "admin123"
 PASS_INVITADO = "invitado123"
 
-# Si no ha iniciado sesión, mostramos la pantalla de Login
 if str_app.session_state.usuario_autenticado is None:
     col_logo_l, col_tit_l = str_app.columns([1, 3.5])
     with col_logo_l:
@@ -579,7 +577,6 @@ else:
         color_rol = "#f26822" if rol_actual == "Administrador" else "#3498db"
         str_app.markdown(f'<h2 style="margin: 0; color: #f26822 !important;">AVÍCOLA SANTA ISABEL</h2><p style="margin: 0;">Sesión: <b style="color: {color_rol};">{rol_actual}</b></p>', unsafe_allow_html=True)
 
-    # Botón para cerrar sesión en la esquina
     if str_app.button("🚪 Cerrar Sesión"):
         str_app.session_state.usuario_autenticado = None
         str_app.session_state.sesion_principal = None
@@ -1028,10 +1025,10 @@ else:
                                                 str_app.warning("Remisión y registro de cartera eliminados.")
                                                 str_app.rerun()
 
-elif str_app.session_state.sesion_principal == "📝 Registro Diario":
-    str_app.subheader("📝 Registro Diario")
-    str_app.info("💡 Sección lista para alimentación de datos de postura y mortalidad próximamente.")
-    with str_app.form("diario"):
-        str_app.date_input("Fecha")
-        str_app.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
-        str_app.form_submit_button("Guardar")
+    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+        str_app.subheader("📝 Registro Diario")
+        str_app.info("💡 Sección lista para alimentación de datos de postura y mortalidad próximamente.")
+        with str_app.form("diario"):
+            str_app.date_input("Fecha")
+            str_app.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
+            str_app.form_submit_button("Guardar")

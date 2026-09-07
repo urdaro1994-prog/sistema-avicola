@@ -88,7 +88,7 @@ str_app.markdown(
     unsafe_allow_html=True
 )
 
-# --- FUNCIONES DE BASE DE DATOS ---
+# --- FUNCIONES DE BASE DE DATOS Y CONEXIÓN ---
 def get_connection():
     return psycopg2.connect(str_app.secrets["postgres"]["url"])
 
@@ -173,6 +173,75 @@ def inicializar_tabla_gastos_varios():
     cur.close()
     conn.close()
 
+def inicializar_tabla_galpones():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS galpones (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT UNIQUE NOT NULL,
+            cantidad_aves INT DEFAULT 0
+        );
+    """)
+    cur.execute("""
+        INSERT INTO galpones (nombre, cantidad_aves) VALUES 
+        ('Galpón 1', 5000), ('Galpón 2', 5000), ('Galpón 3', 5000)
+        ON CONFLICT (nombre) DO NOTHING;
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def inicializar_tabla_inventario():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS inventario (
+            galpon TEXT PRIMARY KEY,
+            yumbo INT DEFAULT 0,
+            extra INT DEFAULT 0,
+            aa INT DEFAULT 0,
+            a INT DEFAULT 0,
+            b INT DEFAULT 0,
+            c INT DEFAULT 0,
+            sucio INT DEFAULT 0,
+            roto INT DEFAULT 0
+        );
+    """)
+    cur.execute("""
+        INSERT INTO inventario (galpon) VALUES 
+        ('Galpón 1'), ('Galpón 2'), ('Galpón 3')
+        ON CONFLICT (galpon) DO NOTHING;
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def inicializar_tabla_remisiones():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS remisiones (
+            id SERIAL PRIMARY KEY,
+            num_remision INT,
+            fecha_emision DATE,
+            cliente TEXT,
+            cedula_nit TEXT,
+            telefono TEXT,
+            destino TEXT,
+            email TEXT,
+            conductor TEXT,
+            tipo_huevo TEXT,
+            cantidad INT,
+            precio_unitario NUMERIC,
+            total NUMERIC,
+            galpon TEXT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def inicializar_tabla_registro_diario():
     conn = get_connection()
     cur = conn.cursor()
@@ -192,11 +261,17 @@ def inicializar_tabla_registro_diario():
     cur.close()
     conn.close()
 
+# Asegurar creación inicial de todas las tablas requeridas
+inicializar_tabla_galpones()
+inicializar_tabla_inventario()
+inicializar_tabla_remisiones()
+
 def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion):
-    conn = get_connection()  # Mantén la función de conexión que ya uses en tu proyecto
+    inicializar_tabla_galpones()
+    inicializar_tabla_registro_diario()
+    conn = get_connection()
     cur = conn.cursor()
     try:
-        # 1. Insertar o actualizar el registro diario
         cur.execute("""
             INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion)
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -208,7 +283,6 @@ def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, morta
                 produccion = EXCLUDED.produccion;
         """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion))
         
-        # 2. Descontar automáticamente la mortalidad del inventario del galpón
         cur.execute("""
             UPDATE galpones 
             SET cantidad_aves = cantidad_aves - %s 
@@ -327,6 +401,7 @@ def cargar_clientes():
     return df
 
 def guardar_cliente(nombre, cedula, direccion, telefono, email):
+    inicializar_tabla_clientes()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -351,12 +426,14 @@ def eliminar_cliente(cliente_id):
     conn.close()
 
 def cargar_inventario():
+    inicializar_tabla_inventario()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM inventario ORDER BY galpon", conn)
     conn.close()
     return df.set_index('galpon')
 
 def registrar_entrada_inventario(galpon, items_entrada):
+    inicializar_tabla_inventario()
     conn = get_connection()
     cur = conn.cursor()
     for item in items_entrada:
@@ -368,6 +445,7 @@ def registrar_entrada_inventario(galpon, items_entrada):
     conn.close()
 
 def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
+    inicializar_tabla_inventario()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -390,6 +468,7 @@ def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
     conn.close()
 
 def cargar_remisiones():
+    inicializar_tabla_remisiones()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
     conn.close()
@@ -401,6 +480,7 @@ def cargar_remisiones():
     return df
 
 def obtener_siguiente_num_remision():
+    inicializar_tabla_remisiones()
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -463,6 +543,7 @@ def obtener_abonos_con_comprobante(num_remision):
 
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, fecha_remision, items_venta):
     inicializar_tablas_cartera()
+    inicializar_tabla_remisiones()
     conn = get_connection()
     cur = conn.cursor()
 
@@ -519,6 +600,7 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
 
 def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, fecha_remision, df_viejos, items_nuevos):
     inicializar_tablas_cartera()
+    inicializar_tabla_remisiones()
     conn = get_connection()
     cur = conn.cursor()
 
@@ -1219,7 +1301,7 @@ else:
                             str_app.write(f"Total: ${float(rc['total']):,.0f} | Saldo: ${float(rc['saldo']):,.0f}")
                             if rol_actual == "Administrador":
                                 with str_app.form(f"abono_{num_r}"):
-                                    m_ab = str_app.number_input("Monto Abono ($", min_value=0.0, step=1000.0)
+                                    m_ab = str_app.number_input("Monto Abono ($)", min_value=0.0, step=1000.0)
                                     arch = str_app.file_uploader("Comprobante", type=["png", "jpg", "jpeg", "pdf"], key=f"f_{num_r}")
                                     if str_app.form_submit_button("Registrar Abono"):
                                         if m_ab > 0:
@@ -1243,7 +1325,62 @@ else:
 
             elif str_app.session_state.seccion_activa == "📈 Utilidades":
                 str_app.subheader("📈 Utilidades del Mes")
-                str_app.caption("Ventas menos gastos directos y proporcionales.")
+                str_app.caption("Balance financiero: Ventas totales menos gastos operativos (galpón y generales).")
+                
+                df_rem_util = cargar_remisiones()
+                df_gas_util = cargar_gastos()
+                
+                if df_rem_util.empty and df_gas_util.empty:
+                    str_app.info("No hay registros suficientes para calcular utilidades.")
+                else:
+                    if not df_rem_util.empty:
+                        df_rem_util['dt_fecha'] = pd.to_datetime(df_rem_util['fecha_emision'])
+                        df_rem_util['Año'] = df_rem_util['dt_fecha'].dt.year
+                        df_rem_util['Mes_Num'] = df_rem_util['dt_fecha'].dt.month
+                    
+                    if not df_gas_util.empty:
+                        df_gas_util['dt_fecha'] = pd.to_datetime(df_gas_util['fecha'])
+                        df_gas_util['Año'] = df_gas_util['dt_fecha'].dt.year
+                        df_gas_util['Mes_Num'] = df_gas_util['dt_fecha'].dt.month
+
+                    anios_u = sorted(list(set(df_rem_util['Año'].dropna().tolist() + df_gas_util['Año'].dropna().tolist())), reverse=True)
+                    if not anios_u:
+                        anios_u = [date.today().year]
+                    
+                    c_u1, c_u2 = str_app.columns(2)
+                    with c_u1:
+                        anio_u_sel = str_app.selectbox("📅 Año", anios_u, key="util_anio")
+                    
+                    meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+                    with c_u2:
+                        mes_u_sel = str_app.selectbox("📅 Mes", list(meses_nombres.values()), key="util_mes")
+                    
+                    mes_u_num = [k for k, v in meses_nombres.items() if v == mes_u_sel][0]
+                    
+                    ventas_mes = 0.0
+                    if not df_rem_util.empty:
+                        # Sumar total por remisión única para evitar duplicar por múltiples líneas de tipo_huevo
+                        df_rem_mes = df_rem_util[(df_rem_util['Año'] == anio_u_sel) & (df_rem_util['Mes_Num'] == mes_u_num)]
+                        if not df_rem_mes.empty:
+                            ventas_mes = df_rem_mes.groupby('num_remision')['total'].first().sum()
+
+                    gastos_mes = 0.0
+                    if not df_gas_util.empty:
+                        df_gas_mes = df_gas_util[(df_gas_util['Año'] == anio_u_sel) & (df_gas_util['Mes_Num'] == mes_u_num)]
+                        if not df_gas_mes.empty:
+                            gastos_mes = df_gas_mes['valor'].astype(float).sum()
+
+                    utilidad_mes = ventas_mes - gastos_mes
+                    
+                    str_app.markdown(f"""
+                        <div style="background-color: #1a3e63; color: white; padding: 15px; border-radius: 10px; margin-top: 15px; border-left: 5px solid #f26822;">
+                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;"><b>Balance {mes_u_sel} {anio_u_sel}:</b></p>
+                            <hr style="border-color: #2c5282; margin: 8px 0;">
+                            <p style="margin: 0; font-size: 14px;">📈 Ventas Totales: <b>$ {ventas_mes:,.0f}</b></p>
+                            <p style="margin: 0; font-size: 14px;">📉 Gastos Totales: <b>$ {gastos_mes:,.0f}</b></p>
+                            <p style="margin: 0; font-size: 16px; margin-top: 5px;">💰 <b>Utilidad Neta: $ {utilidad_mes:,.0f}</b></p>
+                        </div>
+                    """, unsafe_allow_html=True)
 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario y Control por Galpón")

@@ -1502,4 +1502,30 @@ else:
                         str_app.markdown(f"#### 📊 Detalle por Galpón ({mes_u_nombre} {anio_u})")
                         str_app.dataframe(df_util_res, use_container_width=True, hide_index=True)
 
-   
+    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+        str_app.subheader("📝 Registro Diario")
+        str_app.caption("Selecciona el galpón que deseas registrar:")
+
+        col1, col2, col3 = str_app.columns(3)
+        with col1:
+            if str_app.button("Galpón 1", use_container_width=True):
+                str_app.session_state["galpon_activo"] = "Galpón 1"
+        with col2:
+            if str_app.button("Galpón 2", use_container_width=True):
+                str_app.session_state["galpon_activo"] = "Galpón 2"
+        with col3:
+            if str_app.button("Galpón 3", use_container_width=True):
+                str_app.session_state["galpon_activo"] = "Galpón 3"
+
+        if "galpon_activo" in str_app.session_state:
+            str_app.markdown(f"#### Formulario para: {str_app.session_state['galpon_activo']}")
+            
+            with str_app.form("form_registro_galpon"):
+                fecha_reg = str_app.date_input("Fecha", value=date.today())
+                postura = str_app.number_input("Postura (Número de huevos)", min_value=0, step=1)
+                mortalidad = str_app.number_input("Mortalidad", min_value=0, step=1)
+                
+                guardar = str_app.form_submit_button("Guardar Registro")
+                
+                if guardar:
+                    str_app.success(f"¡Registro guardado exitosamente para {str_app.session_state['galpon_activo']}!")

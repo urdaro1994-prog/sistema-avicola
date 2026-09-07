@@ -270,12 +270,10 @@ def inicializar_tabla_registro_diario():
             consumo_alimento NUMERIC DEFAULT 0,
             mortalidad INT DEFAULT 0,
             produccion INT DEFAULT 0,
-            observaciones TEXT,
             UNIQUE(fecha, galpon)
         );
     """)
     try:
-        cur.execute("ALTER TABLE registro_diario ADD COLUMN IF NOT EXISTS observaciones TEXT;")
         cur.execute("ALTER TABLE registro_diario DROP COLUMN IF EXISTS edad_semanas;")
     except Exception:
         conn.rollback()
@@ -328,23 +326,22 @@ def actualizar_config_galpon(galpon, sem_ini, dias_ini, f_inicio):
     cur.close()
     conn.close()
 
-def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, observaciones):
+def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion):
     inicializar_tabla_galpones()
     inicializar_tabla_registro_diario()
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, observaciones)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (fecha, galpon) 
             DO UPDATE SET 
                 ingreso_alimento = EXCLUDED.ingreso_alimento,
                 consumo_alimento = EXCLUDED.consumo_alimento,
                 mortalidad = EXCLUDED.mortalidad,
-                produccion = EXCLUDED.produccion,
-                observaciones = EXCLUDED.observaciones;
-        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, observaciones))
+                produccion = EXCLUDED.produccion;
+        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion))
         
         cur.execute("""
             UPDATE galpones 
@@ -775,6 +772,22 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     buffer.seek(0)
     return buffer
 
+def obtener_porcentaje_teorico_hyline(semana_vida):
+    """
+    Retorna el porcentaje de producción teórico estándar para una gallina Hy-Line Brown
+    según su semana de vida.
+    """
+    if semana_vida < 18:
+        return 0.0
+    elif 22 <= semana_vida <= 50:
+        return 94.5  # Pico de producción óptimo sostenido
+    elif semana_vida > 50:
+        produccion = 94.5 - (semana_vida - 50) * 0.35
+        return max(produccion, 50.0)
+    else:
+        curva_ascenso = {18: 10.0, 19: 45.0, 20: 75.0, 21: 90.0}
+        return curva_ascenso.get(semana_vida, 90.0)
+
 def generar_pdf_acumulado_galpon(galpon, df_registros):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
@@ -860,7 +873,46 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
         ('LINEABOVE', (0,-1), (-1,-1), 1, colors.HexColor("#0f2942")),
     ]))
     story.append(t_items)
-    
+    story.append(Spacer(1, 15))
+
+    # --- CÁLCULO DE PORCENTAJES DE PRODUCCIÓN AL FINAL DEL PDF ---
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT cantidad_aves FROM galpones WHERE nombre = %s", (galpon,))
+    res_av = cur.fetchone()
+    cur.close()
+    conn.close()
+    aves_iniciales = res_av[0] if res_av else 0
+
+    dias_totales = len(df_registros)
+    aves_promedio = max(1, aves_iniciales - (tot_mortalidad / 2))
+    porcentaje_produccion_real = (tot_produccion / (aves_promedio * dias_totales)) * 100 if (aves_promedio * dias_totales) > 0 else 0
+
+    edad_actual_semanas = 30
+    if not df_registros.empty:
+        fec_reciente = df_registros.iloc[0]['fecha']
+        sem_reciente, _ = calcular_edad_lote(galpon, fec_reciente)
+        edad_actual_semanas = sem_reciente
+
+    porcentaje_teorico = obtener_porcentaje_teorico_hyline(edad_actual_semanas)
+
+    resumen_prod_data = [
+        [Paragraph("<b>Indicador de Producción / Porcentaje</b>", style_bold), Paragraph("<b>Valor</b>", style_right_bold)],
+        [Paragraph("<b>% de Producción Real (Galpón)</b>", style_normal), Paragraph(f"<b>{porcentaje_produccion_real:.2f}%</b>", style_right)],
+        [Paragraph(f"<b>% de Producción Teórico (Hy-Line - Semana {edad_actual_semanas})</b>", style_normal), Paragraph(f"<b>{porcentaje_teorico:.2f}%</b>", style_right)]
+    ]
+
+    t_resumen_prod = Table(resumen_prod_data, colWidths=[280, 260])
+    t_resumen_prod.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#e2e8f0")),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#b0bec5")),
+        ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#fff9c4")),
+    ]))
+    story.append(t_resumen_prod)
+
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -1386,7 +1438,6 @@ else:
                 with str_app.form(key=f"form_reg_diario_{galpon_seleccionado}"):
                     fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
                     
-                    # Calcular automáticamente la edad para esta fecha
                     sem_calc, dias_calc = calcular_edad_lote(galpon_seleccionado, fecha_reg)
                     str_app.info(f"📅 Edad calculada para el lote en esta fecha: **{sem_calc} semanas y {dias_calc} día(s)**")
 
@@ -1402,12 +1453,9 @@ else:
                     str_app.markdown("#### 🥚 Producción")
                     produccion_val = str_app.number_input("Producción Total (Huevos)", min_value=0, step=1)
 
-                    str_app.markdown("---")
-                    observaciones_val = str_app.text_area("📝 Observaciones del día (Opcional)", placeholder="Ej. Aves activas, clima caluroso, cambio de lote de alimento...")
-
                     btn_guardar_rd = str_app.form_submit_button("💾 Guardar / Actualizar Registro Diario")
                     if btn_guardar_rd:
-                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val, observaciones_val)
+                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val)
                         str_app.success(f"¡Registro guardado correctamente para {galpon_seleccionado} en fecha {fecha_reg}!")
                         str_app.rerun()
 
@@ -1451,13 +1499,11 @@ else:
                     rd_con = float(row_rd['consumo_alimento'])
                     rd_mor = int(row_rd['mortalidad'])
                     rd_prod = int(row_rd['produccion'])
-                    rd_obs = row_rd.get('observaciones', '') or 'Ninguna'
 
                     with str_app.expander(f"📅 {rd_fecha} ({sem_r} sem, {dias_r} d) — Prod: {rd_prod} | Cons: {rd_con}kg | Mort: {rd_mor}"):
                         str_app.write(f"**Edad:** {sem_r} semanas y {dias_r} día(s)")
                         str_app.write(f"**Ingreso Alimento:** {rd_ing}kg | **Consumo Alimento:** {rd_con}kg")
                         str_app.write(f"**Producción Total:** {rd_prod}")
-                        str_app.write(f"**Observaciones:** {rd_obs}")
                         if rol_actual == "Administrador":
                             if str_app.button(f"🗑️ Eliminar Registro ID {rd_id}", key=f"del_rd_{rd_id}"):
                                 eliminar_registro_diario(rd_id)

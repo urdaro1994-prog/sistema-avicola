@@ -154,42 +154,7 @@ def reiniciar_sistema_completo():
     conn.commit()
     cur.close()
     conn.close()
-def inicializar_tabla_gastos():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS gastos (
-            id SERIAL PRIMARY KEY,
-            fecha DATE,
-            galpon TEXT,
-            categoria TEXT,
-            descripcion TEXT,
-            proveedor TEXT,
-            valor NUMERIC
-        );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
 
-def guardar_gasto(fecha, galpon, categoria, descripcion, proveedor, valor):
-    inicializar_tabla_gastos()
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO gastos (fecha, galpon, categoria, descripcion, proveedor, valor)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, (fecha, galpon, categoria, descripcion, proveedor, valor))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def cargar_gastos():
-    inicializar_tabla_gastos()
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM gastos ORDER BY fecha DESC", conn)
-    conn.close()
-    return df
 def cargar_clientes():
     inicializar_tabla_clientes()
     conn = get_connection()
@@ -280,7 +245,6 @@ def obtener_siguiente_num_remision():
         num = cur.fetchone()[0]
     cur.close()
     conn.close()
-    # Forzar un mínimo de 192 por seguridad si la tabla está totalmente limpia
     return max(num, 192)
 
 def cargar_cartera():
@@ -675,11 +639,7 @@ else:
             if str_app.button("📝 Registro Diario", use_container_width=True):
                 str_app.session_state.sesion_principal = "📝 Registro Diario"
                 str_app.rerun()
-# Dentro de las columnas de selección del menú de Stock y Ventas:
-if str_app.button("💸 Control de Gastos", use_container_width=True):
-    str_app.session_state.seccion_activa = "Gastos"
-    str_app.rerun()
-    
+
         # Botón de reinicio global solo para Administrador
         if rol_actual == "Administrador":
             str_app.markdown("---")
@@ -1186,63 +1146,3 @@ if str_app.button("💸 Control de Gastos", use_container_width=True):
             str_app.date_input("Fecha")
             str_app.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
             str_app.form_submit_button("Guardar")
-
-    elif str_app.session_state.sesion_principal == "💸 Control de Gastos":
-    str_app.subheader("💸 Control y Registro de Gastos por Galpón")
-    str_app.caption("Registre los costos de insumos, alimento, medicamentos y mano de obra vinculados a cada galpón o de forma general.")
-    
-    if rol_actual == "Invitado":
-        str_app.warning("👀 Modo Invitado: Solo puedes visualizar los gastos registrados.")
-    else:
-        with str_app.form("form_nuevo_gasto_oficial"):
-            c1, c2, c3 = str_app.columns(3)
-            with c1:
-                fecha_gasto = str_app.date_input("Fecha del Gasto", value=date.today())
-            with c2:
-                galpon_gasto = str_app.selectbox("Galpón Destino", ["General / Granja", "Galpón 1", "Galpón 2", "Galpón 3"])
-            with c3:
-                categoria = str_app.selectbox("Categoría", [
-                    "Alimento Concentrado", 
-                    "Medicamentos / Vitaminas", 
-                    "Mano de Obra", 
-                    "Servicios Públicos", 
-                    "Mantenimiento / Equipos", 
-                    "Transporte / Fletes", 
-                    "Otros"
-                ])
-                
-            c_p1, c_p2 = str_app.columns(2)
-            with c_p1:
-                proveedor = str_app.text_input("Proveedor", placeholder="Ej. Purina / Surtigas")
-            with c_p2:
-                valor_gasto = str_app.number_input("Valor del Gasto ($)", min_value=0.0, step=1000.0, format="%.2f")
-                
-            descripcion = str_app.text_area("Descripción / Detalle", placeholder="Ej. Compra de 30 bultos de alimento fase postura.")
-            
-            btn_guardar_gasto = str_app.form_submit_button("💾 Guardar Gasto")
-            
-            if btn_guardar_gasto:
-                if valor_gasto <= 0:
-                    str_app.error("El valor del gasto debe ser mayor a cero.")
-                else:
-                    guardar_gasto(fecha_gasto, galpon_gasto, categoria, descripcion, proveedor, valor_gasto)
-                    str_app.success("¡Gasto registrado con éxito!")
-                    str_app.rerun()
-
-    str_app.markdown("---")
-    str_app.subheader("📊 Historial y Resumen de Gastos")
-    
-    df_gastos = cargar_gastos()
-    if not df_gastos.empty:
-        total_acumulado = df_gastos['valor'].sum()
-        str_app.metric("Gasto Total Acumulado", f"${total_acumulado:,.0f}")
-        
-        galpon_filtro = str_app.selectbox("Filtrar vista por Galpón", ["Todos"] + list(df_gastos['galpon'].unique()))
-        if galpon_filtro != "Todos":
-            df_mostrar = df_gastos[df_gastos['galpon'] == galpon_filtro]
-        else:
-            df_mostrar = df_gastos
-            
-        str_app.dataframe(df_mostrar, use_container_width=True, hide_index=True)
-    else:
-        str_app.info("No hay gastos registrados en el sistema todavía.")

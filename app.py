@@ -124,9 +124,16 @@ def inicializar_tablas_cartera():
             id SERIAL PRIMARY KEY,
             num_remision INT,
             fecha_abono TIMESTAMP,
-            monto NUMERIC
+            monto NUMERIC,
+            comprobante BYTEA,
+            nombre_comprobante TEXT
         );
     """)
+    try:
+        cur.execute("ALTER TABLE abonos_cartera ADD COLUMN IF NOT EXISTS comprobante BYTEA;")
+        cur.execute("ALTER TABLE abonos_cartera ADD COLUMN IF NOT EXISTS nombre_comprobante TEXT;")
+    except Exception:
+        conn.rollback()
     conn.commit()
     cur.close()
     conn.close()
@@ -208,15 +215,18 @@ def cargar_cartera():
     conn.close()
     return df
 
-def registrar_abono(num_remision, monto_abono):
+def registrar_abono(num_remision, monto_abono, comprobante_bytes=None, nombre_comprobante=None):
     inicializar_tablas_cartera()
     conn = get_connection()
     cur = conn.cursor()
     fecha_actual = datetime.now()
+    
+    comp_binary = psycopg2.Binary(comprobante_bytes) if comprobante_bytes else None
+
     cur.execute("""
-        INSERT INTO abonos_cartera (num_remision, fecha_abono, monto)
-        VALUES (%s, %s, %s)
-    """, (num_remision, fecha_actual, monto_abono))
+        INSERT INTO abonos_cartera (num_remision, fecha_abono, monto, comprobante, nombre_comprobante)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (num_remision, fecha_actual, monto_abono, comp_binary, nombre_comprobante))
     
     cur.execute("SELECT total FROM cartera WHERE num_remision = %s", (num_remision,))
     res = cur.fetchone()
@@ -235,12 +245,15 @@ def registrar_abono(num_remision, monto_abono):
     cur.close()
     conn.close()
 
-def cargar_abonos(num_remision):
+def obtener_abonos_con_comprobante(num_remision):
     inicializar_tablas_cartera()
     conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM abonos_cartera WHERE num_remision = %s ORDER BY fecha_abono DESC", conn, params=(num_remision,))
+    cur = conn.cursor()
+    cur.execute("SELECT id, fecha_abono, monto, comprobante, nombre_comprobante FROM abonos_cartera WHERE num_remision = %s ORDER BY fecha_abono DESC", (num_remision,))
+    filas = cur.fetchall()
+    cur.close()
     conn.close()
-    return df
+    return filas
 
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, items_venta):
     inicializar_tablas_cartera()
@@ -707,7 +720,7 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
 
     elif st.session_state.seccion_activa == "💰 Cartera":
         st.subheader("💰 Control de Cartera y Abonos")
-        st.caption("Gestione las deudas pendientes por factura y registre los abonos de los clientes.")
+        st.caption("Gestione las deudas pendientes por factura, registre los abonos de los clientes y adjunte sus comprobantes de pago.")
 
         df_cartera = cargar_cartera()
         if df_cartera.empty:
@@ -747,25 +760,44 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                         st.write(f"**Estado:** {estado_c}")
 
                         st.markdown("---")
-                        st.markdown("##### 💵 Registrar Abono")
+                        st.markdown("##### 💵 Registrar Abono y Comprobante")
+                        
                         with st.form(key=f"form_abono_{num_r}"):
                             monto_abono = st.number_input("Monto del Abono ($)", min_value=0.0, max_value=max(0.0, saldo_c), step=1000.0, format="%.2f")
-                            btn_guardar_abono = st.form_submit_button("📥 Guardar Abono")
+                            archivo_comp = st.file_uploader("Adjuntar Comprobante de Pago (Imagen o PDF)", type=["png", "jpg", "jpeg", "pdf"], key=f"file_comp_{num_r}")
+                            btn_guardar_abono = st.form_submit_button("📥 Guardar Abono con Comprobante")
 
                             if btn_guardar_abono:
                                 if monto_abono <= 0:
                                     st.error("El monto del abono debe ser mayor a 0.")
                                 else:
-                                    registrar_abono(num_r, monto_abono)
+                                    bytes_archivo = archivo_comp.read() if archivo_comp is not None else None
+                                    nombre_archivo = archivo_comp.name if archivo_comp is not None else None
+                                    
+                                    registrar_abono(num_r, monto_abono, bytes_archivo, nombre_archivo)
                                     st.success(f"¡Abono de ${monto_abono:,.2f} registrado con éxito!")
                                     st.rerun()
 
-                        st.markdown("##### 📜 Historial de Abonos")
-                        df_abonos_hist = cargar_abonos(num_r)
-                        if df_abonos_hist.empty:
+                        st.markdown("##### 📜 Historial de Abonos y Comprobantes")
+                        abonos_filas = obtener_abonos_con_comprobante(num_r)
+                        if not abonos_filas:
                             st.info("No hay abonos registrados para esta factura.")
                         else:
-                            st.dataframe(df_abonos_hist[['fecha_abono', 'monto']], use_container_width=True, hide_index=True)
+                            for ab_id, ab_fecha, ab_monto, ab_comp, ab_nom in abonos_filas:
+                                c_ab1, c_ab2 = st.columns([2, 1])
+                                with c_ab1:
+                                    st.write(f"📅 {str(ab_fecha)[:19]} — **${float(ab_monto):,.2f}**")
+                                with c_ab2:
+                                    if ab_comp and ab_nom:
+                                        st.download_button(
+                                            label="📎 Ver Comprobante",
+                                            data=ab_comp,
+                                            file_name=ab_nom,
+                                            mime="application/octet-stream",
+                                            key=f"dl_comp_{ab_id}"
+                                        )
+                                    else:
+                                        st.caption("Sin archivo adjunto")
 
     elif st.session_state.seccion_activa == "📊 Stock":
         st.subheader("📦 Stock Actual en Granja")

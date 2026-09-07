@@ -193,21 +193,35 @@ def inicializar_tabla_registro_diario():
     conn.close()
 
 def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion):
-    inicializar_tabla_registro_diario()
-    conn = get_connection()
+    conn = get_connection()  # Mantén la función de conexión que ya uses en tu proyecto
     cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (fecha, galpon) DO UPDATE SET
-            ingreso_alimento = EXCLUDED.ingreso_alimento,
-            consumo_alimento = EXCLUDED.consumo_alimento,
-            mortalidad = EXCLUDED.mortalidad,
-            produccion = EXCLUDED.produccion;
-    """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        # 1. Insertar o actualizar el registro diario
+        cur.execute("""
+            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (fecha, galpon) 
+            DO UPDATE SET 
+                ingreso_alimento = EXCLUDED.ingreso_alimento,
+                consumo_alimento = EXCLUDED.consumo_alimento,
+                mortalidad = EXCLUDED.mortalidad,
+                produccion = EXCLUDED.produccion;
+        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion))
+        
+        # 2. Descontar automáticamente la mortalidad del inventario del galpón
+        cur.execute("""
+            UPDATE galpones 
+            SET cantidad_aves = cantidad_aves - %s 
+            WHERE nombre = %s;
+        """, (mortalidad, galpon))
+        
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        conn.close()
 
 def cargar_registro_diario(galpon=None):
     inicializar_tabla_registro_diario()

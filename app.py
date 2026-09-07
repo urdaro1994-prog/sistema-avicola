@@ -138,6 +138,23 @@ def inicializar_tablas_cartera():
     cur.close()
     conn.close()
 
+def reiniciar_sistema_completo():
+    conn = get_connection()
+    cur = conn.cursor()
+    # Vaciar tablas transaccionales y maestras de prueba
+    cur.execute("DELETE FROM abonos_cartera;")
+    cur.execute("DELETE FROM cartera;")
+    cur.execute("DELETE FROM remisiones;")
+    cur.execute("DELETE FROM clientes;")
+    # Resetear inventario a 0 en todos los galpones
+    cur.execute("""
+        UPDATE inventario SET 
+            yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def cargar_clientes():
     inicializar_tabla_clientes()
     conn = get_connection()
@@ -622,6 +639,30 @@ else:
             if str_app.button("📝 Registro Diario", use_container_width=True):
                 str_app.session_state.sesion_principal = "📝 Registro Diario"
                 str_app.rerun()
+
+        # Botón de reinicio global solo para Administrador
+        if rol_actual == "Administrador":
+            str_app.markdown("---")
+            if "confirmar_reinicio" not in str_app.session_state:
+                str_app.session_state.confirmar_reinicio = False
+
+            if not str_app.session_state.confirmar_reinicio:
+                if str_app.button("🧹 Reiniciar Sistema (Dejar en Ceros)", use_container_width=True):
+                    str_app.session_state.confirmar_reinicio = True
+                    str_app.rerun()
+            else:
+                str_app.warning("⚠️ ¿Estás completamente seguro? Esto borrará todas las remisiones, abonos, clientes y pondrá el stock en 0 para iniciar con datos reales.")
+                c_conf1, c_conf2 = str_app.columns(2)
+                with c_conf1:
+                    if str_app.button("✅ Sí, borrar todo", use_container_width=True):
+                        reiniciar_sistema_completo()
+                        str_app.session_state.confirmar_reinicio = False
+                        str_app.success("¡El sistema ha sido reiniciado a ceros con éxito!")
+                        str_app.rerun()
+                with c_conf2:
+                    if str_app.button("❌ Cancelar", use_container_width=True):
+                        str_app.session_state.confirmar_reinicio = False
+                        str_app.rerun()
     else:
         if str_app.button("⬅️ Regresar al Menú Principal"):
             str_app.session_state.sesion_principal = None
@@ -719,7 +760,6 @@ else:
                     else:
                         fila_galp = pd.Series({'yumbo':0, 'extra':0, 'aa':0, 'a':0, 'b':0, 'c':0, 'sucio':0, 'roto':0})
 
-                    # Construir tabla editable para conteo físico
                     datos_fisicos = []
                     for col_clasif in ['yumbo', 'extra', 'aa', 'a', 'b', 'c', 'sucio', 'roto']:
                         stock_sistema = int(fila_galp.get(col_clasif, 0))
@@ -738,7 +778,6 @@ else:
                         key=f"editor_fisico_{galpon_fisico}"
                     )
 
-                    # Calcular mermas/diferencias en tiempo real
                     df_fisico_editado["Diferencia (Merma/Faltante)"] = df_fisico_editado["Stock Sistema"] - df_fisico_editado["Conteo Físico Real"]
                     
                     str_app.markdown("#### 🔍 Resumen de Mermas Detectadas")

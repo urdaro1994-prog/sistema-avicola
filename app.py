@@ -186,6 +186,28 @@ def registrar_entrada_inventario(galpon, items_entrada):
     cur.close()
     conn.close()
 
+def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE inventario SET 
+            yumbo = %s, extra = %s, aa = %s, a = %s, b = %s, c = %s, sucio = %s, roto = %s
+        WHERE galpon = %s
+    """, (
+        nuevo_stock_dict.get('yumbo', 0),
+        nuevo_stock_dict.get('extra', 0),
+        nuevo_stock_dict.get('aa', 0),
+        nuevo_stock_dict.get('a', 0),
+        nuevo_stock_dict.get('b', 0),
+        nuevo_stock_dict.get('c', 0),
+        nuevo_stock_dict.get('sucio', 0),
+        nuevo_stock_dict.get('roto', 0),
+        galpon
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def cargar_remisiones():
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
@@ -631,9 +653,13 @@ else:
                 if str_app.button("💰 Control de Cartera", use_container_width=True):
                     str_app.session_state.seccion_activa = "💰 Cartera"
                     str_app.rerun()
-                if str_app.button("📜 Historial", use_container_width=True):
-                    str_app.session_state.seccion_activa = "📜 Historial"
+                if str_app.button("⚖️ Inventario Físico", use_container_width=True):
+                    str_app.session_state.seccion_activa = "⚖️ Inventario Fisico"
                     str_app.rerun()
+            
+            if str_app.button("📜 Historial de Remisiones", use_container_width=True):
+                str_app.session_state.seccion_activa = "📜 Historial"
+                str_app.rerun()
 
         else:
             if str_app.button("🔙 Volver al Menú de Stock"):
@@ -678,6 +704,54 @@ else:
                             registrar_entrada_inventario(galpon_destino, lista_items_entrada)
                             str_app.success(f"¡Entrada registrada correctamente en {galpon_destino}!")
                             str_app.rerun()
+
+            elif str_app.session_state.seccion_activa == "⚖️ Inventario Fisico":
+                str_app.subheader("⚖️ Inventario Físico y Mermas")
+                if rol_actual == "Invitado":
+                    str_app.warning("👀 Modo Invitado: Solo puedes visualizar el inventario físico.")
+                else:
+                    str_app.caption("Selecciona el galpón, ingresa el conteo real exacto de los huevos físicos y el sistema ajustará el inventario, calculando los faltantes o mermas.")
+                    galpon_fisico = str_app.selectbox("Seleccione el Galpón a Auditar", ["Galpón 1", "Galpón 2", "Galpón 3"])
+                    
+                    df_inv_actual = cargar_inventario()
+                    if galpon_fisico in df_inv_actual.index:
+                        fila_galp = df_inv_actual.loc[galpon_fisico]
+                    else:
+                        fila_galp = pd.Series({'yumbo':0, 'extra':0, 'aa':0, 'a':0, 'b':0, 'c':0, 'sucio':0, 'roto':0})
+
+                    # Construir tabla editable para conteo físico
+                    datos_fisicos = []
+                    for col_clasif in ['yumbo', 'extra', 'aa', 'a', 'b', 'c', 'sucio', 'roto']:
+                        stock_sistema = int(fila_galp.get(col_clasif, 0))
+                        datos_fisicos.append({
+                            "Clasificación": col_clasif,
+                            "Stock Sistema": stock_sistema,
+                            "Conteo Físico Real": stock_sistema
+                        })
+                    
+                    df_fisico_base = pd.DataFrame(datos_fisicos)
+                    
+                    df_fisico_editado = str_app.data_editor(
+                        df_fisico_base,
+                        disabled=["Clasificación", "Stock Sistema"],
+                        use_container_width=True,
+                        key=f"editor_fisico_{galpon_fisico}"
+                    )
+
+                    # Calcular mermas/diferencias en tiempo real
+                    df_fisico_editado["Diferencia (Merma/Faltante)"] = df_fisico_editado["Stock Sistema"] - df_fisico_editado["Conteo Físico Real"]
+                    
+                    str_app.markdown("#### 🔍 Resumen de Mermas Detectadas")
+                    str_app.dataframe(df_fisico_editado[["Clasificación", "Stock Sistema", "Conteo Físico Real", "Diferencia (Merma/Faltante)"]], use_container_width=True, hide_index=True)
+
+                    if str_app.button("💾 Guardar y Ajustar Inventario Físico"):
+                        nuevo_stock_dict = {}
+                        for _, r in df_fisico_editado.iterrows():
+                            nuevo_stock_dict[r["Clasificación"]] = int(r["Conteo Físico Real"])
+                        
+                        actualizar_inventario_fisico(galpon_fisico, nuevo_stock_dict)
+                        str_app.success(f"¡Inventario físico de {galpon_fisico} aplicado con éxito! Las mermas han sido ajustadas.")
+                        str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "👥 Clientes":
                 str_app.subheader("👥 Directorio de Clientes")

@@ -174,6 +174,8 @@ def cargar_gastos():
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM gastos ORDER BY fecha DESC, id DESC", conn)
     conn.close()
+    if not df.empty:
+        df['fecha'] = pd.to_datetime(df['fecha']).dt.date
     return df
 
 def eliminar_gasto(gasto_id):
@@ -274,8 +276,11 @@ def cargar_remisiones():
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
     conn.close()
-    if not df.empty and 'num_remision' not in df.columns:
-        df['num_remision'] = df['id']
+    if not df.empty:
+        if 'num_remision' not in df.columns:
+            df['num_remision'] = df['id']
+        if 'fecha_emision' in df.columns:
+            df['fecha_emision'] = pd.to_datetime(df['fecha_emision']).dt.date
     return df
 
 def obtener_siguiente_num_remision():
@@ -748,6 +753,9 @@ else:
                 if str_app.button("📜 Historial de Remisiones", use_container_width=True):
                     str_app.session_state.seccion_activa = "📜 Historial"
                     str_app.rerun()
+                if str_app.button("📈 Utilidades por Galpón", use_container_width=True):
+                    str_app.session_state.seccion_activa = "📈 Utilidades"
+                    str_app.rerun()
 
         else:
             if str_app.button("🔙 Volver al Menú de Stock"):
@@ -862,25 +870,47 @@ else:
                                 str_app.rerun()
 
                 str_app.markdown("---")
-                str_app.markdown("### 📋 Historial y Resumen de Gastos")
+                str_app.markdown("### 📋 Historial y Resumen de Gastos por Mes")
                 df_gastos = cargar_gastos()
                 if df_gastos.empty:
                     str_app.info("No hay gastos registrados en el sistema.")
                 else:
-                    total_gastos_gen = df_gastos['valor'].astype(float).sum()
+                    df_gastos['dt_fecha'] = pd.to_datetime(df_gastos['fecha'])
+                    df_gastos['Año'] = df_gastos['dt_fecha'].dt.year
+                    df_gastos['Mes_Num'] = df_gastos['dt_fecha'].dt.month
+                    
+                    meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+                    df_gastos['Mes_Nombre'] = df_gastos['Mes_Num'].map(meses_nombres)
+
+                    col_f1, col_f2 = str_app.columns(2)
+                    anios_disponibles = sorted(df_gastos['Año'].unique().tolist(), reverse=True)
+                    with col_f1:
+                        anio_sel_g = str_app.selectbox("📅 Filtrar Año (Gastos)", anios_disponibles, key="anio_gasto")
+                    
+                    meses_disponibles_nums = sorted(df_gastos[df_gastos['Año'] == anio_sel_g]['Mes_Num'].unique().tolist())
+                    meses_opciones_dict = {meses_nombres[m]: m for m in meses_disponibles_nums}
+                    
+                    with col_f2:
+                        mes_nombre_sel = str_app.selectbox("📅 Filtrar Mes (Gastos)", list(meses_opciones_dict.keys()), key="mes_gasto")
+                    
+                    mes_num_sel = meses_opciones_dict[mes_nombre_sel]
+                    df_gastos_filtrados = df_gastos[(df_gastos['Año'] == anio_sel_g) & (df_gastos['Mes_Num'] == mes_num_sel)]
+
+                    total_gastos_mes = df_gastos_filtrados['valor'].astype(float).sum()
                     str_app.markdown(f"""
                         <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
-                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Gastos Acumulados: <b>${total_gastos_gen:,.0f}</b></p>
+                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Gastos en {mes_nombre_sel} {anio_sel_g}: <b>${total_gastos_mes:,.0f}</b></p>
                         </div>
                     """, unsafe_allow_html=True)
 
-                    resumen_galpon = df_gastos.groupby('galpon')['valor'].sum().reset_index()
-                    resumen_galpon.columns = ['Galpón', 'Total Gastos ($)']
-                    str_app.markdown("#### 📊 Resumen de Gastos por Galpón")
-                    str_app.dataframe(resumen_galpon, use_container_width=True, hide_index=True)
+                    if not df_gastos_filtrados.empty:
+                        resumen_galpon = df_gastos_filtrados.groupby('galpon')['valor'].sum().reset_index()
+                        resumen_galpon.columns = ['Galpón', 'Total Gastos ($)']
+                        str_app.markdown(f"#### 📊 Resumen de Gastos por Galpón ({mes_nombre_sel} {anio_sel_g})")
+                        str_app.dataframe(resumen_galpon, use_container_width=True, hide_index=True)
 
-                    str_app.markdown("#### 📑 Detalle de Gastos")
-                    for _, row_g in df_gastos.iterrows():
+                    str_app.markdown("#### 📑 Detalle de Gastos del Mes")
+                    for _, row_g in df_gastos_filtrados.iterrows():
                         g_id = row_g['id']
                         g_fecha = str(row_g['fecha'])[:10]
                         g_galp = row_g['galpon']
@@ -1150,20 +1180,41 @@ else:
                 str_app.dataframe(cargar_inventario(), use_container_width=True)
 
             elif str_app.session_state.seccion_activa == "📜 Historial":
-                str_app.subheader("📜 Historial de Remisiones")
+                str_app.subheader("📜 Historial de Remisiones por Mes")
                 df_historial = cargar_remisiones()
                 
                 if df_historial.empty:
                     str_app.info("No hay remisiones registradas.")
                 else:
+                    df_historial['dt_fecha'] = pd.to_datetime(df_historial['fecha_emision'])
+                    df_historial['Año'] = df_historial['dt_fecha'].dt.year
+                    df_historial['Mes_Num'] = df_historial['dt_fecha'].dt.month
+                    
+                    meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+                    df_historial['Mes_Nombre'] = df_historial['Mes_Num'].map(meses_nombres)
+
+                    col_hf1, col_hf2 = str_app.columns(2)
+                    anios_disp_rem = sorted(df_historial['Año'].unique().tolist(), reverse=True)
+                    with col_hf1:
+                        anio_sel_rem = str_app.selectbox("📅 Filtrar Año (Remisiones)", anios_disp_rem, key="anio_rem")
+                    
+                    meses_disp_rem_nums = sorted(df_historial[df_historial['Año'] == anio_sel_rem]['Mes_Num'].unique().tolist())
+                    meses_opciones_rem_dict = {meses_nombres[m]: m for m in meses_disp_rem_nums}
+                    
+                    with col_hf2:
+                        mes_nombre_sel_rem = str_app.selectbox("📅 Filtrar Mes (Remisiones)", list(meses_opciones_rem_dict.keys()), key="mes_rem")
+                    
+                    mes_num_sel_rem = meses_opciones_rem_dict[mes_nombre_sel_rem]
+                    df_hist_mes = df_historial[(df_historial['Año'] == anio_sel_rem) & (df_historial['Mes_Num'] == mes_num_sel_rem)]
+
                     busqueda = str_app.text_input("🔍 Buscar cliente o N° Remisión", placeholder="Ej. RAFAEL GARCIA")
-                    df_filtrado = df_historial[
-                        df_historial['cliente'].astype(str).str.contains(busqueda, case=False, na=False) |
-                        df_historial['num_remision'].astype(str).str.contains(busqueda, case=False, na=False)
-                    ] if busqueda.strip() else df_historial
+                    df_filtrado = df_hist_mes[
+                        df_hist_mes['cliente'].astype(str).str.contains(busqueda, case=False, na=False) |
+                        df_hist_mes['num_remision'].astype(str).str.contains(busqueda, case=False, na=False)
+                    ] if busqueda.strip() else df_hist_mes
 
                     if df_filtrado.empty:
-                        str_app.warning("No se encontraron coincidencias.")
+                        str_app.warning("No se encontraron coincidencias para el mes seleccionado.")
                     else:
                         nums_remision = sorted(df_filtrado['num_remision'].dropna().unique().astype(int), reverse=True)
                         for num_sel in nums_remision:
@@ -1241,6 +1292,93 @@ else:
                                                 eliminar_remision_completa(num_sel, df_rem)
                                                 str_app.warning("Remisión y registro de cartera eliminados.")
                                                 str_app.rerun()
+
+            elif str_app.session_state.seccion_activa == "📈 Utilidades":
+                str_app.subheader("📈 Utilidades del Mes por Galpón")
+                str_app.caption("Calcula las ventas totales menos los gastos directos registrados para cada galpón en el mes seleccionado.")
+
+                df_rem_util = cargar_remisiones()
+                df_gast_util = cargar_gastos()
+
+                if df_rem_util.empty and df_gast_util.empty:
+                    str_app.info("No hay suficientes registros de ventas ni de gastos para calcular utilidades.")
+                else:
+                    # Unificar años y meses disponibles
+                    anos_set = set()
+                    if not df_rem_util.empty:
+                        df_rem_util['dt_fecha'] = pd.to_datetime(df_rem_util['fecha_emision'])
+                        anos_set.update(df_rem_util['dt_fecha'].dt.year.dropna().unique())
+                    if not df_gast_util.empty:
+                        df_gast_util['dt_fecha'] = pd.to_datetime(df_gast_util['fecha'])
+                        anos_set.update(df_gast_util['dt_fecha'].dt.year.dropna().unique())
+
+                    if not anos_set:
+                        str_app.warning("No hay fechas válidas registradas.")
+                    else:
+                        anos_disp = sorted(list(anos_set), reverse=True)
+                        meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+
+                        col_u1, col_u2 = str_app.columns(2)
+                        with col_u1:
+                            anio_u = str_app.selectbox("📅 Año", anos_disp, key="anio_util")
+                        with col_u2:
+                            mes_u_nombre = str_app.selectbox("📅 Mes", list(meses_nombres.values()), key="mes_util")
+                        
+                        mes_u_num = [k for k, v in meses_nombres.items() if v == mes_u_nombre][0]
+
+                        # Filtrar ventas del mes
+                        if not df_rem_util.empty:
+                            df_rem_mes = df_rem_util[(df_rem_util['dt_fecha'].dt.year == anio_u) & (df_rem_util['dt_fecha'].dt.month == mes_u_num)]
+                        else:
+                            df_rem_mes = pd.DataFrame(columns=['galpon', 'total'])
+
+                        # Filtrar gastos del mes
+                        if not df_gast_util.empty:
+                            df_gast_mes = df_gast_util[(df_gast_util['dt_fecha'].dt.year == anio_u) & (df_gast_util['dt_fecha'].dt.month == mes_u_num)]
+                        else:
+                            df_gast_mes = pd.DataFrame(columns=['galpon', 'valor'])
+
+                        galpones_lista = ["Galpón 1", "Galpón 2", "Galpón 3"]
+                        datos_utilidad = []
+
+                        total_general_ventas = 0.0
+                        total_general_gastos = 0.0
+
+                        for galp in galpones_lista:
+                            ventas_galp = float(df_rem_mes[df_rem_mes['galpon'] == galp]['total'].sum()) if not df_rem_mes.empty and 'galpon' in df_rem_mes.columns else 0.0
+                            
+                            # Sumar gastos específicos del galpón + una proporción equitativa de los gastos "General / Granja" si los hubiera
+                            gastos_directos_galp = float(df_gast_mes[df_gast_mes['galpon'] == galp]['valor'].sum()) if not df_gast_mes.empty and 'galpon' in df_gast_mes.columns else 0.0
+                            gastos_generales = float(df_gast_mes[df_gast_mes['galpon'] == 'General / Granja']['valor'].sum()) if not df_gast_mes.empty and 'galpon' in df_gast_mes.columns else 0.0
+                            
+                            gastos_galp = gastos_directos_galp + (gastos_generales / 3.0) # Distribución equitativa de gastos generales entre los 3 galpones
+                            
+                            utilidad_galp = ventas_galp - gastos_galp
+
+                            total_general_ventas += ventas_galp
+                            total_general_gastos += gastos_galp
+
+                            datos_utilidad.append({
+                                "Galpón": galp,
+                                "Ventas ($)": ventas_galp,
+                                "Gastos ($)": gastos_galp,
+                                "Utilidad ($)": utilidad_galp
+                            })
+
+                        df_util_res = pd.DataFrame(datos_utilidad)
+                        utilidad_total_neta = total_general_ventas - total_general_gastos
+
+                        str_app.markdown(f"""
+                            <div style="background-color: #1a3e63; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #f26822;">
+                                <p style="margin: 0; font-size: 14px;">Total Ventas ({mes_u_nombre} {anio_u}): <b>${total_general_ventas:,.0f}</b></p>
+                                <p style="margin: 0; font-size: 14px;">Total Gastos ({mes_u_nombre} {anio_u}): <b>${total_general_gastos:,.0f}</b></p>
+                                <hr style="border-color: #2c5282; margin: 8px 0;">
+                                <p style="margin: 0; font-size: 17px; color: #f26822 !important;"><b>Utilidad Neta Total: ${utilidad_total_neta:,.0f}</b></p>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                        str_app.markdown(f"#### 📊 Detalle por Galpón ({mes_u_nombre} {anio_u})")
+                        str_app.dataframe(df_util_res, use_container_width=True, hide_index=True)
 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario")

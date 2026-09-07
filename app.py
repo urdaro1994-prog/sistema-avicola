@@ -686,10 +686,19 @@ PASS_ADMIN = "admin123"
 PASS_INVITADO = "invitado123"
 
 if str_app.session_state.usuario_autenticado is None:
-    col_logo_l, col_tit_l = str_app.columns([1, 3.5])
-    with col_logo_l:
-        if os.path.exists("LOGOASI.png"): str_app.image("LOGOASI.png", width=75)
-        else: str_app.markdown("<h1 style='margin: 0;'>🥚</h1>", unsafe_allow_html=True)
+ col_logo, col_tit = str_app.columns([1, 3.5])
+    with col_logo:
+        if os.path.exists("LOGOASI.png"):
+            str_app.markdown(
+                """
+                <div style="background-color: white; padding: 6px; border-radius: 12px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <img src="data:image/png;base64,""" + __import__("base64").b64encode(open("LOGOASI.png", "rb").read()).decode() + """" width="105" style="display: block; border-radius: 8px;">
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        else:
+            str_app.markdown("<h1 style='margin: 0;'>🥚</h1>", unsafe_allow_html=True)
     with col_tit_l:
         str_app.markdown('<h2 style="margin: 0; color: #f26822 !important;">AVÍCOLA SANTA ISABEL</h2><p style="margin: 0;">CONTROL DE ACCESO</p>', unsafe_allow_html=True)
 

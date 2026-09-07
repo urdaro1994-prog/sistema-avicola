@@ -157,6 +157,22 @@ def inicializar_tabla_gastos():
     cur.close()
     conn.close()
 
+def inicializar_tabla_gastos_varios():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS gastos_varios (
+            id SERIAL PRIMARY KEY,
+            fecha DATE,
+            categoria TEXT,
+            descripcion TEXT,
+            valor NUMERIC
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def registrar_gasto(fecha, galpon, categoria, descripcion, valor):
     inicializar_tabla_gastos()
     conn = get_connection()
@@ -186,6 +202,35 @@ def eliminar_gasto(gasto_id):
     cur.close()
     conn.close()
 
+def registrar_gasto_vario(fecha, categoria, descripcion, valor):
+    inicializar_tabla_gastos_varios()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO gastos_varios (fecha, categoria, descripcion, valor)
+        VALUES (%s, %s, %s, %s)
+    """, (fecha, categoria, descripcion, valor))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_gastos_varios():
+    inicializar_tabla_gastos_varios()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM gastos_varios ORDER BY fecha DESC, id DESC", conn)
+    conn.close()
+    if not df.empty:
+        df['fecha'] = pd.to_datetime(df['fecha']).dt.date
+    return df
+
+def eliminar_gasto_vario(gasto_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM gastos_varios WHERE id = %s", (gasto_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def reiniciar_sistema_completo():
     conn = get_connection()
     cur = conn.cursor()
@@ -194,6 +239,7 @@ def reiniciar_sistema_completo():
     cur.execute("DELETE FROM remisiones;")
     cur.execute("DELETE FROM clientes;")
     cur.execute("DELETE FROM gastos;")
+    cur.execute("DELETE FROM gastos_varios;")
     cur.execute("""
         UPDATE inventario SET 
             yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
@@ -701,7 +747,7 @@ else:
                     str_app.session_state.confirmar_reinicio = True
                     str_app.rerun()
             else:
-                str_app.warning("⚠️ ¿Estás completamente seguro? Esto borrará todas las remisiones, abonos, clientes, gastos y pondrá el stock en 0 para iniciar con datos reales.")
+                str_app.warning("⚠️ ¿Estás completamente seguro? Esto borrará todas las remisiones, abonos, clientes, gastos, gastos varios y pondrá el stock en 0 para iniciar con datos reales.")
                 c_conf1, c_conf2 = str_app.columns(2)
                 with c_conf1:
                     if str_app.button("✅ Sí, borrar todo", use_container_width=True):
@@ -755,6 +801,9 @@ else:
                     str_app.rerun()
                 if str_app.button("📈 Utilidades por Galpón", use_container_width=True):
                     str_app.session_state.seccion_activa = "📈 Utilidades"
+                    str_app.rerun()
+                if str_app.button("🏷️ Gastos Varios", use_container_width=True):
+                    str_app.session_state.seccion_activa = "🏷️ Gastos Varios"
                     str_app.rerun()
 
         else:
@@ -924,6 +973,84 @@ else:
                                 if str_app.button(f"🗑️ Eliminar Gasto #{g_id}", key=f"del_gasto_{g_id}"):
                                     eliminar_gasto(g_id)
                                     str_app.warning("Gasto eliminado.")
+                                    str_app.rerun()
+
+            elif str_app.session_state.seccion_activa == "🏷️ Gastos Varios":
+                str_app.subheader("🏷️ Control de Gastos Varios y Personales")
+                str_app.caption("Estos gastos se registran de forma independiente y no afectan los cálculos de utilidades de los galpones.")
+                
+                if rol_actual == "Invitado":
+                    str_app.warning("👀 Modo Invitado: Solo puedes visualizar los gastos varios registrados.")
+                else:
+                    with str_app.form(key="form_registrar_gasto_vario"):
+                        c_fecha_gv = str_app.date_input("Fecha del Gasto Vario", value=date.today())
+                        c_categoria_gv = str_app.selectbox("Categoría", ["Personal", "Hogar", "Vehículo", "Impuestos", "Varios / Otros"])
+                        c_desc_gv = str_app.text_input("Descripción", placeholder="Ej. Compra personal, mercado, etc.")
+                        c_valor_gv = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
+                        
+                        btn_guardar_gv = str_app.form_submit_button("💾 Guardar Gasto Vario")
+                        if btn_guardar_gv:
+                            if c_valor_gv <= 0:
+                                str_app.error("El valor del gasto debe ser mayor a 0.")
+                            else:
+                                registrar_gasto_vario(c_fecha_gv, c_categoria_gv, c_desc_gv, c_valor_gv)
+                                str_app.success("¡Gasto vario registrado con éxito!")
+                                str_app.rerun()
+
+                str_app.markdown("---")
+                str_app.markdown("### 📋 Historial y Resumen de Gastos Varios por Mes")
+                df_gv = cargar_gastos_varios()
+                if df_gv.empty:
+                    str_app.info("No hay gastos varios registrados en el sistema.")
+                else:
+                    df_gv['dt_fecha'] = pd.to_datetime(df_gv['fecha'])
+                    df_gv['Año'] = df_gv['dt_fecha'].dt.year
+                    df_gv['Mes_Num'] = df_gv['dt_fecha'].dt.month
+                    
+                    meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+                    df_gv['Mes_Nombre'] = df_gv['Mes_Num'].map(meses_nombres)
+
+                    col_f1, col_f2 = str_app.columns(2)
+                    anios_disponibles_gv = sorted(df_gv['Año'].unique().tolist(), reverse=True)
+                    with col_f1:
+                        anio_sel_gv = str_app.selectbox("📅 Filtrar Año (Gastos Varios)", anios_disponibles_gv, key="anio_gv")
+                    
+                    meses_disp_nums_gv = sorted(df_gv[df_gv['Año'] == anio_sel_gv]['Mes_Num'].unique().tolist())
+                    meses_opciones_dict_gv = {meses_nombres[m]: m for m in meses_disp_nums_gv}
+                    
+                    with col_f2:
+                        mes_nombre_sel_gv = str_app.selectbox("📅 Filtrar Mes (Gastos Varios)", list(meses_opciones_dict_gv.keys()), key="mes_gv")
+                    
+                    mes_num_sel_gv = meses_opciones_dict_gv[mes_nombre_sel_gv]
+                    df_gv_filtrados = df_gv[(df_gv['Año'] == anio_sel_gv) & (df_gv['Mes_Num'] == mes_num_sel_gv)]
+
+                    total_gv_mes = df_gv_filtrados['valor'].astype(float).sum()
+                    str_app.markdown(f"""
+                        <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
+                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Gastos Varios en {mes_nombre_sel_gv} {anio_sel_gv}: <b>${total_gv_mes:,.0f}</b></p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    if not df_gv_filtrados.empty:
+                        resumen_cat_gv = df_gv_filtrados.groupby('categoria')['valor'].sum().reset_index()
+                        resumen_cat_gv.columns = ['Categoría', 'Total ($)']
+                        str_app.markdown(f"#### 📊 Resumen por Categoría ({mes_nombre_sel_gv} {anio_sel_gv})")
+                        str_app.dataframe(resumen_cat_gv, use_container_width=True, hide_index=True)
+
+                    str_app.markdown("#### 📑 Detalle de Gastos Varios del Mes")
+                    for _, row_gv in df_gv_filtrados.iterrows():
+                        gv_id = row_gv['id']
+                        gv_fecha = str(row_gv['fecha'])[:10]
+                        gv_cat = row_gv['categoria']
+                        gv_desc = row_gv['descripcion']
+                        gv_val = float(row_gv['valor'])
+
+                        with str_app.expander(f"📅 {gv_fecha} — [{gv_cat}] {gv_desc}: ${gv_val:,.0f}"):
+                            str_app.write(f"**Descripción:** {gv_desc}")
+                            if rol_actual == "Administrador":
+                                if str_app.button(f"🗑️ Eliminar Gasto Vario #{gv_id}", key=f"del_gv_{gv_id}"):
+                                    eliminar_gasto_vario(gv_id)
+                                    str_app.warning("Gasto vario eliminado.")
                                     str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "👥 Clientes":
@@ -1303,7 +1430,6 @@ else:
                 if df_rem_util.empty and df_gast_util.empty:
                     str_app.info("No hay suficientes registros de ventas ni de gastos para calcular utilidades.")
                 else:
-                    # Unificar años y meses disponibles
                     anos_set = set()
                     if not df_rem_util.empty:
                         df_rem_util['dt_fecha'] = pd.to_datetime(df_rem_util['fecha_emision'])
@@ -1326,13 +1452,11 @@ else:
                         
                         mes_u_num = [k for k, v in meses_nombres.items() if v == mes_u_nombre][0]
 
-                        # Filtrar ventas del mes
                         if not df_rem_util.empty:
                             df_rem_mes = df_rem_util[(df_rem_util['dt_fecha'].dt.year == anio_u) & (df_rem_util['dt_fecha'].dt.month == mes_u_num)]
                         else:
                             df_rem_mes = pd.DataFrame(columns=['galpon', 'total'])
 
-                        # Filtrar gastos del mes
                         if not df_gast_util.empty:
                             df_gast_mes = df_gast_util[(df_gast_util['dt_fecha'].dt.year == anio_u) & (df_gast_util['dt_fecha'].dt.month == mes_u_num)]
                         else:
@@ -1347,12 +1471,10 @@ else:
                         for galp in galpones_lista:
                             ventas_galp = float(df_rem_mes[df_rem_mes['galpon'] == galp]['total'].sum()) if not df_rem_mes.empty and 'galpon' in df_rem_mes.columns else 0.0
                             
-                            # Sumar gastos específicos del galpón + una proporción equitativa de los gastos "General / Granja" si los hubiera
                             gastos_directos_galp = float(df_gast_mes[df_gast_mes['galpon'] == galp]['valor'].sum()) if not df_gast_mes.empty and 'galpon' in df_gast_mes.columns else 0.0
                             gastos_generales = float(df_gast_mes[df_gast_mes['galpon'] == 'General / Granja']['valor'].sum()) if not df_gast_mes.empty and 'galpon' in df_gast_mes.columns else 0.0
                             
-                            gastos_galp = gastos_directos_galp + (gastos_generales / 3.0) # Distribución equitativa de gastos generales entre los 3 galpones
-                            
+                            gastos_galp = gastos_directos_galp + (gastos_generales / 3.0)
                             utilidad_galp = ventas_galp - gastos_galp
 
                             total_general_ventas += ventas_galp

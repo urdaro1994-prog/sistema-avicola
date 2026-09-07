@@ -843,7 +843,7 @@ else:
                         key="editor_entradas_stock"
                     )
                     
-                    if str_app.button("➕ Registrar Entrada al Inventario"):
+if str_app.button("➕ Registrar Entrada al Inventario"):
                         entradas_validas = df_entrada_editado[df_entrada_editado["Cantidad"] > 0].copy()
                         if entradas_validas.empty:
                             str_app.warning("Debe ingresar al menos un ítem con cantidad mayor a 0.")
@@ -855,8 +855,10 @@ else:
                                     "Cantidad": int(r["Cantidad"])
                                 })
                             registrar_entrada_inventario(galpon_destino, lista_items_entrada)
-                            str_app.success(f"¡Entrada registrada correctamente en {galpon_destino}!")
-                            str_app.rerun()
+                            
+                            # Aviso flotante y mensaje de confirmación
+                            str_app.toast(f"¡Entrada guardada con éxito en {galpon_destino}!", icon="✅")
+                            str_app.success(f"¡Entrada de inventario registrada correctamente en {galpon_destino}!")
 
             elif str_app.session_state.seccion_activa == "⚖️ Inventario Fisico":
                 str_app.subheader("⚖️ Inventario Físico y Mermas")

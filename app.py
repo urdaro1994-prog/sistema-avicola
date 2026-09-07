@@ -255,25 +255,13 @@ def inicializar_tabla_registro_diario():
             mortalidad INT DEFAULT 0,
             produccion INT DEFAULT 0,
             edad_semanas INT DEFAULT 0,
-            consumo_agua NUMERIC DEFAULT 0,
-            huevos_rotos INT DEFAULT 0,
-            huevos_sucios INT DEFAULT 0,
-            peso_promedio NUMERIC DEFAULT 0,
             UNIQUE(fecha, galpon)
         );
     """)
-    nuevas_cols = [
-        ("edad_semanas", "INT DEFAULT 0"),
-        ("consumo_agua", "NUMERIC DEFAULT 0"),
-        ("huevos_rotos", "INT DEFAULT 0"),
-        ("huevos_sucios", "INT DEFAULT 0"),
-        ("peso_promedio", "NUMERIC DEFAULT 0")
-    ]
-    for col_nombre, col_tipo in nuevas_cols:
-        try:
-            cur.execute(f"ALTER TABLE registro_diario ADD COLUMN IF NOT EXISTS {col_nombre} {col_tipo};")
-        except Exception:
-            conn.rollback()
+    try:
+        cur.execute("ALTER TABLE registro_diario ADD COLUMN IF NOT EXISTS edad_semanas INT DEFAULT 0;")
+    except Exception:
+        conn.rollback()
     conn.commit()
     cur.close()
     conn.close()
@@ -284,27 +272,23 @@ inicializar_tabla_inventario()
 inicializar_tabla_remisiones()
 inicializar_tabla_registro_diario()
 
-def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas, consumo_agua, huevos_rotos, huevos_sucios, peso_promedio):
+def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas):
     inicializar_tabla_galpones()
     inicializar_tabla_registro_diario()
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas, consumo_agua, huevos_rotos, huevos_sucios, peso_promedio)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (fecha, galpon) 
             DO UPDATE SET 
                 ingreso_alimento = EXCLUDED.ingreso_alimento,
                 consumo_alimento = EXCLUDED.consumo_alimento,
                 mortalidad = EXCLUDED.mortalidad,
                 produccion = EXCLUDED.produccion,
-                edad_semanas = EXCLUDED.edad_semanas,
-                consumo_agua = EXCLUDED.consumo_agua,
-                huevos_rotos = EXCLUDED.huevos_rotos,
-                huevos_sucios = EXCLUDED.huevos_sucios,
-                peso_promedio = EXCLUDED.peso_promedio;
-        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas, consumo_agua, huevos_rotos, huevos_sucios, peso_promedio))
+                edad_semanas = EXCLUDED.edad_semanas;
+        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas))
         
         cur.execute("""
             UPDATE galpones 
@@ -756,7 +740,7 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
     header_data = [
         [
             img_logo,
-            Paragraph("<b>AGROAVICOLA SANTA ISABEL</b><br/><font size=7>NIT. 901.786.799-7<br/>Reporte Acumulado - Registro Diario Completo</font>", style_normal),
+            Paragraph("<b>AGROAVICOLA SANTA ISABEL</b><br/><font size=7>NIT. 901.786.799-7<br/>Reporte Acumulado - Registro Diario</font>", style_normal),
             Paragraph(f"<b>Galpón:</b><br/><font size=11 color='#f26822'><b>{galpon}</b></font>", style_right)
         ]
     ]
@@ -772,60 +756,42 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
         Paragraph("Fecha", style_th_left),
         Paragraph("Sem", style_th),
         Paragraph("Alim. (kg)", style_th_right),
-        Paragraph("Agua (L)", style_th_right),
         Paragraph("Mort.", style_th_right),
-        Paragraph("Prod.", style_th_right),
-        Paragraph("Rotos", style_th_right),
-        Paragraph("Sucios", style_th_right)
+        Paragraph("Prod. Total", style_th_right)
     ]]
     
     tot_con = 0.0
-    tot_agua = 0.0
     tot_mortalidad = 0
     tot_produccion = 0
-    tot_rotos = 0
-    tot_sucios = 0
 
     for _, fila in df_registros.iterrows():
         fec = str(fila['fecha'])
         edad = int(fila.get('edad_semanas', 0))
         con = float(fila.get('consumo_alimento', 0))
-        agua = float(fila.get('consumo_agua', 0))
         mor = int(fila.get('mortalidad', 0))
         prod = int(fila.get('produccion', 0))
-        rot = int(fila.get('huevos_rotos', 0))
-        suc = int(fila.get('huevos_sucios', 0))
         
         tot_con += con
-        tot_agua += agua
         tot_mortalidad += mor
         tot_produccion += prod
-        tot_rotos += rot
-        tot_sucios += suc
 
         table_data.append([
             Paragraph(fec, style_normal),
             Paragraph(str(edad), style_normal),
             Paragraph(f"{con:,.1f}".replace(",", "."), style_right),
-            Paragraph(f"{agua:,.1f}".replace(",", "."), style_right),
             Paragraph(f"{mor:,}".replace(",", "."), style_right),
-            Paragraph(f"{prod:,}".replace(",", "."), style_right),
-            Paragraph(f"{rot:,}".replace(",", "."), style_right),
-            Paragraph(f"{suc:,}".replace(",", "."), style_right)
+            Paragraph(f"{prod:,}".replace(",", "."), style_right)
         ])
 
     table_data.append([
         Paragraph("<b>TOTAL</b>", style_bold),
         Paragraph("-", style_bold),
         Paragraph(f"<b>{tot_con:,.1f}</b>".replace(",", "."), style_right_bold),
-        Paragraph(f"<b>{tot_agua:,.1f}</b>".replace(",", "."), style_right_bold),
         Paragraph(f"<b>{tot_mortalidad:,}</b>".replace(",", "."), style_right_bold),
-        Paragraph(f"<b>{tot_produccion:,}</b>".replace(",", "."), style_right_bold),
-        Paragraph(f"<b>{tot_rotos:,}</b>".replace(",", "."), style_right_bold),
-        Paragraph(f"<b>{tot_sucios:,}</b>".replace(",", "."), style_right_bold)
+        Paragraph(f"<b>{tot_produccion:,}</b>".replace(",", "."), style_right_bold)
     ])
 
-    t_items = Table(table_data, colWidths=[70, 35, 75, 70, 60, 65, 65, 60])
+    t_items = Table(table_data, colWidths=[100, 50, 120, 110, 160])
     t_items.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f2942")),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -1322,7 +1288,7 @@ else:
 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario y Control por Galpón")
-        str_app.caption("Selecciona el galpón para registrar los parámetros productivos completos (alimento, agua, mortalidad, postura, peso y clasificación de huevos) y genera tu reporte acumulado en PDF:")
+        str_app.caption("Selecciona el galpón para registrar los parámetros productivos y genera tu reporte acumulado en PDF:")
 
         galpones_disp = ["Galpón 1", "Galpón 2", "Galpón 3"]
         galpon_seleccionado = str_app.selectbox("Seleccione el Galpón", galpones_disp, key="select_galpon_diario")
@@ -1336,30 +1302,21 @@ else:
                 with str_app.form(key=f"form_reg_diario_{galpon_seleccionado}"):
                     fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
                     
-                    c_d1, c_d2, c_d3 = str_app.columns(3)
+                    c_d1, c_d2 = str_app.columns(2)
                     with c_d1:
                         edad_sem = str_app.number_input("Edad (Semanas)", min_value=0, step=1, value=0)
                         ingreso_alim = str_app.number_input("Ingreso Alimento (kg)", min_value=0.0, step=1.0, format="%.1f")
                     with c_d2:
                         consumo_alim = str_app.number_input("Consumo Alimento (kg)", min_value=0.0, step=1.0, format="%.1f")
-                        consumo_agua = str_app.number_input("Consumo Agua (L)", min_value=0.0, step=1.0, format="%.1f")
-                    with c_d3:
-                        peso_prom = str_app.number_input("Peso Promedio (g)", min_value=0.0, step=10.0, format="%.1f")
                         mortalidad_val = str_app.number_input("Mortalidad (Aves)", min_value=0, step=1)
 
                     str_app.markdown("---")
-                    str_app.markdown("#### 🥚 Producción de Huevos en Galpón")
-                    c_p1, c_p2, c_p3 = str_app.columns(3)
-                    with c_p1:
-                        produccion_val = str_app.number_input("Producción Total (Huevos Buenos)", min_value=0, step=1)
-                    with c_p2:
-                        huevos_rotos = str_app.number_input("Huevos Rotos", min_value=0, step=1)
-                    with c_p3:
-                        huevos_sucios = str_app.number_input("Huevos Sucios", min_value=0, step=1)
+                    str_app.markdown("#### 🥚 Producción")
+                    produccion_val = str_app.number_input("Producción Total (Huevos)", min_value=0, step=1)
 
                     btn_guardar_rd = str_app.form_submit_button("💾 Guardar / Actualizar Registro Diario")
                     if btn_guardar_rd:
-                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val, edad_sem, consumo_agua, huevos_rotos, huevos_sucios, peso_prom)
+                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val, edad_sem)
                         str_app.success(f"¡Registro guardado correctamente para {galpon_seleccionado} en fecha {fecha_reg}!")
                         str_app.rerun()
 
@@ -1372,18 +1329,14 @@ else:
             else:
                 tot_ing = df_registros_galp['ingreso_alimento'].astype(float).sum()
                 tot_con = df_registros_galp['consumo_alimento'].astype(float).sum()
-                tot_agua = df_registros_galp['consumo_agua'].astype(float).sum() if 'consumo_agua' in df_registros_galp.columns else 0.0
                 tot_mor = df_registros_galp['mortalidad'].astype(int).sum()
                 tot_prod = df_registros_galp['produccion'].astype(int).sum()
-                tot_rotos = df_registros_galp['huevos_rotos'].astype(int).sum() if 'huevos_rotos' in df_registros_galp.columns else 0
-                tot_sucios = df_registros_galp['huevos_sucios'].astype(int).sum() if 'huevos_sucios' in df_registros_galp.columns else 0
 
                 str_app.markdown(f"""
                     <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
                         <p style="margin: 0; font-size: 15px; color: #f26822 !important;"><b>Acumulados Totales ({galpon_seleccionado}):</b></p>
                         <p style="margin: 0; font-size: 14px;">📥 Ingreso Alimento: <b>{tot_ing:,.1f} kg</b> | 🍽️ Consumo Alimento: <b>{tot_con:,.1f} kg</b></p>
-                        <p style="margin: 0; font-size: 14px;">💧 Consumo Agua: <b>{tot_agua:,.1f} L</b> | ⚠️ Mortalidad: <b>{tot_mor:,} aves</b></p>
-                        <p style="margin: 0; font-size: 14px;">🥚 Producción Total: <b>{tot_prod:,}</b> | 🔴 Rotos: <b>{tot_rotos:,}</b> | 🟤 Sucios: <b>{tot_sucios:,}</b></p>
+                        <p style="margin: 0; font-size: 14px;">⚠️ Mortalidad: <b>{tot_mor:,} aves</b> | 🥚 Producción Total: <b>{tot_prod:,}</b></p>
                     </div>
                 """, unsafe_allow_html=True)
 
@@ -1405,17 +1358,13 @@ else:
                     rd_edad = row_rd.get('edad_semanas', 0)
                     rd_ing = float(row_rd['ingreso_alimento'])
                     rd_con = float(row_rd['consumo_alimento'])
-                    rd_agua = float(row_rd.get('consumo_agua', 0))
                     rd_mor = int(row_rd['mortalidad'])
                     rd_prod = int(row_rd['produccion'])
-                    rd_rot = int(row_rd.get('huevos_rotos', 0))
-                    rd_suc = int(row_rd.get('huevos_sucios', 0))
-                    rd_peso = float(row_rd.get('peso_promedio', 0))
 
                     with str_app.expander(f"📅 {rd_fecha} (Sem {rd_edad}) — Prod: {rd_prod} | Cons: {rd_con}kg | Mort: {rd_mor}"):
-                        str_app.write(f"**Edad:** {rd_edad} sem | **Peso Promedio:** {rd_peso}g | **Agua:** {rd_agua}L")
+                        str_app.write(f"**Edad:** {rd_edad} sem")
                         str_app.write(f"**Ingreso Alimento:** {rd_ing}kg | **Consumo Alimento:** {rd_con}kg")
-                        str_app.write(f"**Huevos Buenos:** {rd_prod} | **Rotos:** {rd_rot} | **Sucios:** {rd_suc}")
+                        str_app.write(f"**Producción Total:** {rd_prod}")
                         if rol_actual == "Administrador":
                             if str_app.button(f"🗑️ Eliminar Registro ID {rd_id}", key=f"del_rd_{rd_id}"):
                                 eliminar_registro_diario(rd_id)

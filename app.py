@@ -675,7 +675,11 @@ else:
             if str_app.button("📝 Registro Diario", use_container_width=True):
                 str_app.session_state.sesion_principal = "📝 Registro Diario"
                 str_app.rerun()
-
+# Dentro de las columnas de selección del menú de Stock y Ventas:
+if str_app.button("💸 Control de Gastos", use_container_width=True):
+    str_app.session_state.seccion_activa = "Gastos"
+    str_app.rerun()
+    
         # Botón de reinicio global solo para Administrador
         if rol_actual == "Administrador":
             str_app.markdown("---")

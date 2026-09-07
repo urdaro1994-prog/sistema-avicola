@@ -1192,7 +1192,7 @@ else:
                                                 str_app.rerun()
                                                 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
-    str_app.subheader("📝 Registro Diario de Producción - Granja San Lorenzo")
+        str_app.subheader("📝 Registro Diario de Producción - Granja San Lorenzo")
     str_app.caption("Control diario de aves, consumo de alimento y postura para el Lote 200 (Hy-Line Brown).")
     
     # Parámetros del lote según el modelo San Lorenzo

@@ -1183,7 +1183,7 @@ else:
             str_app.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
             str_app.form_submit_button("Guardar")
 
-elif str_app.session_state.sesion_principal == "💸 Control de Gastos":
+    elif str_app.session_state.sesion_principal == "💸 Control de Gastos":
     str_app.subheader("💸 Control y Registro de Gastos por Galpón")
     str_app.caption("Registre los costos de insumos, alimento, medicamentos y mano de obra vinculados a cada galpón o de forma general.")
     

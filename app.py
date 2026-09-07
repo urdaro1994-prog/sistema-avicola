@@ -407,7 +407,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story = []
     styles = getSampleStyleSheet()
     
-    # Estilos personalizados limpios y profesionales
     style_title = ParagraphStyle('TitleStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor("#0f2942"))
     style_subtitle = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor("#0f2942"))
     style_normal = ParagraphStyle('NormalStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#333333"))
@@ -420,7 +419,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 
     num_str = f"{num_remision:06d}"
 
-    # --- ENCABEZADO PRINCIPAL (Estilo exacto de la imagen) ---
     img_logo = Image("ESCUDO.png", width=50, height=50) if os.path.exists("ESCUDO.png") else Paragraph("<b>🥚</b>", style_title)
     
     header_data = [
@@ -438,7 +436,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story.append(t_header)
     story.append(Spacer(1, 5))
 
-    # --- DATOS GENERALES Y CLIENTE ---
     info_data = [
         [
             Paragraph("<b>Fecha</b>", style_bold),
@@ -486,7 +483,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story.append(t_info)
     story.append(Spacer(1, 15))
 
-    # --- TABLA DE ITEMS ---
     table_data = [[
         Paragraph("Descripción", style_th_left),
         Paragraph("Cantidad", style_th),
@@ -514,7 +510,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story.append(t_items)
     story.append(Spacer(1, 10))
 
-    # --- TOTALES ---
     totales_data = [
         [Paragraph("<b>Subtotal</b>", style_right), Paragraph(f"<b>$ {total_factura:,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_right_bold)],
         [Paragraph("<b>IVA</b>", style_right), Paragraph("<b>$ 0,00</b>", style_right_bold)],
@@ -553,7 +548,7 @@ if st.session_state.sesion_principal is None:
     with c_prin1:
         if st.button("📦 Stock y Ventas", use_container_width=True):
             st.session_state.sesion_principal = "📦 Stock y Ventas"
-            st.session_state.seccion_activa = "📥 Entradas"
+            st.session_state.seccion_activa = None
             st.rerun()
     with c_prin2:
         if st.button("📝 Registro Diario", use_container_width=True):
@@ -562,394 +557,447 @@ if st.session_state.sesion_principal is None:
 else:
     if st.button("⬅️ Regresar al Menú Principal"):
         st.session_state.sesion_principal = None
+        st.session_state.seccion_activa = None
         st.rerun()
 
 # --- CONTENIDO DE LAS SESIONES ---
 if st.session_state.sesion_principal == "📦 Stock y Ventas":
-    c_nav1, c_nav2, c_nav3, c_nav4, c_nav5, c_nav6 = st.columns(6)
-    with c_nav1:
-        if st.button("📥 Entr.", use_container_width=True): st.session_state.seccion_activa = "📥 Entradas"
-    with c_nav2:
-        if st.button("👥 Clic.", use_container_width=True): st.session_state.seccion_activa = "👥 Clientes"
-    with c_nav3:
-        if st.button("📤 Vent.", use_container_width=True): st.session_state.seccion_activa = "📤 Remisiones"
-    with c_nav4:
-        if st.button("💰 Cart.", use_container_width=True): st.session_state.seccion_activa = "💰 Cartera"
-    with c_nav5:
-        if st.button("📊 Stk.", use_container_width=True): st.session_state.seccion_activa = "📊 Stock"
-    with c_nav6:
-        if st.button("📜 Hist.", use_container_width=True): st.session_state.seccion_activa = "📜 Historial"
-
-    st.markdown("---")
-
-    if st.session_state.seccion_activa == "📥 Entradas":
-        st.subheader("📥 Entrada de Producción / Clasificación")
-        st.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
+    
+    # Si no hay una subsección activa, mostramos el MENÚ TIPO TARJETA/BOTONES
+    if "seccion_activa" not in st.session_state or st.session_state.seccion_activa is None:
+        st.subheader("📦 Módulo Stock y Ventas")
+        st.caption("Seleccione una opción para continuar:")
         
-        galpon_destino = st.selectbox("Seleccione el Galpón de Destino", ["Galpón 1", "Galpón 2", "Galpón 3"])
-        
-        opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
-        df_base_entrada = pd.DataFrame([
-            {"Clasificación": "a", "Cantidad": 1000}
-        ])
-        
-        df_entrada_editado = st.data_editor(
-            df_base_entrada,
-            num_rows="dynamic",
-            column_config={
-                "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
-                "Cantidad": st.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, required=True)
-            },
-            use_container_width=True,
-            key="editor_entradas_stock"
-        )
-        
-        if st.button("➕ Registrar Entrada al Inventario"):
-            entradas_validas = df_entrada_editado[df_entrada_editado["Cantidad"] > 0].copy()
-            if entradas_validas.empty:
-                st.warning("Debe ingresar al menos un ítem con cantidad mayor a 0.")
-            else:
-                lista_items_entrada = []
-                for _, r in entradas_validas.iterrows():
-                    lista_items_entrada.append({
-                        "Clasificación": r["Clasificación"],
-                        "Cantidad": int(r["Cantidad"])
-                    })
-                registrar_entrada_inventario(galpon_destino, lista_items_entrada)
-                st.success(f"¡Entrada registrada correctamente en {galpon_destino}!")
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            if st.button("📥 Entradas de Stock", use_container_width=True):
+                st.session_state.seccion_activa = "📥 Entradas"
+                st.rerun()
+            if st.button("📤 Nueva Remisión", use_container_width=True):
+                st.session_state.seccion_activa = "📤 Remisiones"
+                st.rerun()
+            if st.button("📊 Ver Stock Actual", use_container_width=True):
+                st.session_state.seccion_activa = "📊 Stock"
+                st.rerun()
+        with col_m2:
+            if st.button("👥 Clientes", use_container_width=True):
+                st.session_state.seccion_activa = "👥 Clientes"
+                st.rerun()
+            if st.button("💰 Control de Cartera", use_container_width=True):
+                st.session_state.seccion_activa = "💰 Cartera"
+                st.rerun()
+            if st.button("📜 Historial", use_container_width=True):
+                st.session_state.seccion_activa = "📜 Historial"
                 st.rerun()
 
-    elif st.session_state.seccion_activa == "👥 Clientes":
-        st.subheader("👥 Directorio de Clientes")
-        tab_nuevo, tab_lista = st.tabs(["➕ Agregar Cliente", "📋 Lista de Clientes"])
+    else:
+        # Botón para volver al menú de stock
+        if st.button("🔙 Volver al Menú de Stock"):
+            st.session_state.seccion_activa = None
+            st.rerun()
         
-        with tab_nuevo:
-            with st.form(key="form_nuevo_cliente"):
-                c_nom = st.text_input("Nombre / Razón Social *")
-                c_ced = st.text_input("Cédula / NIT")
-                c_dir = st.text_input("Dirección", value="CHOACHI")
-                c_tel = st.text_input("Teléfono")
-                c_em = st.text_input("Email")
-                if st.form_submit_button("💾 Guardar Cliente"):
-                    if not c_nom.strip():
-                        st.error("El nombre es obligatorio.")
-                    else:
-                        guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
-                        st.success(f"¡Cliente {c_nom.upper()} guardado!")
-                        st.rerun()
+        st.markdown("---")
 
-        with tab_lista:
-            df_cli = cargar_clientes()
-            if df_cli.empty:
-                st.info("No hay clientes registrados.")
-            else:
-                for _, r_cli in df_cli.iterrows():
-                    id_c = r_cli['id']
-                    nom_c = r_cli['nombre']
-                    with st.expander(f"👤 {nom_c} ({r_cli.get('cedula_nit', '')})"):
-                        st.write(f"**Teléfono:** {r_cli.get('telefono', '')}")
-                        st.write(f"**Dirección:** {r_cli.get('direccion', '')}")
-                        if st.button(f"🗑️ Eliminar {nom_c}", key=f"del_cli_{id_c}"):
-                            eliminar_cliente(id_c)
-                            st.warning("Cliente eliminado.")
+        if st.session_state.seccion_activa == "📥 Entradas":
+            st.subheader("📥 Entrada de Producción / Clasificación")
+            st.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
+            
+            galpon_destino = st.selectbox("Seleccione el Galpón de Destino", ["Galpón 1", "Galpón 2", "Galpón 3"])
+            
+            opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+            df_base_entrada = pd.DataFrame([
+                {"Clasificación": "a", "Cantidad": 1000}
+            ])
+            
+            df_entrada_editado = st.data_editor(
+                df_base_entrada,
+                num_rows="dynamic",
+                column_config={
+                    "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+                    "Cantidad": st.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, required=True)
+                },
+                use_container_width=True,
+                key="editor_entradas_stock"
+            )
+            
+            if st.button("➕ Registrar Entrada al Inventario"):
+                entradas_validas = df_entrada_editado[df_entrada_editado["Cantidad"] > 0].copy()
+                if entradas_validas.empty:
+                    st.warning("Debe ingresar al menos un ítem con cantidad mayor a 0.")
+                else:
+                    lista_items_entrada = []
+                    for _, r in entradas_validas.iterrows():
+                        lista_items_entrada.append({
+                            "Clasificación": r["Clasificación"],
+                            "Cantidad": int(r["Cantidad"])
+                        })
+                    registrar_entrada_inventario(galpon_destino, lista_items_entrada)
+                    st.success(f"¡Entrada registrada correctamente en {galpon_destino}!")
+                    st.rerun()
+
+        elif st.session_state.seccion_activa == "👥 Clientes":
+            st.subheader("👥 Directorio de Clientes")
+            tab_nuevo, tab_lista = st.tabs(["➕ Agregar Cliente", "📋 Lista de Clientes"])
+            
+            with tab_nuevo:
+                with st.form(key="form_nuevo_cliente"):
+                    c_nom = st.text_input("Nombre / Razón Social *")
+                    c_ced = st.text_input("Cédula / NIT")
+                    c_dir = st.text_input("Dirección", value="CHOACHI")
+                    c_tel = st.text_input("Teléfono")
+                    c_em = st.text_input("Email")
+                    if st.form_submit_button("💾 Guardar Cliente"):
+                        if not c_nom.strip():
+                            st.error("El nombre es obligatorio.")
+                        else:
+                            guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
+                            st.success(f"¡Cliente {c_nom.upper()} guardado!")
                             st.rerun()
 
-    elif st.session_state.seccion_activa == "📤 Remisiones":
-        df_inv = cargar_inventario()
-        df_clientes = cargar_clientes()
-        num_remision_actual = obtener_siguiente_num_remision()
-        
-        st.subheader(f"📋 Nueva Remisión No. {num_remision_actual:06d}")
-
-        # --- Selector de Fecha editable ---
-        fecha_remision = st.date_input("📅 Fecha de la Remisión", value=date.today())
-
-        opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
-        cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", opciones_cli)
-
-        val_nombre, val_cedula, val_dir, val_tel, val_email = "", "", "CHOACHI", "", ""
-
-        if cliente_sel != "-- Escribir cliente nuevo --" and not df_clientes.empty:
-            d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
-            val_nombre = str(d_cli.get("nombre", ""))
-            val_cedula = str(d_cli.get("cedula_nit", ""))
-            val_dir = str(d_cli.get("direccion", "CHOACHI"))
-            val_tel = str(d_cli.get("telefono", ""))
-            val_email = str(d_cli.get("email", ""))
-
-        cliente_nombre = st.text_input("Razón Social / Cliente *", value=val_nombre, placeholder="Ej. RAFAEL GARCIA")
-        cedula_nit = st.text_input("Cédula / NIT", value=val_cedula, placeholder="Ej. 901.786.799-7")
-        direccion = st.text_input("Dirección", value=val_dir)
-        telefono = st.text_input("Teléfono", value=val_tel, placeholder="Ej. 3102397244")
-        email = st.text_input("Email", value=val_email, placeholder="cliente@correo.com")
-        conductor = st.text_input("Conductor", value="Ivan Herrera")
-        
-        guardar_cli_auto = st.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
-
-        st.markdown("### 🛒 Detalle del Despacho")
-        st.caption("Añada los productos, especificando la clasificación y de qué galpón se descuenta.")
-        
-        opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
-        opciones_galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]
-        
-        df_base = pd.DataFrame([{
-            "Clasificación": "a", 
-            "Cantidad (Huevos)": 3000, 
-            "Precio Unitario ($)": 370.0,
-            "Galpón Origen": "Galpón 1"
-        }])
-
-        df_editado = st.data_editor(
-            df_base,
-            num_rows="dynamic",
-            column_config={
-                "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
-                "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
-                "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True),
-                "Galpón Origen": st.column_config.SelectboxColumn("Galpón Origen", options=opciones_galpones, required=True)
-            },
-            use_container_width=True
-        )
-
-        items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
-
-        if not items_validos.empty:
-            items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
-            
-            df_agrupado_pdf = items_validos.groupby("Clasificación").agg({
-                "Cantidad (Huevos)": "sum",
-                "Precio Unitario ($)": "mean",
-                "Subtotal ($)": "sum"
-            }).reset_index()
-
-            total_factura = items_validos["Subtotal ($)"].sum()
-            st.markdown(f"""
-                <div style="background-color: #f26822; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #ffffff;">
-                    <h3 style="margin: 0; color: white !important; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.2f}</h3>
-                </div>
-            """, unsafe_allow_html=True)
-
-            if st.button("🚀 Confirmar y Generar Remisión"):
-                if not cliente_nombre.strip():
-                    st.error("Por favor ingresa el Nombre del cliente.")
+            with tab_lista:
+                df_cli = cargar_clientes()
+                if df_cli.empty:
+                    st.info("No hay clientes registrados.")
                 else:
-                    errores_stock = []
-                    stock_acumulado_uso = {}
-                    for _, fila in items_validos.iterrows():
-                        c_clasif = fila["Clasificación"]
-                        c_cant = int(fila["Cantidad (Huevos)"])
-                        g_orig = fila["Galpón Origen"]
-                        
-                        key_st = (g_orig, c_clasif)
-                        stock_acumulado_uso[key_st] = stock_acumulado_uso.get(key_st, 0) + c_cant
+                    for _, r_cli in df_cli.iterrows():
+                        id_c = r_cli['id']
+                        nom_c = r_cli['nombre']
+                        with st.expander(f"👤 {nom_c} ({r_cli.get('cedula_nit', '')})"):
+                            st.write(f"**Teléfono:** {r_cli.get('telefono', '')}")
+                            st.write(f"**Dirección:** {r_cli.get('direccion', '')}")
+                            if st.button(f"🗑️ Eliminar {nom_c}", key=f"del_cli_{id_c}"):
+                                eliminar_cliente(id_c)
+                                st.warning("Cliente eliminado.")
+                                st.rerun()
 
-                    for (g_orig, c_clasif), c_cant in stock_acumulado_uso.items():
-                        stock_disp = df_inv.loc[g_orig, c_clasif]
-                        if c_cant > stock_disp:
-                            errores_stock.append(f"Stock insuficiente en {g_orig} para {c_clasif.upper()}. Disponible: {stock_disp}, Solicitado: {c_cant}")
+        elif st.session_state.seccion_activa == "📤 Remisiones":
+            df_inv = cargar_inventario()
+            df_clientes = cargar_clientes()
+            num_remision_actual = obtener_siguiente_num_remision()
+            
+            st.subheader(f"📋 Nueva Remisión No. {num_remision_actual:06d}")
 
-                    if errores_stock:
-                        for err in errores_stock: st.error(err)
+            fecha_remision = st.date_input("📅 Fecha de la Remisión", value=date.today())
+
+            opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
+            cliente_sel = st.selectbox("👤 Cargar Cliente Guardado", opciones_cli)
+
+            val_nombre, val_cedula, val_dir, val_tel, val_email = "", "", "CHOACHI", "", ""
+
+            if cliente_sel != "-- Escribir cliente nuevo --" and not df_clientes.empty:
+                d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
+                val_nombre = str(d_cli.get("nombre", ""))
+                val_cedula = str(d_cli.get("cedula_nit", ""))
+                val_dir = str(d_cli.get("direccion", "CHOACHI"))
+                val_tel = str(d_cli.get("telefono", ""))
+                val_email = str(d_cli.get("email", ""))
+
+            cliente_nombre = st.text_input("Razón Social / Cliente *", value=val_nombre, placeholder="Ej. RAFAEL GARCIA")
+            cedula_nit = st.text_input("Cédula / NIT", value=val_cedula, placeholder="Ej. 901.786.799-7")
+            direccion = st.text_input("Dirección", value=val_dir)
+            telefono = st.text_input("Teléfono", value=val_tel, placeholder="Ej. 3102397244")
+            email = st.text_input("Email", value=val_email, placeholder="cliente@correo.com")
+            conductor = st.text_input("Conductor", value="Ivan Herrera")
+            
+            guardar_cli_auto = st.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
+
+            st.markdown("### 🛒 Detalle del Despacho")
+            st.caption("Añada los productos, especificando la clasificación y de qué galpón se descuenta.")
+            
+            opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+            opciones_galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]
+            
+            df_base = pd.DataFrame([{
+                "Clasificación": "a", 
+                "Cantidad (Huevos)": 3000, 
+                "Precio Unitario ($)": 370.0,
+                "Galpón Origen": "Galpón 1"
+            }])
+
+            df_editado = st.data_editor(
+                df_base,
+                num_rows="dynamic",
+                column_config={
+                    "Clasificación": st.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+                    "Cantidad (Huevos)": st.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
+                    "Precio Unitario ($)": st.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True),
+                    "Galpón Origen": st.column_config.SelectboxColumn("Galpón Origen", options=opciones_galpones, required=True)
+                },
+                use_container_width=True
+            )
+
+            items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+
+            if not items_validos.empty:
+                items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
+                
+                df_agrupado_pdf = items_validos.groupby("Clasificación").agg({
+                    "Cantidad (Huevos)": "sum",
+                    "Precio Unitario ($)": "mean",
+                    "Subtotal ($)": "sum"
+                }).reset_index()
+
+                total_factura = items_validos["Subtotal ($)"].sum()
+                st.markdown(f"""
+                    <div style="background-color: #f26822; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #ffffff;">
+                        <h3 style="margin: 0; color: white !important; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.2f}</h3>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                if st.button("🚀 Confirmar y Generar Remisión"):
+                    if not cliente_nombre.strip():
+                        st.error("Por favor ingresa el Nombre del cliente.")
                     else:
-                        if guardar_cli_auto:
-                            guardar_cliente(cliente_nombre, cedula_nit, direccion, telefono, email)
+                        errores_stock = []
+                        stock_acumulado_uso = {}
+                        for _, fila in items_validos.iterrows():
+                            c_clasif = fila["Clasificación"]
+                            c_cant = int(fila["Cantidad (Huevos)"])
+                            g_orig = fila["Galpón Origen"]
+                            
+                            key_st = (g_orig, c_clasif)
+                            stock_acumulado_uso[key_st] = stock_acumulado_uso.get(key_st, 0) + c_cant
 
-                        items_dict = []
-                        for _, row in items_validos.iterrows():
-                            items_dict.append({
-                                'Clasificación': row['Clasificación'],
-                                'Cantidad (Huevos)': row['Cantidad (Huevos)'],
-                                'Precio Unitario ($)': row['Precio Unitario ($)'],
-                                'Subtotal ($)': row['Subtotal ($)'],
-                                'Galpón': row['Galpón Origen']
-                            })
+                        for (g_orig, c_clasif), c_cant in stock_acumulado_uso.items():
+                            stock_disp = df_inv.loc[g_orig, c_clasif]
+                            if c_cant > stock_disp:
+                                errores_stock.append(f"Stock insuficiente en {g_orig} para {c_clasif.upper()}. Disponible: {stock_disp}, Solicitado: {c_cant}")
 
-                        registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, fecha_remision, items_dict)
-                        st.success(f"¡Remisión No. {num_remision_actual:06d} guardada y deuda creada en cartera con éxito!")
-                        
-                        # Formato de fecha en español idéntico a tu ejemplo
-                        dias_sem = {'Monday':'lunes', 'Tuesday':'martes', 'Wednesday':'miércoles', 'Thursday':'jueves', 'Friday':'viernes', 'Saturday':'sábado', 'Sunday':'domingo'}
-                        meses_anio = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
-                        dia_txt = dias_sem.get(fecha_remision.strftime('%A'), '')
-                        mes_txt = meses_anio.get(fecha_remision.month, '')
-                        fecha_formateada_str = f"{dia_txt}, {fecha_remision.day} de {mes_txt} de {fecha_remision.year}"
-
-                        datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
-                        pdf_buffer = generar_pdf_remision(num_remision_actual, fecha_formateada_str, conductor, datos_cliente, df_agrupado_pdf, total_factura)
-                        st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
-
-    elif st.session_state.seccion_activa == "💰 Cartera":
-        st.subheader("💰 Control de Cartera y Abonos")
-        st.caption("Gestione las deudas pendientes por factura, registre los abonos de los clientes y adjunte sus comprobantes de pago.")
-
-        df_cartera = cargar_cartera()
-        if df_cartera.empty:
-            st.info("No hay deudas ni facturas registradas en cartera.")
-        else:
-            total_por_cobrar = df_cartera[df_cartera['estado'] == 'PENDIENTE']['saldo'].astype(float).sum()
-            total_general_facturado = df_cartera['total'].astype(float).sum()
-
-            st.markdown(f"""
-                <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
-                    <p style="margin: 0; font-size: 14px;">Total Facturado: <b>${total_general_facturado:,.2f}</b></p>
-                    <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Pendiente por Cobrar: <b>${total_por_cobrar:,.2f}</b></p>
-                </div>
-            """, unsafe_allow_html=True)
-
-            busqueda_cartera = st.text_input("🔍 Buscar cliente o N° Remisión en Cartera", placeholder="Ej. RAFAEL GARCIA")
-            df_cart_filtrado = df_cartera[
-                df_cartera['cliente'].astype(str).str.contains(busqueda_cartera, case=False, na=False) |
-                df_cartera['num_remision'].astype(str).str.contains(busqueda_cartera, case=False, na=False)
-            ] if busqueda_cartera.strip() else df_cartera
-
-            if df_cart_filtrado.empty:
-                st.warning("No se encontraron registros de cartera con ese criterio.")
-            else:
-                for _, row_cart in df_cart_filtrado.iterrows():
-                    num_r = int(row_cart['num_remision'])
-                    cli_c = str(row_cart['cliente'])
-                    tot_c = float(row_cart['total'])
-                    saldo_c = float(row_cart['saldo'])
-                    estado_c = str(row_cart['estado'])
-
-                    color_estado = "🟢 PAGADA" if estado_c == 'PAGADA' else "🔴 PENDIENTE"
-
-                    with st.expander(f"Remisión N° {num_r:06d} — {cli_c} | Saldo: ${saldo_c:,.2f} ({color_estado})"):
-                        st.write(f"**Total Factura:** ${tot_c:,.2f}")
-                        st.write(f"**Saldo Pendiente:** ${saldo_c:,.2f}")
-                        st.write(f"**Estado:** {estado_c}")
-
-                        st.markdown("---")
-                        st.markdown("##### 💵 Registrar Abono y Comprobante")
-                        
-                        with st.form(key=f"form_abono_{num_r}"):
-                            monto_abono = st.number_input("Monto del Abono ($)", min_value=0.0, max_value=max(0.0, saldo_c), step=1000.0, format="%.2f")
-                            archivo_comp = st.file_uploader("Adjuntar Comprobante de Pago (Imagen o PDF)", type=["png", "jpg", "jpeg", "pdf"], key=f"file_comp_{num_r}")
-                            btn_guardar_abono = st.form_submit_button("📥 Guardar Abono con Comprobante")
-
-                            if btn_guardar_abono:
-                                if monto_abono <= 0:
-                                    st.error("El monto del abono debe ser mayor a 0.")
-                                else:
-                                    bytes_archivo = archivo_comp.read() if archivo_comp is not None else None
-                                    nombre_archivo = archivo_comp.name if archivo_comp is not None else None
-                                    
-                                    registrar_abono(num_r, monto_abono, bytes_archivo, nombre_archivo)
-                                    st.success(f"¡Abono de ${monto_abono:,.2f} registrado con éxito!")
-                                    st.rerun()
-
-                        st.markdown("##### 📜 Historial de Abonos y Comprobantes")
-                        abonos_filas = obtener_abonos_con_comprobante(num_r)
-                        if not abonos_filas:
-                            st.info("No hay abonos registrados para esta factura.")
+                        if errores_stock:
+                            for err in errores_stock: st.error(err)
                         else:
-                            for ab_id, ab_fecha, ab_monto, ab_comp, ab_nom in abonos_filas:
-                                c_ab1, c_ab2 = st.columns([2, 1])
-                                with c_ab1:
-                                    st.write(f"📅 {str(ab_fecha)[:19]} — **${float(ab_monto):,.2f}**")
-                                with c_ab2:
-                                    if ab_comp and ab_nom:
-                                        st.download_button(
-                                            label="📎 Ver Comprobante",
-                                            data=ab_comp,
-                                            file_name=ab_nom,
-                                            mime="application/octet-stream",
-                                            key=f"dl_comp_{ab_id}"
-                                        )
-                                    else:
-                                        st.caption("Sin archivo adjunto")
+                            if guardar_cli_auto:
+                                guardar_cliente(cliente_nombre, cedula_nit, direccion, telefono, email)
 
-    elif st.session_state.seccion_activa == "📊 Stock":
-        st.subheader("📦 Stock Actual en Granja")
-        st.dataframe(cargar_inventario(), use_container_width=True)
+                            items_dict = []
+                            for _, row in items_validos.iterrows():
+                                items_dict.append({
+                                    'Clasificación': row['Clasificación'],
+                                    'Cantidad (Huevos)': row['Cantidad (Huevos)'],
+                                    'Precio Unitario ($)': row['Precio Unitario ($)'],
+                                    'Subtotal ($)': row['Subtotal ($)'],
+                                    'Galpón': row['Galpón Origen']
+                                })
 
-    elif st.session_state.seccion_activa == "📜 Historial":
-        st.subheader("📜 Historial de Remisiones")
-        df_historial = cargar_remisiones()
-        
-        if df_historial.empty:
-            st.info("No hay remisiones registradas.")
-        else:
-            busqueda = st.text_input("🔍 Buscar cliente o N° Remisión", placeholder="Ej. RAFAEL GARCIA")
-            df_filtrado = df_historial[
-                df_historial['cliente'].astype(str).str.contains(busqueda, case=False, na=False) |
-                df_historial['num_remision'].astype(str).str.contains(busqueda, case=False, na=False)
-            ] if busqueda.strip() else df_historial
+                            registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, fecha_remision, items_dict)
+                            st.success(f"¡Remisión No. {num_remision_actual:06d} guardada y deuda creada en cartera con éxito!")
+                            
+                            dias_sem = {'Monday':'lunes', 'Tuesday':'martes', 'Wednesday':'miércoles', 'Thursday':'jueves', 'Friday':'viernes', 'Saturday':'sábado', 'Sunday':'domingo'}
+                            meses_anio = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
+                            dia_txt = dias_sem.get(fecha_remision.strftime('%A'), '')
+                            mes_txt = meses_anio.get(fecha_remision.month, '')
+                            fecha_formateada_str = f"{dia_txt}, {fecha_remision.day} de {mes_txt} de {fecha_remision.year}"
 
-            if df_filtrado.empty:
-                st.warning("No se encontraron coincidencias.")
+                            datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
+                            pdf_buffer = generar_pdf_remision(num_remision_actual, fecha_formateada_str, conductor, datos_cliente, df_agrupado_pdf, total_factura)
+                            st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
+
+        elif st.session_state.seccion_activa == "💰 Cartera":
+            st.subheader("💰 Control de Cartera y Abonos")
+            st.caption("Gestione las deudas pendientes por factura, registre los abonos de los clientes y adjunte sus comprobantes de pago.")
+
+            # --- BLOQUE PARA CARGAR DEUDAS ANTIGUAS (SIN TOCAR INVENTARIO) ---
+            with st.expander("📥 Cargar Factura / Remisión Antigua (Sin afectar inventario)"):
+                st.caption("Usa esto para migrar carteras pendientes de tus PDFs anteriores.")
+                with st.form("form_deuda_historica"):
+                    col_h1, col_h2 = st.columns(2)
+                    with col_h1:
+                        hist_num = st.number_input("N° de Remisión Vieja", min_value=1, step=1, value=100)
+                        hist_cliente = st.text_input("Nombre del Cliente")
+                    with col_h2:
+                        hist_total = st.number_input("Valor Total de la Factura ($)", min_value=0.0, step=1000.0)
+                        hist_saldo = st.number_input("Saldo Actual Pendiente ($)", min_value=0.0, step=1000.0)
+                    
+                    btn_guardar_hist = st.form_submit_button("💾 Guardar Deuda en Cartera")
+                    
+                    if btn_guardar_hist:
+                        if not hist_cliente.strip():
+                            st.error("El nombre del cliente es obligatorio.")
+                        else:
+                            conn_h = get_connection()
+                            cur_h = conn_h.cursor()
+                            cur_h.execute("""
+                                INSERT INTO cartera (num_remision, cliente, total, saldo, estado)
+                                VALUES (%s, %s, %s, %s, %s)
+                                ON CONFLICT (num_remision) DO UPDATE SET
+                                    cliente = EXCLUDED.cliente,
+                                    total = EXCLUDED.total,
+                                    saldo = EXCLUDED.saldo;
+                            """, (int(hist_num), hist_cliente.strip().upper(), float(hist_total), float(hist_saldo), 'PAGADA' if float(hist_saldo) <= 0 else 'PENDIENTE'))
+                            conn_h.commit()
+                            cur_h.close()
+                            conn_h.close()
+                            st.success(f"¡Deuda de la remisión #{hist_num} registrada en cartera con éxito!")
+                            st.rerun()
+
+            df_cartera = cargar_cartera()
+            if df_cartera.empty:
+                st.info("No hay deudas ni facturas registradas en cartera.")
             else:
-                nums_remision = sorted(df_filtrado['num_remision'].dropna().unique().astype(int), reverse=True)
-                for num_sel in nums_remision:
-                    df_rem = df_filtrado[df_filtrado['num_remision'] == num_sel]
-                    f_sel = df_rem.iloc[0]
-                    cli_nombre = str(f_sel.get('cliente', ''))
-                    tot_val = df_rem['total'].sum() if 'total' in df_rem.columns else 0.0
-                    fecha_db_val = f_sel.get('fecha_emision')
-                    
-                    if isinstance(fecha_db_val, (datetime, date)):
-                        dias_sem = {'Monday':'lunes', 'Tuesday':'martes', 'Wednesday':'miércoles', 'Thursday':'jueves', 'Friday':'viernes', 'Saturday':'sábado', 'Sunday':'domingo'}
-                        meses_anio = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
-                        f_date_obj = fecha_db_val if isinstance(fecha_db_val, date) else fecha_db_val.date()
-                        dia_txt = dias_sem.get(f_date_obj.strftime('%A'), '')
-                        mes_txt = meses_anio.get(f_date_obj.month, '')
-                        fecha_str = f"{dia_txt}, {f_date_obj.day} de {mes_txt} de {f_date_obj.year}"
-                        f_date_default = f_date_obj
-                    else:
-                        fecha_str = str(fecha_db_val)[:10]
-                        f_date_default = date.today()
-                    
-                    with st.expander(f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.2f} ({fecha_str})"):
-                        tab_pdf, tab_editar = st.tabs(["👁️ Ver / Descargar PDF", "✏️ Editar o Eliminar"])
-                        
-                        items_actuales = []
-                        for _, row in df_rem.iterrows():
-                            items_actuales.append({
-                                "Clasificación": str(row.get('tipo_huevo', 'a')).upper(),
-                                "Cantidad (Huevos)": int(row.get('cantidad', 0)),
-                                "Precio Unitario ($)": float(row.get('precio_unitario', 0.0)),
-                                "Subtotal ($)": float(row.get('total', 0.0)),
-                                "Galpón Origen": str(row.get('galpon', 'Galpón 1'))
-                            })
-                        df_items_original = pd.DataFrame(items_actuales)
-                        df_items_pdf = df_items_original.groupby("Clasificación").agg({"Cantidad (Huevos)": "sum", "Precio Unitario ($)": "mean", "Subtotal ($)": "sum"}).reset_index()
-                        
-                        cli_datos = {"nombre": cli_nombre, "cedula": str(f_sel.get('cedula_nit', '')), "direccion": str(f_sel.get('destino', '')), "telefono": str(f_sel.get('telefono', '')), "email": str(f_sel.get('email', ''))}
-                        conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
+                total_por_cobrar = df_cartera[df_cartera['estado'] == 'PENDIENTE']['saldo'].astype(float).sum()
+                total_general_facturado = df_cartera['total'].astype(float).sum()
 
-                        with tab_pdf:
-                            pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
-                            st.dataframe(df_items_pdf, use_container_width=True, hide_index=True)
-                            st.markdown(f"#### **Total: ${tot_val:,.2f}**")
-                            st.download_button(label=f"📥 Descargar PDF No. {num_sel:06d}", data=pdf_buf, file_name=f"Remision_{num_sel:06d}.pdf", mime="application/pdf", key=f"dl_{num_sel}")
+                st.markdown(f"""
+                    <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
+                        <p style="margin: 0; font-size: 14px;">Total Facturado: <b>${total_general_facturado:,.2f}</b></p>
+                        <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Pendiente por Cobrar: <b>${total_por_cobrar:,.2f}</b></p>
+                    </div>
+                """, unsafe_allow_html=True)
 
-                        with tab_editar:
-                            with st.form(key=f"form_editar_{num_sel}"):
-                                c_fecha = st.date_input("Fecha de la Remisión", value=f_date_default, key=f"fec_{num_sel}")
-                                c_cliente = st.text_input("Cliente", value=cli_datos['nombre'], key=f"cli_{num_sel}")
-                                c_cedula = st.text_input("Cédula / NIT", value=cli_datos['cedula'], key=f"ced_{num_sel}")
-                                c_dir = st.text_input("Dirección", value=cli_datos['direccion'], key=f"dir_{num_sel}")
-                                c_tel = st.text_input("Teléfono", value=cli_datos['telefono'], key=f"tel_{num_sel}")
-                                c_email = st.text_input("Email", value=cli_datos['email'], key=f"em_{num_sel}")
-                                c_cond = st.text_input("Conductor", value=conductor_val, key=f"cond_{num_sel}")
-                                
-                                df_editado = st.data_editor(df_items_original[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)", "Galpón Origen"]], num_rows="dynamic", key=f"edit_{num_sel}")
-                                
-                                c_b1, c_b2 = st.columns(2)
-                                with c_b1: sub_act = st.form_submit_button("💾 Actualizar Cambios")
-                                with c_b2: sub_elm = st.form_submit_button("🗑️ Remoción / Eliminar Remisión")
-                                
-                                if sub_act:
-                                    items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
-                                    items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
-                                    items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
-                                    actualizar_remision_completa(num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_fecha, df_rem, items_dict)
-                                    st.success("Remisión y cartera actualizadas!")
-                                    st.rerun()
-                                if sub_elm:
-                                    eliminar_remision_completa(num_sel, df_rem)
-                                    st.warning("Remisión y registro de cartera eliminados.")
-                                    st.rerun()
+                busqueda_cartera = st.text_input("🔍 Buscar cliente o N° Remisión en Cartera", placeholder="Ej. RAFAEL GARCIA")
+                df_cart_filtrado = df_cartera[
+                    df_cartera['cliente'].astype(str).str.contains(busqueda_cartera, case=False, na=False) |
+                    df_cartera['num_remision'].astype(str).str.contains(busqueda_cartera, case=False, na=False)
+                ] if busqueda_cartera.strip() else df_cartera
+
+                if df_cart_filtrado.empty:
+                    st.warning("No se encontraron registros de cartera con ese criterio.")
+                else:
+                    for _, row_cart in df_cart_filtrado.iterrows():
+                        num_r = int(row_cart['num_remision'])
+                        cli_c = str(row_cart['cliente'])
+                        tot_c = float(row_cart['total'])
+                        saldo_c = float(row_cart['saldo'])
+                        estado_c = str(row_cart['estado'])
+
+                        color_estado = "🟢 PAGADA" if estado_c == 'PAGADA' else "🔴 PENDIENTE"
+
+                        with st.expander(f"Remisión N° {num_r:06d} — {cli_c} | Saldo: ${saldo_c:,.2f} ({color_estado})"):
+                            st.write(f"**Total Factura:** ${tot_c:,.2f}")
+                            st.write(f"**Saldo Pendiente:** ${saldo_c:,.2f}")
+                            st.write(f"**Estado:** {estado_c}")
+
+                            st.markdown("---")
+                            st.markdown("##### 💵 Registrar Abono y Comprobante")
+                            
+                            with st.form(key=f"form_abono_{num_r}"):
+                                monto_abono = st.number_input("Monto del Abono ($)", min_value=0.0, max_value=max(0.0, saldo_c), step=1000.0, format="%.2f")
+                                archivo_comp = st.file_uploader("Adjuntar Comprobante de Pago (Imagen o PDF)", type=["png", "jpg", "jpeg", "pdf"], key=f"file_comp_{num_r}")
+                                btn_guardar_abono = st.form_submit_button("📥 Guardar Abono con Comprobante")
+
+                                if btn_guardar_abono:
+                                    if monto_abono <= 0:
+                                        st.error("El monto del abono debe ser mayor a 0.")
+                                    else:
+                                        bytes_archivo = archivo_comp.read() if archivo_comp is not None else None
+                                        nombre_archivo = archivo_comp.name if archivo_comp is not None else None
+                                        
+                                        registrar_abono(num_r, monto_abono, bytes_archivo, nombre_archivo)
+                                        st.success(f"¡Abono de ${monto_abono:,.2f} registrado con éxito!")
+                                        st.rerun()
+
+                            st.markdown("##### 📜 Historial de Abonos y Comprobantes")
+                            abonos_filas = obtener_abonos_con_comprobante(num_r)
+                            if not abonos_filas:
+                                st.info("No hay abonos registrados para esta factura.")
+                            else:
+                                for ab_id, ab_fecha, ab_monto, ab_comp, ab_nom in abonos_filas:
+                                    c_ab1, c_ab2 = st.columns([2, 1])
+                                    with c_ab1:
+                                        st.write(f"📅 {str(ab_fecha)[:19]} — **${float(ab_monto):,.2f}**")
+                                    with c_ab2:
+                                        if ab_comp and ab_nom:
+                                            st.download_button(
+                                                label="📎 Ver Comprobante",
+                                                data=ab_comp,
+                                                file_name=ab_nom,
+                                                mime="application/octet-stream",
+                                                key=f"dl_comp_{ab_id}"
+                                            )
+                                        else:
+                                            st.caption("Sin archivo adjunto")
+
+        elif st.session_state.seccion_activa == "📊 Stock":
+            st.subheader("📦 Stock Actual en Granja")
+            st.dataframe(cargar_inventario(), use_container_width=True)
+
+        elif st.session_state.seccion_activa == "📜 Historial":
+            st.subheader("📜 Historial de Remisiones")
+            df_historial = cargar_remisiones()
+            
+            if df_historial.empty:
+                st.info("No hay remisiones registradas.")
+            else:
+                busqueda = st.text_input("🔍 Buscar cliente o N° Remisión", placeholder="Ej. RAFAEL GARCIA")
+                df_filtrado = df_historial[
+                    df_historial['cliente'].astype(str).str.contains(busqueda, case=False, na=False) |
+                    df_historial['num_remision'].astype(str).str.contains(busqueda, case=False, na=False)
+                ] if busqueda.strip() else df_historial
+
+                if df_filtrado.empty:
+                    st.warning("No se encontraron coincidencias.")
+                else:
+                    nums_remision = sorted(df_filtrado['num_remision'].dropna().unique().astype(int), reverse=True)
+                    for num_sel in nums_remision:
+                        df_rem = df_filtrado[df_filtrado['num_remision'] == num_sel]
+                        f_sel = df_rem.iloc[0]
+                        cli_nombre = str(f_sel.get('cliente', ''))
+                        tot_val = df_rem['total'].sum() if 'total' in df_rem.columns else 0.0
+                        fecha_db_val = f_sel.get('fecha_emision')
+                        
+                        if isinstance(fecha_db_val, (datetime, date)):
+                            dias_sem = {'Monday':'lunes', 'Tuesday':'martes', 'Wednesday':'miércoles', 'Thursday':'jueves', 'Friday':'viernes', 'Saturday':'sábado', 'Sunday':'domingo'}
+                            meses_anio = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
+                            f_date_obj = fecha_db_val if isinstance(fecha_db_val, date) else fecha_db_val.date()
+                            dia_txt = dias_sem.get(f_date_obj.strftime('%A'), '')
+                            mes_txt = meses_anio.get(f_date_obj.month, '')
+                            fecha_str = f"{dia_txt}, {f_date_obj.day} de {mes_txt} de {f_date_obj.year}"
+                            f_date_default = f_date_obj
+                        else:
+                            fecha_str = str(fecha_db_val)[:10]
+                            f_date_default = date.today()
+                        
+                        with st.expander(f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.2f} ({fecha_str})"):
+                            tab_pdf, tab_editar = st.tabs(["👁️ Ver / Descargar PDF", "✏️ Editar o Eliminar"])
+                            
+                            items_actuales = []
+                            for _, row in df_rem.iterrows():
+                                items_actuales.append({
+                                    "Clasificación": str(row.get('tipo_huevo', 'a')).upper(),
+                                    "Cantidad (Huevos)": int(row.get('cantidad', 0)),
+                                    "Precio Unitario ($)": float(row.get('precio_unitario', 0.0)),
+                                    "Subtotal ($)": float(row.get('total', 0.0)),
+                                    "Galpón Origen": str(row.get('galpon', 'Galpón 1'))
+                                })
+                            df_items_original = pd.DataFrame(items_actuales)
+                            df_items_pdf = df_items_original.groupby("Clasificación").agg({"Cantidad (Huevos)": "sum", "Precio Unitario ($)": "mean", "Subtotal ($)": "sum"}).reset_index()
+                            
+                            cli_datos = {"nombre": cli_nombre, "cedula": str(f_sel.get('cedula_nit', '')), "direccion": str(f_sel.get('destino', '')), "telefono": str(f_sel.get('telefono', '')), "email": str(f_sel.get('email', ''))}
+                            conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
+
+                            with tab_pdf:
+                                pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
+                                st.dataframe(df_items_pdf, use_container_width=True, hide_index=True)
+                                st.markdown(f"#### **Total: ${tot_val:,.2f}**")
+                                st.download_button(label=f"📥 Descargar PDF No. {num_sel:06d}", data=pdf_buf, file_name=f"Remision_{num_sel:06d}.pdf", mime="application/pdf", key=f"dl_{num_sel}")
+
+                            with tab_editar:
+                                with st.form(key=f"form_editar_{num_sel}"):
+                                    c_fecha = st.date_input("Fecha de la Remisión", value=f_date_default, key=f"fec_{num_sel}")
+                                    c_cliente = st.text_input("Cliente", value=cli_datos['nombre'], key=f"cli_{num_sel}")
+                                    c_cedula = st.text_input("Cédula / NIT", value=cli_datos['cedula'], key=f"ced_{num_sel}")
+                                    c_dir = st.text_input("Dirección", value=cli_datos['direccion'], key=f"dir_{num_sel}")
+                                    c_tel = st.text_input("Teléfono", value=cli_datos['telefono'], key=f"tel_{num_sel}")
+                                    c_email = st.text_input("Email", value=cli_datos['email'], key=f"em_{num_sel}")
+                                    c_cond = st.text_input("Conductor", value=conductor_val, key=f"cond_{num_sel}")
+                                    
+                                    df_editado = st.data_editor(df_items_original[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)", "Galpón Origen"]], num_rows="dynamic", key=f"edit_{num_sel}")
+                                    
+                                    c_b1, c_b2 = st.columns(2)
+                                    with c_b1: sub_act = st.form_submit_button("💾 Actualizar Cambios")
+                                    with c_b2: sub_elm = st.form_submit_button("🗑️ Remoción / Eliminar Remisión")
+                                    
+                                    if sub_act:
+                                        items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+                                        items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
+                                        items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
+                                        actualizar_remision_completa(num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_fecha, df_rem, items_dict)
+                                        st.success("Remisión y cartera actualizadas!")
+                                        st.rerun()
+                                    if sub_elm:
+                                        eliminar_remision_completa(num_sel, df_rem)
+                                        st.warning("Remisión y registro de cartera eliminados.")
+                                        st.rerun()
 
 elif st.session_state.sesion_principal == "📝 Registro Diario":
     st.subheader("📝 Registro Diario")

@@ -1175,7 +1175,7 @@ else:
                                                 str_app.warning("Remisión y registro de cartera eliminados.")
                                                 str_app.rerun()
 
-elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario")
         str_app.info("💡 Sección lista para alimentación de datos de postura y mortalidad próximamente.")
         with str_app.form("diario"):

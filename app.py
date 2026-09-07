@@ -446,8 +446,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story = []
     styles = getSampleStyleSheet()
     
-    style_title = ParagraphStyle('TitleStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor("#0f2942"))
-    style_subtitle = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor("#0f2942"))
     style_normal = ParagraphStyle('NormalStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#333333"))
     style_bold = ParagraphStyle('BoldStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor("#333333"))
     style_right = ParagraphStyle('RightStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#333333"), alignment=2)
@@ -457,6 +455,117 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     style_th_right = ParagraphStyle('THRightStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=2)
 
     num_str = f"{num_remision:06d}"
+
+    # Logo más grande y proporcionado
+    img_logo = Image("LOGOASI.png", width=70, height=70) if os.path.exists("LOGOASI.png") else Paragraph("<b>🥚</b>", style_bold)
+    
+    header_data = [
+        [
+            img_logo,
+            Paragraph("<b>AGROAVICOLA SANTA ISABEL</b><br/><font size=8>NIT. 901.786.799-7<br/>Cel. 3102397244 - 3125588606</font>", style_normal),
+            Paragraph(f"<b>Remisión No.</b><br/><font size=13 color='#f26822'><b>{num_str}</b></font>", style_right)
+        ]
+    ]
+    t_header = Table(header_data, colWidths=[80, 294, 160])
+    t_header.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+    ]))
+    story.append(t_header)
+    story.append(Spacer(1, 10))
+
+    info_data = [
+        [
+            Paragraph("<b>Fecha</b>", style_bold),
+            Paragraph(f": {fecha_str}", style_normal),
+            Paragraph("<b>Datos del cliente</b>", style_bold),
+            ""
+        ],
+        [
+            Paragraph("<b>Conductor</b>", style_bold),
+            Paragraph(f": {conductor}", style_normal),
+            Paragraph("<b>Nombre / Razón Social</b>", style_bold),
+            Paragraph(f": {cliente_datos['nombre']}", style_normal)
+        ],
+        [
+            Paragraph("", style_normal),
+            Paragraph("", style_normal),
+            Paragraph("<b>Cédula / NIT</b>", style_bold),
+            Paragraph(f": {cliente_datos['cedula']}", style_normal)
+        ],
+        [
+            Paragraph("", style_normal),
+            Paragraph("", style_normal),
+            Paragraph("<b>Dirección</b>", style_bold),
+            Paragraph(f": {cliente_datos['direccion']}", style_normal)
+        ],
+        [
+            Paragraph("", style_normal),
+            Paragraph("", style_normal),
+            Paragraph("<b>Teléfono</b>", style_bold),
+            Paragraph(f": {cliente_datos['telefono']}", style_normal)
+        ],
+        [
+            Paragraph("", style_normal),
+            Paragraph("", style_normal),
+            Paragraph("<b>Email</b>", style_bold),
+            Paragraph(f": {cliente_datos['email']}", style_normal)
+        ],
+    ]
+    t_info = Table(info_data, colWidths=[70, 160, 110, 194])
+    t_info.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+    ]))
+    story.append(t_info)
+    story.append(Spacer(1, 15))
+
+    table_data = [[
+        Paragraph("Descripción", style_th_left),
+        Paragraph("Cantidad", style_th),
+        Paragraph("Valor Unitario", style_th_right),
+        Paragraph("Valor total", style_th_right)
+    ]]
+    
+    for _, fila in items_df.iterrows():
+        table_data.append([
+            Paragraph(str(fila["Clasificación"]).upper(), style_normal),
+            Paragraph(f"{int(fila['Cantidad (Huevos)']):,}".replace(",", "."), style_right),
+            Paragraph(f"$ {fila['Precio Unitario ($)']:,.0f}".replace(",", "."), style_right),
+            Paragraph(f"$ {fila['Subtotal ($)']:,.0f}".replace(",", "."), style_right)
+        ])
+
+    t_items = Table(table_data, colWidths=[140, 100, 130, 164])
+    t_items.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f2942")),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#f8fafc"), colors.white]),
+    ]))
+    story.append(t_items)
+    story.append(Spacer(1, 10))
+
+    totales_data = [
+        [Paragraph("<b>Subtotal</b>", style_right), Paragraph(f"<b>$ {total_factura:,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_right_bold)],
+        [Paragraph("<b>IVA</b>", style_right), Paragraph("<b>$ 0,00</b>", style_right_bold)],
+        [Paragraph("<b>Total</b>", style_right), Paragraph(f"<b>$ {total_factura:,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_right_bold)]
+    ]
+    t_totales = Table(totales_data, colWidths=[374, 160])
+    t_totales.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#0f2942")),
+    ]))
+    story.append(t_totales)
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
 
     # Cambio al nuevo logo LOGOASI.png
     img_logo = Image("LOGOASI.png", width=55, height=55) if os.path.exists("LOGOASI.png") else Paragraph("<b>🥚</b>", style_title)

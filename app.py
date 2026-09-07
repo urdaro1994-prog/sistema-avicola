@@ -89,58 +89,6 @@ str_app.markdown(
 )
 
 # --- FUNCIONES DE BASE DE DATOS ---
-
-def inicializar_tabla_produccion_diaria():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS registro_produccion_diaria (
-            id SERIAL PRIMARY KEY,
-            lote_id INT,
-            fecha DATE,
-            edad_dias INT,
-            edad_semanas NUMERIC,
-            consumo_bultos NUMERIC,
-            mortalidad INT,
-            seleccion INT,
-            ventas_aves INT,
-            produccion_huevos INT,
-            saldo_aves INT,
-            observaciones TEXT,
-            UNIQUE(lote_id, fecha)
-        );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def guardar_registro_diario(lote_id, fecha, edad_dias, edad_semanas, consumo, mort, sel, ventas, huevos, saldo, obs):
-    inicializar_tabla_produccion_diaria()
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO registro_produccion_diaria 
-        (lote_id, fecha, edad_dias, edad_semanas, consumo_bultos, mortalidad, seleccion, ventas_aves, produccion_huevos, saldo_aves, observaciones)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (lote_id, fecha) DO UPDATE SET
-            consumo_bultos = EXCLUDED.consumo_bultos,
-            mortalidad = EXCLUDED.mortalidad,
-            seleccion = EXCLUDED.seleccion,
-            ventas_aves = EXCLUDED.ventas_aves,
-            produccion_huevos = EXCLUDED.produccion_huevos,
-            saldo_aves = EXCLUDED.saldo_aves,
-            observaciones = EXCLUDED.observaciones;
-    """, (lote_id, fecha, edad_dias, edad_semanas, consumo, mort, sel, ventas, huevos, saldo, obs))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def cargar_registro_diario(lote_id):
-    inicializar_tabla_produccion_diaria()
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM registro_produccion_diaria WHERE lote_id = %s ORDER BY fecha DESC", conn, params=(lote_id,))
-    conn.close()
-    return df
 def get_connection():
     return psycopg2.connect(str_app.secrets["postgres"]["url"])
 
@@ -297,6 +245,7 @@ def obtener_siguiente_num_remision():
         num = cur.fetchone()[0]
     cur.close()
     conn.close()
+    # Forzar un mínimo de 192 por seguridad si la tabla está totalmente limpia
     return max(num, 192)
 
 def cargar_cartera():
@@ -1190,74 +1139,11 @@ else:
                                                 eliminar_remision_completa(num_sel, df_rem)
                                                 str_app.warning("Remisión y registro de cartera eliminados.")
                                                 str_app.rerun()
-                                                
-    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
-        str_app.subheader("📝 Registro Diario de Producción - Granja San Lorenzo")
-    str_app.caption("Control diario de aves, consumo de alimento y postura para el Lote 200 (Hy-Line Brown).")
-    
-    # Parámetros del lote según el modelo San Lorenzo
-    lote_id = 200
-    fecha_inicio_lote = datetime(2026, 5, 1).date()
-    aves_iniciales = 15999
-    
-    with str_app.form(key="form_reg_diario_oficial"):
-        c1, c2, c3 = str_app.columns(3)
-        with c1:
-            fecha_registro = str_app.date_input("Fecha del Registro", value=date.today())
-            
-        # Cálculo automático de edad según la fecha de inicio del lote
-        dias_vida = (fecha_registro - fecha_inicio_lote).days + 1
-        if dias_vida < 1:
-            dias_vida = 1
-        semanas_vida = round(dias_vida / 7, 2)
-        
-        with c2:
-            str_app.metric("Edad en Días", f"{dias_vida} días")
-        with c3:
-            str_app.metric("Edad en Semanas", f"{semanas_vida} sem")
-            
-        str_app.markdown("---")
-        str_app.markdown("##### Variables Productivas del Día")
-        
-        col_a, col_b, col_c, col_d = str_app.columns(4)
-        with col_a:
-            consumo_bultos = str_app.number_input("Consumo Alimento (Bultos)", min_value=0.0, step=0.5, format="%.1f")
-        with col_b:
-            mortalidad = str_app.number_input("Mortalidad (Aves)", min_value=0, step=1, value=0)
-        with col_c:
-            seleccion = str_app.number_input("Selección / Descarte (Aves)", min_value=0, step=1, value=0)
-        with col_d:
-            ventas = str_app.number_input("Ventas / Traslados (Aves)", min_value=0, step=1, value=0)
-            
-        col_e, col_f = str_app.columns(2)
-        with col_e:
-            produccion_huevos = str_app.number_input("Producción de Huevos (Unidades)", min_value=0, step=1, value=0)
-        with col_f:
-            observaciones = str_app.text_input("Observaciones (Ej: VITAMINAS)", value="")
-            
-        # Saldo automático estimado de aves
-        saldo_aves = aves_iniciales - (mortalidad + seleccion + ventas)
-        str_app.info(f"📊 Saldo estimado de aves para el cierre de este día: **{saldo_aves:,}** aves")
-        
-        btn_guardar = str_app.form_submit_button("💾 Guardar Registro Diario")
-        
-        if btn_guardar:
-            if rol_actual == "Invitado":
-                str_app.warning("👀 Modo Invitado: No tienes permisos para modificar o guardar registros.")
-            else:
-                guardar_registro_diario(
-                    lote_id, fecha_registro, dias_vida, semanas_vida, 
-                    consumo_bultos, mortalidad, seleccion, ventas, 
-                    produccion_huevos, saldo_aves, observaciones
-                )
-                str_app.success("¡Registro guardado correctamente en la base de datos!")
-                str_app.rerun()
 
-    # Mostrar historial cargado de la base de datos
-    str_app.markdown("---")
-    str_app.markdown("##### 📈 Historial Registrado en el Sistema")
-    df_historial = cargar_registro_diario(lote_id)
-    if not df_historial.empty:
-        str_app.dataframe(df_historial, use_container_width=True, hide_index=True)
-    else:
-        str_app.info("Aún no hay registros diarios guardados en la base de datos para este lote.")
+    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+        str_app.subheader("📝 Registro Diario")
+        str_app.info("💡 Sección lista para alimentación de datos de postura y mortalidad próximamente.")
+        with str_app.form("diario"):
+            str_app.date_input("Fecha")
+            str_app.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
+            str_app.form_submit_button("Guardar")

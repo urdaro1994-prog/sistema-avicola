@@ -548,9 +548,9 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     story.append(Spacer(1, 10))
 
     totales_data = [
-        [Paragraph("<b>Subtotal</b>", style_right), Paragraph(f"<b>$ {total_factura:,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_right_bold)],
-        [Paragraph("<b>IVA</b>", style_right), Paragraph("<b>$ 0,00</b>", style_right_bold)],
-        [Paragraph("<b>Total</b>", style_right), Paragraph(f"<b>$ {total_factura:,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_right_bold)]
+        [Paragraph("<b>Subtotal</b>", style_right), Paragraph(f"<b>$ {total_factura:,.0f}</b>".replace(",", "."), style_right_bold)],
+        [Paragraph("<b>IVA</b>", style_right), Paragraph("<b>$ 0</b>", style_right_bold)],
+        [Paragraph("<b>Total</b>", style_right), Paragraph(f"<b>$ {total_factura:,.0f}</b>".replace(",", "."), style_right_bold)]
     ]
     t_totales = Table(totales_data, colWidths=[374, 160])
     t_totales.setStyle(TableStyle([
@@ -744,7 +744,6 @@ else:
                                 })
                             registrar_entrada_inventario(galpon_destino, lista_items_entrada)
                             
-                            # Aviso flotante y mensaje de confirmación
                             str_app.toast(f"¡Entrada guardada con éxito en {galpon_destino}!", icon="✅")
                             str_app.success(f"¡Entrada de inventario registrada correctamente en {galpon_destino}!")
 
@@ -891,7 +890,7 @@ else:
                         column_config={
                             "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
                             "Cantidad (Huevos)": str_app.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
-                            "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.2f", required=True),
+                            "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.0f", required=True),
                             "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=opciones_galpones, required=True)
                         },
                         use_container_width=True
@@ -911,7 +910,7 @@ else:
                         total_factura = items_validos["Subtotal ($)"].sum()
                         str_app.markdown(f"""
                             <div style="background-color: #f26822; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #ffffff;">
-                                <h3 style="margin: 0; color: white !important; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.2f}</h3>
+                                <h3 style="margin: 0; color: white !important; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.0f}</h3>
                             </div>
                         """, unsafe_allow_html=True)
 
@@ -974,8 +973,8 @@ else:
 
                     str_app.markdown(f"""
                         <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
-                            <p style="margin: 0; font-size: 14px;">Total Facturado: <b>${total_general_facturado:,.2f}</b></p>
-                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Pendiente por Cobrar: <b>${total_por_cobrar:,.2f}</b></p>
+                            <p style="margin: 0; font-size: 14px;">Total Facturado: <b>${total_general_facturado:,.0f}</b></p>
+                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Pendiente por Cobrar: <b>${total_por_cobrar:,.0f}</b></p>
                         </div>
                     """, unsafe_allow_html=True)
 
@@ -997,9 +996,9 @@ else:
 
                             color_estado = "🟢 PAGADA" if estado_c == 'PAGADA' else "🔴 PENDIENTE"
 
-                            with str_app.expander(f"Remisión N° {num_r:06d} — {cli_c} | Saldo: ${saldo_c:,.2f} ({color_estado})"):
-                                str_app.write(f"**Total Factura:** ${tot_c:,.2f}")
-                                str_app.write(f"**Saldo Pendiente:** ${saldo_c:,.2f}")
+                            with str_app.expander(f"Remisión N° {num_r:06d} — {cli_c} | Saldo: ${saldo_c:,.0f} ({color_estado})"):
+                                str_app.write(f"**Total Factura:** ${tot_c:,.0f}")
+                                str_app.write(f"**Saldo Pendiente:** ${saldo_c:,.0f}")
                                 str_app.write(f"**Estado:** {estado_c}")
 
                                 if rol_actual == "Administrador":
@@ -1007,7 +1006,7 @@ else:
                                     str_app.markdown("##### 💵 Registrar Abono y Comprobante")
                                     
                                     with str_app.form(key=f"form_abono_{num_r}"):
-                                        monto_abono = str_app.number_input("Monto del Abono ($)", min_value=0.0, max_value=max(0.0, saldo_c), step=1000.0, format="%.2f")
+                                        monto_abono = str_app.number_input("Monto del Abono ($)", min_value=0.0, max_value=max(0.0, saldo_c), step=1000.0, format="%.0f")
                                         archivo_comp = str_app.file_uploader("Adjuntar Comprobante de Pago (Imagen o PDF)", type=["png", "jpg", "jpeg", "pdf"], key=f"file_comp_{num_r}")
                                         btn_guardar_abono = str_app.form_submit_button("📥 Guardar Abono con Comprobante")
 
@@ -1019,7 +1018,7 @@ else:
                                                 nombre_archivo = archivo_comp.name if archivo_comp is not None else None
                                                 
                                                 registrar_abono(num_r, monto_abono, bytes_archivo, nombre_archivo)
-                                                str_app.success(f"¡Abono de ${monto_abono:,.2f} registrado con éxito!")
+                                                str_app.success(f"¡Abono de ${monto_abono:,.0f} registrado con éxito!")
                                                 str_app.rerun()
 
                                 str_app.markdown("##### 📜 Historial de Abonos y Comprobantes")
@@ -1030,7 +1029,7 @@ else:
                                     for ab_id, ab_fecha, ab_monto, ab_comp, ab_nom in abonos_filas:
                                         c_ab1, c_ab2 = str_app.columns([2, 1])
                                         with c_ab1:
-                                            str_app.write(f"📅 {str(ab_fecha)[:19]} — **${float(ab_monto):,.2f}**")
+                                            str_app.write(f"📅 {str(ab_fecha)[:19]} — **${float(ab_monto):,.0f}**")
                                         with c_ab2:
                                             if ab_comp and ab_nom:
                                                 str_app.download_button(
@@ -1083,7 +1082,7 @@ else:
                                 fecha_str = str(fecha_db_val)[:10]
                                 f_date_default = date.today()
                             
-                            with str_app.expander(f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.2f} ({fecha_str})"):
+                            with str_app.expander(f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.0f} ({fecha_str})"):
                                 items_actuales = []
                                 for _, row in df_rem.iterrows():
                                     items_actuales.append({
@@ -1101,7 +1100,7 @@ else:
 
                                 if rol_actual == "Invitado":
                                     str_app.dataframe(df_items_pdf, use_container_width=True, hide_index=True)
-                                    str_app.markdown(f"#### **Total: ${tot_val:,.2f}**")
+                                    str_app.markdown(f"#### **Total: ${tot_val:,.0f}**")
                                     pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
                                     str_app.download_button(label=f"📥 Descargar PDF No. {num_sel:06d}", data=pdf_buf, file_name=f"Remision_{num_sel:06d}.pdf", mime="application/pdf", key=f"dl_{num_sel}")
                                 else:
@@ -1109,7 +1108,7 @@ else:
                                     with tab_pdf:
                                         pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
                                         str_app.dataframe(df_items_pdf, use_container_width=True, hide_index=True)
-                                        str_app.markdown(f"#### **Total: ${tot_val:,.2f}**")
+                                        str_app.markdown(f"#### **Total: ${tot_val:,.0f}**")
                                         str_app.download_button(label=f"📥 Descargar PDF No. {num_sel:06d}", data=pdf_buf, file_name=f"Remision_{num_sel:06d}.pdf", mime="application/pdf", key=f"dl_{num_sel}")
 
                                     with tab_editar:

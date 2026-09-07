@@ -180,12 +180,24 @@ def inicializar_tabla_galpones():
         CREATE TABLE IF NOT EXISTS galpones (
             id SERIAL PRIMARY KEY,
             nombre TEXT UNIQUE NOT NULL,
-            cantidad_aves INT DEFAULT 0
+            cantidad_aves INT DEFAULT 0,
+            edad_inicial_semanas INT DEFAULT 0,
+            edad_inicial_dias INT DEFAULT 0,
+            fecha_inicio DATE
         );
     """)
+    try:
+        cur.execute("ALTER TABLE galpones ADD COLUMN IF NOT EXISTS edad_inicial_semanas INT DEFAULT 0;")
+        cur.execute("ALTER TABLE galpones ADD COLUMN IF NOT EXISTS edad_inicial_dias INT DEFAULT 0;")
+        cur.execute("ALTER TABLE galpones ADD COLUMN IF NOT EXISTS fecha_inicio DATE;")
+    except Exception:
+        conn.rollback()
+
     cur.execute("""
-        INSERT INTO galpones (nombre, cantidad_aves) VALUES 
-        ('Galpón 1', 5000), ('Galpón 2', 5000), ('Galpón 3', 5000)
+        INSERT INTO galpones (nombre, cantidad_aves, edad_inicial_semanas, edad_inicial_dias, fecha_inicio) VALUES 
+        ('Galpón 1', 5000, 0, 0, CURRENT_DATE), 
+        ('Galpón 2', 5000, 0, 0, CURRENT_DATE), 
+        ('Galpón 3', 5000, 0, 0, CURRENT_DATE)
         ON CONFLICT (nombre) DO NOTHING;
     """)
     conn.commit()
@@ -203,11 +215,15 @@ def inicializar_tabla_inventario():
             aa INT DEFAULT 0,
             a INT DEFAULT 0,
             b INT DEFAULT 0,
-            c INT DEFAULT 0,
-            sucio INT DEFAULT 0,
-            roto INT DEFAULT 0
+            c INT DEFAULT 0
         );
     """)
+    try:
+        cur.execute("ALTER TABLE inventario DROP COLUMN IF EXISTS sucio;")
+        cur.execute("ALTER TABLE inventario DROP COLUMN IF EXISTS roto;")
+    except Exception:
+        conn.rollback()
+
     cur.execute("""
         INSERT INTO inventario (galpon) VALUES 
         ('Galpón 1'), ('Galpón 2'), ('Galpón 3')
@@ -254,12 +270,11 @@ def inicializar_tabla_registro_diario():
             consumo_alimento NUMERIC DEFAULT 0,
             mortalidad INT DEFAULT 0,
             produccion INT DEFAULT 0,
-            edad_semanas INT DEFAULT 0,
             UNIQUE(fecha, galpon)
         );
     """)
     try:
-        cur.execute("ALTER TABLE registro_diario ADD COLUMN IF NOT EXISTS edad_semanas INT DEFAULT 0;")
+        cur.execute("ALTER TABLE registro_diario DROP COLUMN IF EXISTS edad_semanas;")
     except Exception:
         conn.rollback()
     conn.commit()
@@ -272,23 +287,61 @@ inicializar_tabla_inventario()
 inicializar_tabla_remisiones()
 inicializar_tabla_registro_diario()
 
-def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas):
+def calcular_edad_lote(galpon, fecha_reg):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT edad_inicial_semanas, edad_inicial_dias, fecha_inicio FROM galpones WHERE nombre = %s", (galpon,))
+    res = cur.fetchone()
+    cur.close()
+    conn.close()
+    
+    if not res or not res[2]:
+        return 0, 0
+    
+    sem_ini = res[0] or 0
+    dias_ini = res[1] or 0
+    f_inicio = res[2]
+    
+    if isinstance(f_inicio, str):
+        f_inicio = datetime.strptime(f_inicio, "%Y-%m-%d").date()
+    
+    delta_dias = (fecha_reg - f_inicio).days
+    total_dias = (sem_ini * 7 + dias_ini) + delta_dias
+    if total_dias < 0:
+        total_dias = 0
+        
+    semanas = total_dias // 7
+    dias = total_dias % 7
+    return semanas, dias
+
+def actualizar_config_galpon(galpon, sem_ini, dias_ini, f_inicio):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE galpones 
+        SET edad_inicial_semanas = %s, edad_inicial_dias = %s, fecha_inicio = %s
+        WHERE nombre = %s;
+    """, (sem_ini, dias_ini, f_inicio, galpon))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion):
     inicializar_tabla_galpones()
     inicializar_tabla_registro_diario()
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (fecha, galpon) 
             DO UPDATE SET 
                 ingreso_alimento = EXCLUDED.ingreso_alimento,
                 consumo_alimento = EXCLUDED.consumo_alimento,
                 mortalidad = EXCLUDED.mortalidad,
-                produccion = EXCLUDED.produccion,
-                edad_semanas = EXCLUDED.edad_semanas;
-        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, edad_semanas))
+                produccion = EXCLUDED.produccion;
+        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion))
         
         cur.execute("""
             UPDATE galpones 
@@ -394,7 +447,7 @@ def reiniciar_sistema_completo():
     cur.execute("DELETE FROM registro_diario;")
     cur.execute("""
         UPDATE inventario SET 
-            yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
+            yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0;
     """)
     conn.commit()
     cur.close()
@@ -457,7 +510,7 @@ def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
     cur = conn.cursor()
     cur.execute("""
         UPDATE inventario SET 
-            yumbo = %s, extra = %s, aa = %s, a = %s, b = %s, c = %s, sucio = %s, roto = %s
+            yumbo = %s, extra = %s, aa = %s, a = %s, b = %s, c = %s
         WHERE galpon = %s
     """, (
         nuevo_stock_dict.get('yumbo', 0),
@@ -466,8 +519,6 @@ def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
         nuevo_stock_dict.get('a', 0),
         nuevo_stock_dict.get('b', 0),
         nuevo_stock_dict.get('c', 0),
-        nuevo_stock_dict.get('sucio', 0),
-        nuevo_stock_dict.get('roto', 0),
         galpon
     ))
     conn.commit()
@@ -754,7 +805,7 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
 
     table_data = [[
         Paragraph("Fecha", style_th_left),
-        Paragraph("Sem", style_th),
+        Paragraph("Edad", style_th),
         Paragraph("Alim. (kg)", style_th_right),
         Paragraph("Mort.", style_th_right),
         Paragraph("Prod. Total", style_th_right)
@@ -765,8 +816,11 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
     tot_produccion = 0
 
     for _, fila in df_registros.iterrows():
-        fec = str(fila['fecha'])
-        edad = int(fila.get('edad_semanas', 0))
+        fec = fila['fecha']
+        sem, dias = calcular_edad_lote(galpon, fec)
+        edad_str = f"{sem} sem, {dias} d"
+        
+        fec_str = str(fec)
         con = float(fila.get('consumo_alimento', 0))
         mor = int(fila.get('mortalidad', 0))
         prod = int(fila.get('produccion', 0))
@@ -776,8 +830,8 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
         tot_produccion += prod
 
         table_data.append([
-            Paragraph(fec, style_normal),
-            Paragraph(str(edad), style_normal),
+            Paragraph(fec_str, style_normal),
+            Paragraph(edad_str, style_normal),
             Paragraph(f"{con:,.1f}".replace(",", "."), style_right),
             Paragraph(f"{mor:,}".replace(",", "."), style_right),
             Paragraph(f"{prod:,}".replace(",", "."), style_right)
@@ -791,7 +845,7 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
         Paragraph(f"<b>{tot_produccion:,}</b>".replace(",", "."), style_right_bold)
     ])
 
-    t_items = Table(table_data, colWidths=[100, 50, 120, 110, 160])
+    t_items = Table(table_data, colWidths=[90, 80, 110, 100, 154])
     t_items.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f2942")),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -967,7 +1021,7 @@ else:
                     str_app.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
                     galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", ["Galpón 1", "Galpón 2", "Galpón 3"])
                     
-                    opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+                    opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c"]
                     df_base_entrada = pd.DataFrame([{"Clasificación": "a", "Cantidad": 1000}])
                     
                     df_entrada_editado = str_app.data_editor(
@@ -1007,10 +1061,10 @@ else:
                     if galpon_fisico in df_inv_actual.index:
                         fila_galp = df_inv_actual.loc[galpon_fisico]
                     else:
-                        fila_galp = pd.Series({'yumbo':0, 'extra':0, 'aa':0, 'a':0, 'b':0, 'c':0, 'sucio':0, 'roto':0})
+                        fila_galp = pd.Series({'yumbo':0, 'extra':0, 'aa':0, 'a':0, 'b':0, 'c':0})
 
                     datos_fisicos = []
-                    for col_clasif in ['yumbo', 'extra', 'aa', 'a', 'b', 'c', 'sucio', 'roto']:
+                    for col_clasif in ['yumbo', 'extra', 'aa', 'a', 'b', 'c']:
                         stock_sistema = int(fila_galp.get(col_clasif, 0))
                         datos_fisicos.append({
                             "Clasificación": col_clasif,
@@ -1173,7 +1227,7 @@ else:
                         pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 3000, "Precio Unitario ($)": 370.0, "Galpón Origen": "Galpón 1"}]),
                         num_rows="dynamic",
                         column_config={
-                            "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"], required=True),
+                            "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=["yumbo", "extra", "aa", "a", "b", "c"], required=True),
                             "Cantidad (Huevos)": str_app.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
                             "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.0f", required=True),
                             "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=["Galpón 1", "Galpón 2", "Galpón 3"], required=True)
@@ -1288,10 +1342,37 @@ else:
 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario y Control por Galpón")
-        str_app.caption("Selecciona el galpón para registrar los parámetros productivos y genera tu reporte acumulado en PDF:")
+        str_app.caption("Selecciona el galpón para configurar la edad inicial del lote, registrar parámetros productivos y generar tu reporte acumulado en PDF:")
 
         galpones_disp = ["Galpón 1", "Galpón 2", "Galpón 3"]
         galpon_seleccionado = str_app.selectbox("Seleccione el Galpón", galpones_disp, key="select_galpon_diario")
+
+        # Configuración inicial de edad del lote
+        with str_app.expander(f"⚙️ Configurar Edad Inicial del Lote ({galpon_seleccionado})"):
+            conn_c = get_connection()
+            cur_c = conn_c.cursor()
+            cur_c.execute("SELECT edad_inicial_semanas, edad_inicial_dias, fecha_inicio FROM galpones WHERE nombre = %s", (galpon_seleccionado,))
+            res_galp = cur_c.fetchone()
+            cur_c.close()
+            conn_c.close()
+
+            def_sem = res_galp[0] if res_galp and res_galp[0] is not None else 0
+            def_dias = res_galp[1] if res_galp and res_galp[1] is not None else 0
+            def_fecha = res_galp[2] if res_galp and res_galp[2] is not None else date.today()
+
+            with str_app.form(f"form_config_edad_{galpon_seleccionado}"):
+                c_cf1, c_cf2, c_cf3 = str_app.columns(3)
+                with c_cf1:
+                    cfg_sem = str_app.number_input("Semanas Iniciales", min_value=0, value=int(def_sem), step=1)
+                with c_cf2:
+                    cfg_dias = str_app.number_input("Días Iniciales (0-6)", min_value=0, max_value=6, value=int(def_dias), step=1)
+                with c_cf3:
+                    cfg_fec = str_app.date_input("Fecha de Referencia Base", value=def_fecha)
+
+                if str_app.form_submit_button("💾 Guardar Configuración de Edad"):
+                    actualizar_config_galpon(galpon_seleccionado, cfg_sem, cfg_dias, cfg_fec)
+                    str_app.success("¡Configuración de edad inicial guardada con éxito!")
+                    str_app.rerun()
 
         tab_reg, tab_hist = str_app.tabs(["➕ Registrar / Editar Día", "📊 Historial y Reporte PDF"])
 
@@ -1302,13 +1383,17 @@ else:
                 with str_app.form(key=f"form_reg_diario_{galpon_seleccionado}"):
                     fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
                     
+                    # Calcular automáticamente la edad para esta fecha
+                    sem_calc, dias_calc = calcular_edad_lote(galpon_seleccionado, fecha_reg)
+                    str_app.info(f"📅 Edad calculada para el lote en esta fecha: **{sem_calc} semanas y {dias_calc} día(s)**")
+
                     c_d1, c_d2 = str_app.columns(2)
                     with c_d1:
-                        edad_sem = str_app.number_input("Edad (Semanas)", min_value=0, step=1, value=0)
                         ingreso_alim = str_app.number_input("Ingreso Alimento (kg)", min_value=0.0, step=1.0, format="%.1f")
                     with c_d2:
                         consumo_alim = str_app.number_input("Consumo Alimento (kg)", min_value=0.0, step=1.0, format="%.1f")
-                        mortalidad_val = str_app.number_input("Mortalidad (Aves)", min_value=0, step=1)
+
+                    mortalidad_val = str_app.number_input("Mortalidad (Aves)", min_value=0, step=1)
 
                     str_app.markdown("---")
                     str_app.markdown("#### 🥚 Producción")
@@ -1316,7 +1401,7 @@ else:
 
                     btn_guardar_rd = str_app.form_submit_button("💾 Guardar / Actualizar Registro Diario")
                     if btn_guardar_rd:
-                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val, edad_sem)
+                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val)
                         str_app.success(f"¡Registro guardado correctamente para {galpon_seleccionado} en fecha {fecha_reg}!")
                         str_app.rerun()
 
@@ -1354,15 +1439,15 @@ else:
                 
                 for _, row_rd in df_registros_galp.iterrows():
                     rd_id = row_rd['id']
-                    rd_fecha = str(row_rd['fecha'])
-                    rd_edad = row_rd.get('edad_semanas', 0)
+                    rd_fecha = row_rd['fecha']
+                    sem_r, dias_r = calcular_edad_lote(galpon_seleccionado, rd_fecha)
                     rd_ing = float(row_rd['ingreso_alimento'])
                     rd_con = float(row_rd['consumo_alimento'])
                     rd_mor = int(row_rd['mortalidad'])
                     rd_prod = int(row_rd['produccion'])
 
-                    with str_app.expander(f"📅 {rd_fecha} (Sem {rd_edad}) — Prod: {rd_prod} | Cons: {rd_con}kg | Mort: {rd_mor}"):
-                        str_app.write(f"**Edad:** {rd_edad} sem")
+                    with str_app.expander(f"📅 {rd_fecha} ({sem_r} sem, {dias_r} d) — Prod: {rd_prod} | Cons: {rd_con}kg | Mort: {rd_mor}"):
+                        str_app.write(f"**Edad:** {sem_r} semanas y {dias_r} día(s)")
                         str_app.write(f"**Ingreso Alimento:** {rd_ing}kg | **Consumo Alimento:** {rd_con}kg")
                         str_app.write(f"**Producción Total:** {rd_prod}")
                         if rol_actual == "Administrador":

@@ -88,7 +88,7 @@ str_app.markdown(
     unsafe_allow_html=True
 )
 
-# --- FUNCIONES DE BASE DE DATOS ---
+# --- FUNCIONES DE BASE DE DATOS Y GESTIÓN ---
 def get_connection():
     return psycopg2.connect(str_app.secrets["postgres"]["url"])
 
@@ -521,12 +521,11 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     style_bold = ParagraphStyle('BoldStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor("#333333"))
     style_right = ParagraphStyle('RightStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#333333"), alignment=2)
     style_right_bold = ParagraphStyle('RightBoldStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor("#333333"), alignment=2)
-    style_th = ParagraphStyle('THStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=1)
     style_th_left = ParagraphStyle('THLeftStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=0)
+    style_th = ParagraphStyle('THStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=1)
     style_th_right = ParagraphStyle('THRightStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=2)
 
     num_str = f"{num_remision:06d}"
-
     img_logo = Image("LOGOASI.png", width=70, height=70) if os.path.exists("LOGOASI.png") else Paragraph("<b>🥚</b>", style_bold)
     
     header_data = [
@@ -537,67 +536,24 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
         ]
     ]
     t_header = Table(header_data, colWidths=[80, 294, 160])
-    t_header.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-    ]))
+    t_header.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 10)]))
     story.append(t_header)
     story.append(Spacer(1, 10))
 
     info_data = [
-        [
-            Paragraph("<b>Fecha</b>", style_bold),
-            Paragraph(f": {fecha_str}", style_normal),
-            Paragraph("<b>Datos del cliente</b>", style_bold),
-            ""
-        ],
-        [
-            Paragraph("<b>Conductor</b>", style_bold),
-            Paragraph(f": {conductor}", style_normal),
-            Paragraph("<b>Nombre / Razón Social</b>", style_bold),
-            Paragraph(f": {cliente_datos['nombre']}", style_normal)
-        ],
-        [
-            Paragraph("", style_normal),
-            Paragraph("", style_normal),
-            Paragraph("<b>Cédula / NIT</b>", style_bold),
-            Paragraph(f": {cliente_datos['cedula']}", style_normal)
-        ],
-        [
-            Paragraph("", style_normal),
-            Paragraph("", style_normal),
-            Paragraph("<b>Dirección</b>", style_bold),
-            Paragraph(f": {cliente_datos['direccion']}", style_normal)
-        ],
-        [
-            Paragraph("", style_normal),
-            Paragraph("", style_normal),
-            Paragraph("<b>Teléfono</b>", style_bold),
-            Paragraph(f": {cliente_datos['telefono']}", style_normal)
-        ],
-        [
-            Paragraph("", style_normal),
-            Paragraph("", style_normal),
-            Paragraph("<b>Email</b>", style_bold),
-            Paragraph(f": {cliente_datos['email']}", style_normal)
-        ],
+        [Paragraph("<b>Fecha</b>", style_bold), Paragraph(f": {fecha_str}", style_normal), Paragraph("<b>Datos del cliente</b>", style_bold), ""],
+        [Paragraph("<b>Conductor</b>", style_bold), Paragraph(f": {conductor}", style_normal), Paragraph("<b>Nombre / Razón Social</b>", style_bold), Paragraph(f": {cliente_datos['nombre']}", style_normal)],
+        [Paragraph("", style_normal), Paragraph("", style_normal), Paragraph("<b>Cédula / NIT</b>", style_bold), Paragraph(f": {cliente_datos['cedula']}", style_normal)],
+        [Paragraph("", style_normal), Paragraph("", style_normal), Paragraph("<b>Dirección</b>", style_bold), Paragraph(f": {cliente_datos['direccion']}", style_normal)],
+        [Paragraph("", style_normal), Paragraph("", style_normal), Paragraph("<b>Teléfono</b>", style_bold), Paragraph(f": {cliente_datos['telefono']}", style_normal)],
+        [Paragraph("", style_normal), Paragraph("", style_normal), Paragraph("<b>Email</b>", style_bold), Paragraph(f": {cliente_datos['email']}", style_normal)],
     ]
     t_info = Table(info_data, colWidths=[70, 160, 110, 194])
-    t_info.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-    ]))
+    t_info.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('BOTTOMPADDING', (0,0), (-1,-1), 3), ('TOPPADDING', (0,0), (-1,-1), 3)]))
     story.append(t_info)
     story.append(Spacer(1, 15))
 
-    table_data = [[
-        Paragraph("Descripción", style_th_left),
-        Paragraph("Cantidad", style_th),
-        Paragraph("Valor Unitario", style_th_right),
-        Paragraph("Valor total", style_th_right)
-    ]]
-    
+    table_data = [[Paragraph("Descripción", style_th_left), Paragraph("Cantidad", style_th), Paragraph("Valor Unitario", style_th_right), Paragraph("Valor total", style_th_right)]]
     for _, fila in items_df.iterrows():
         table_data.append([
             Paragraph(str(fila["Clasificación"]).upper(), style_normal),
@@ -610,8 +566,7 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     t_items.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f2942")),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6), ('TOPPADDING', (0,0), (-1,-1), 6),
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#f8fafc"), colors.white]),
     ]))
@@ -624,20 +579,42 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
         [Paragraph("<b>Total</b>", style_right), Paragraph(f"<b>$ {total_factura:,.0f}</b>".replace(",", "."), style_right_bold)]
     ]
     t_totales = Table(totales_data, colWidths=[374, 160])
-    t_totales.setStyle(TableStyle([
-        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
-        ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#0f2942")),
-    ]))
+    t_totales.setStyle(TableStyle([('ALIGN', (0,0), (-1,-1), 'RIGHT'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('TOPPADDING', (0,0), (-1,-1), 3), ('BOTTOMPADDING', (0,0), (-1,-1), 3), ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#0f2942"))]))
     story.append(t_totales)
     
     doc.build(story)
     buffer.seek(0)
     return buffer
 
+# --- SECCIONES DE LA APLICACIÓN ---
+def seccion_menu_principal():
+    str_app.subheader("🏠 Menú Principal")
+    if str_app.button("📝 Registro Diario"):
+        str_app.session_state.menu = "Registro Diario"
+        str_app.rerun()
+    if str_app.button("📦 Inventario y Mermas"):
+        str_app.session_state.menu = "Inventario"
+        str_app.rerun()
+    if str_app.button("📄 Generar Remisión / Factura"):
+        str_app.session_state.menu = "Remisión"
+        str_app.rerun()
+    if str_app.button("💰 Cartera y Abonos"):
+        str_app.session_state.menu = "Cartera"
+        str_app.rerun()
+    if str_app.button("👥 Gestión de Clientes"):
+        str_app.session_state.menu = "Clientes"
+        str_app.rerun()
+    if str_app.button("⚙️ Configuración / Reinicio"):
+        str_app.session_state.menu = "Configuración"
+        str_app.rerun()
+
+def boton_regresar_menu():
+    if str_app.button("⬅️ Regresar al Menú Principal"):
+        str_app.session_state.menu = "Menú Principal"
+        str_app.rerun()
+
 def seccion_registro_diario():
+    boton_regresar_menu()
     str_app.subheader("📝 Registro Diario (Mortalidad, Alimento y Postura)")
     
     inicializar_tabla_registro_diario()
@@ -696,3 +673,92 @@ def seccion_registro_diario():
         str_app.dataframe(df_registros, use_container_width=True)
     else:
         str_app.info("No hay registros diarios guardados todavía.")
+
+def seccion_inventario():
+    boton_regresar_menu()
+    str_app.subheader("📦 Control de Inventario y Mermas")
+    df_inv = cargar_inventario()
+    if not df_inv.empty:
+        str_app.dataframe(df_inv, use_container_width=True)
+    else:
+        str_app.info("No hay inventario registrado.")
+    
+    str_app.markdown("---")
+    str_app.markdown("##### ✏️ Ajuste Físico / Conteo de Mermas")
+    galpon_sel = str_app.selectbox("Seleccione Galpón a Ajustar", df_inv.index.tolist() if not df_inv.empty else ["Galpón 1"])
+    
+    with str_app.form("form_inventario_fisico"):
+        stock_actual = df_inv.loc[galpon_sel] if not df_inv.empty and galpon_sel in df_inv.index else {}
+        c1, c2, c3, c4 = str_app.columns(4)
+        with c1:
+            ny = str_app.number_input("Yumbo", min_value=0, value=int(stock_actual.get('yumbo', 0)))
+            nb = str_app.number_input("B", min_value=0, value=int(stock_actual.get('b', 0)))
+        with c2:
+            ne = str_app.number_input("Extra", min_value=0, value=int(stock_actual.get('extra', 0)))
+            nc = str_app.number_input("C", min_value=0, value=int(stock_actual.get('c', 0)))
+        with c3:
+            naa = str_app.number_input("AA", min_value=0, value=int(stock_actual.get('aa', 0)))
+            nsuc = str_app.number_input("Sucio", min_value=0, value=int(stock_actual.get('sucio', 0)))
+        with c4:
+            na = str_app.number_input("A", min_value=0, value=int(stock_actual.get('a', 0)))
+            nrot = str_app.number_input("Roto", min_value=0, value=int(stock_actual.get('roto', 0)))
+            
+        if str_app.form_submit_button("Actualizar Inventario Físico"):
+            actualizar_inventario_fisico(galpon_sel, {'yumbo': ny, 'extra': ne, 'aa': naa, 'a': na, 'b': nb, 'c': nc, 'sucio': nsuc, 'roto': nrot})
+            str_app.success("¡Inventario físico actualizado correctamente!")
+            str_app.rerun()
+
+def seccion_remision():
+    boton_regresar_menu()
+    str_app.subheader("📄 Generación de Remisiones")
+    # Lógica de remisiones integrada
+    df_rem = cargar_remisiones()
+    if not df_rem.empty:
+        str_app.dataframe(df_rem.head(10), use_container_width=True)
+    else:
+        str_app.info("No hay remisiones registradas.")
+
+def seccion_cartera():
+    boton_regresar_menu()
+    str_app.subheader("💰 Cartera y Abonos")
+    df_cartera = cargar_cartera()
+    if not df_cartera.empty:
+        str_app.dataframe(df_cartera, use_container_width=True)
+    else:
+        str_app.info("No hay cuentas pendientes en cartera.")
+
+def seccion_clientes():
+    boton_regresar_menu()
+    str_app.subheader("👥 Gestión de Clientes")
+    df_cli = cargar_clientes()
+    if not df_cli.empty:
+        str_app.dataframe(df_cli, use_container_width=True)
+    else:
+        str_app.info("No hay clientes registrados.")
+
+def seccion_configuracion():
+    boton_regresar_menu()
+    str_app.subheader("⚙️ Configuración y Sistema")
+    if str_app.button("⚠️ Reiniciar Sistema Completo"):
+        reiniciar_sistema_completo()
+        str_app.success("¡Sistema reiniciado por completo con éxito!")
+        str_app.rerun()
+
+# --- ENRUTADOR PRINCIPAL ---
+if 'menu' not in str_app.session_state:
+    str_app.session_state.menu = "Menú Principal"
+
+if str_app.session_state.menu == "Menú Principal":
+    seccion_menu_principal()
+elif str_app.session_state.menu == "Registro Diario":
+    seccion_registro_diario()
+elif str_app.session_state.menu == "Inventario":
+    seccion_inventario()
+elif str_app.session_state.menu == "Remisión":
+    seccion_remision()
+elif str_app.session_state.menu == "Cartera":
+    seccion_cartera()
+elif str_app.session_state.menu == "Clientes":
+    seccion_clientes()
+elif str_app.session_state.menu == "Configuración":
+    seccion_configuracion()

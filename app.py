@@ -10,6 +10,136 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
+def inicializar_tabla_registro_diario():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS registro_diario (
+            id SERIAL PRIMARY KEY,
+            fecha DATE NOT NULL,
+            galpon TEXT NOT NULL,
+            semana INT DEFAULT 0,
+            mortalidad INT DEFAULT 0,
+            alimento_kg NUMERIC(10,2) DEFAULT 0,
+            yumbo INT DEFAULT 0,
+            extra INT DEFAULT 0,
+            aa INT DEFAULT 0,
+            a INT DEFAULT 0,
+            b INT DEFAULT 0,
+            c INT DEFAULT 0,
+            sucio INT DEFAULT 0,
+            roto INT DEFAULT 0,
+            observaciones TEXT,
+            UNIQUE(fecha, galpon)
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def guardar_registro_diario(fecha, galpon, semana, mortalidad, alimento, huevos_dict, observaciones):
+    inicializar_tabla_registro_diario()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO registro_diario (fecha, galpon, semana, mortalidad, alimento_kg, yumbo, extra, aa, a, b, c, sucio, roto, observaciones)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (fecha, galpon) DO UPDATE SET
+            semana = EXCLUDED.semana,
+            mortalidad = EXCLUDED.mortalidad,
+            alimento_kg = EXCLUDED.alimento_kg,
+            yumbo = EXCLUDED.yumbo,
+            extra = EXCLUDED.extra,
+            aa = EXCLUDED.aa,
+            a = EXCLUDED.a,
+            b = EXCLUDED.b,
+            c = EXCLUDED.c,
+            sucio = EXCLUDED.sucio,
+            roto = EXCLUDED.roto,
+            observaciones = EXCLUDED.observaciones;
+    """, (
+        fecha, galpon, semana, mortalidad, alimento,
+        huevos_dict.get('yumbo', 0),
+        huevos_dict.get('extra', 0),
+        huevos_dict.get('aa', 0),
+        huevos_dict.get('a', 0),
+        huevos_dict.get('b', 0),
+        huevos_dict.get('c', 0),
+        huevos_dict.get('sucio', 0),
+        huevos_dict.get('roto', 0),
+        observaciones
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_registros_diarios():
+    inicializar_tabla_registro_diario()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM registro_diario ORDER BY fecha DESC, galpon ASC", conn)
+    conn.close()
+    return df
+
+def seccion_registro_diario():
+    str_app.subheader("📝 Registro Diario (Mortalidad, Alimento y Postura)")
+    
+    inicializar_tabla_registro_diario()
+    df_inv = cargar_inventario()
+    lista_galpones = df_inv.index.tolist() if not df_inv.empty else ["Galpón 1", "Galpón 2"]
+
+    with str_app.form("form_registro_diario"):
+        col1, col2, col3 = str_app.columns(3)
+        with col1:
+            fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
+        with col2:
+            galpon_reg = str_app.selectbox("Galpón", lista_galpones)
+        with col3:
+            semana_reg = str_app.number_input("Semana de Aves", min_value=0, value=20, step=1)
+
+        str_app.markdown("---")
+        col_m, col_a = str_app.columns(2)
+        with col_m:
+            mortalidad_reg = str_app.number_input("Mortalidad (Aves muertas)", min_value=0, value=0, step=1)
+        with col_a:
+            alimento_reg = str_app.number_input("Alimento Consumido (Kg)", min_value=0.0, value=0.0, step=0.5)
+
+        str_app.markdown("---")
+        str_app.markdown("##### 🥚 Conteo de Huevos por Clasificación")
+        
+        c1, c2, c3, c4 = str_app.columns(4)
+        with c1:
+            yumbo = str_app.number_input("Yumbo", min_value=0, value=0, step=1)
+            b = str_app.number_input("B", min_value=0, value=0, step=1)
+        with c2:
+            extra = str_app.number_input("Extra", min_value=0, value=0, step=1)
+            c = str_app.number_input("C", min_value=0, value=0, step=1)
+        with c3:
+            aa = str_app.number_input("AA", min_value=0, value=0, step=1)
+            sucio = str_app.number_input("Sucio", min_value=0, value=0, step=1)
+        with c4:
+            a_clas = str_app.number_input("A", min_value=0, value=0, step=1)
+            roto = str_app.number_input("Roto", min_value=0, value=0, step=1)
+
+        observaciones = str_app.text_area("Observaciones o Novedades", placeholder="Ej: Comportamiento normal, cambio de alimento...")
+
+        submitted = str_app.form_submit_button("💾 Guardar Registro Diario")
+        if submitted:
+            huevos_dict = {
+                'yumbo': yumbo, 'extra': extra, 'aa': aa, 'a': a_clas,
+                'b': b, 'c': c, 'sucio': sucio, 'roto': roto
+            }
+            guardar_registro_diario(fecha_reg, galpon_reg, semana_reg, mortalidad_reg, alimento_reg, huevos_dict, observaciones)
+            str_app.success(f"¡Registro guardado con éxito para el {galpon_reg} en fecha {fecha_reg}!")
+            str_app.rerun()
+
+    str_app.markdown("---")
+    str_app.subheader("📊 Historial de Registros Diarios")
+    df_registros = cargar_registros_diarios()
+    if not df_registros.empty:
+        str_app.dataframe(df_registros, use_container_width=True)
+    else:
+        str_app.info("No hay registros diarios guardados todavía.")
+
 # --- CONFIGURACIÓN DE PÁGINA ---
 str_app.set_page_config(
     page_title="Avícola Santa Isabel",

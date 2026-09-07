@@ -10,6 +10,76 @@ from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
+def inicializar_tabla_registro_diario():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS registro_diario (
+            id SERIAL PRIMARY KEY,
+            fecha DATE NOT NULL,
+            galpon TEXT NOT NULL,
+            semana INT DEFAULT 0,
+            mortalidad INT DEFAULT 0,
+            alimento_kg NUMERIC(10,2) DEFAULT 0,
+            yumbo INT DEFAULT 0,
+            extra INT DEFAULT 0,
+            aa INT DEFAULT 0,
+            a INT DEFAULT 0,
+            b INT DEFAULT 0,
+            c INT DEFAULT 0,
+            sucio INT DEFAULT 0,
+            roto INT DEFAULT 0,
+            observaciones TEXT,
+            UNIQUE(fecha, galpon)
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def guardar_registro_diario(fecha, galpon, semana, mortalidad, alimento, huevos_dict, observaciones):
+    inicializar_tabla_registro_diario()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO registro_diario (fecha, galpon, semana, mortalidad, alimento_kg, yumbo, extra, aa, a, b, c, sucio, roto, observaciones)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (fecha, galpon) DO UPDATE SET
+            semana = EXCLUDED.semana,
+            mortalidad = EXCLUDED.mortalidad,
+            alimento_kg = EXCLUDED.alimento_kg,
+            yumbo = EXCLUDED.yumbo,
+            extra = EXCLUDED.extra,
+            aa = EXCLUDED.aa,
+            a = EXCLUDED.a,
+            b = EXCLUDED.b,
+            c = EXCLUDED.c,
+            sucio = EXCLUDED.sucio,
+            roto = EXCLUDED.roto,
+            observaciones = EXCLUDED.observaciones;
+    """, (
+        fecha, galpon, semana, mortalidad, alimento,
+        huevos_dict.get('yumbo', 0),
+        huevos_dict.get('extra', 0),
+        huevos_dict.get('aa', 0),
+        huevos_dict.get('a', 0),
+        huevos_dict.get('b', 0),
+        huevos_dict.get('c', 0),
+        huevos_dict.get('sucio', 0),
+        huevos_dict.get('roto', 0),
+        observaciones
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_registros_diarios():
+    inicializar_tabla_registro_diario()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM registro_diario ORDER BY fecha DESC, galpon ASC", conn)
+    conn.close()
+    return df
+    
 # --- CONFIGURACIÓN DE PÁGINA ---
 str_app.set_page_config(
     page_title="Avícola Santa Isabel",

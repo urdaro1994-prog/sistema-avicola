@@ -8,7 +8,7 @@ import base64
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -311,11 +311,10 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     cur.close()
     conn.close()
 
-def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, df_viejos, items_nuevos):
+def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, fecha_remision, df_viejos, items_nuevos):
     inicializar_tablas_cartera()
     conn = get_connection()
     cur = conn.cursor()
-    fecha_actual = datetime.now()
 
     for _, row in df_viejos.iterrows():
         c_tipo = str(row.get('tipo_huevo', 'a')).lower()
@@ -345,7 +344,7 @@ def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telef
         nuevo_total_calc += subtotal
 
         datos_insert = {
-            "num_remision": num_remision, "fecha_emision": fecha_actual,
+            "num_remision": num_remision, "fecha_emision": fecha_remision,
             "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
             "destino": direccion, "email": email, "conductor": conductor,
             "tipo_huevo": clasif, "cantidad": cant,
@@ -407,78 +406,130 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
-    style_normal = styles['Normal']
+    
+    # Estilos personalizados limpios y profesionales
+    style_title = ParagraphStyle('TitleStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor("#0f2942"))
+    style_subtitle = ParagraphStyle('SubTitleStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor("#0f2942"))
+    style_normal = ParagraphStyle('NormalStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#333333"))
+    style_bold = ParagraphStyle('BoldStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor("#333333"))
+    style_right = ParagraphStyle('RightStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#333333"), alignment=2)
+    style_right_bold = ParagraphStyle('RightBoldStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor("#333333"), alignment=2)
+    style_th = ParagraphStyle('THStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=1)
+    style_th_left = ParagraphStyle('THLeftStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=0)
+    style_th_right = ParagraphStyle('THRightStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=2)
+
+    num_str = f"{num_remision:06d}"
+
+    # --- ENCABEZADO PRINCIPAL (Estilo exacto de la imagen) ---
+    img_logo = Image("ESCUDO.png", width=50, height=50) if os.path.exists("ESCUDO.png") else Paragraph("<b>🥚</b>", style_title)
     
     header_data = [
         [
-            Image("ESCUDO.png", width=60, height=60) if os.path.exists("ESCUDO.png") else "🛡️",
-            Paragraph("<font size=16 color='#ffffff'><b>Remisión de Venta</b></font>", style_normal),
-            Paragraph("<font size=9 color='#ffffff'><b>Avícola Santa Isabel</b><br/>NIT. 901.786.799 - 7<br/>Cel. 3102397244 - 3125588606</font>", style_normal)
+            img_logo,
+            Paragraph("<b>AGROAVICOLA SANTA ISABEL</b><br/><font size=8>NIT. 901.786.799-7<br/>Cel. 3102397244-3125588606</font>", style_normal),
+            Paragraph(f"<b>Remisión No.</b><br/><font size=12 color='#f26822'><b>{num_str}</b></font>", style_right)
         ]
     ]
-    t_header = Table(header_data, colWidths=[80, 260, 200])
+    t_header = Table(header_data, colWidths=[60, 314, 160])
     t_header.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor("#0f2942")),
-        ('ALIGN', (0,0), (-1,-1), 'CENTER'),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TEXTCOLOR', (0,0), (-1,-1), colors.white),
         ('BOTTOMPADDING', (0,0), (-1,-1), 10),
-        ('TOPPADDING', (0,0), (-1,-1), 10),
     ]))
     story.append(t_header)
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 5))
 
-    num_str = f"{num_remision:06d}"
-    cliente_info_data = [
+    # --- DATOS GENERALES Y CLIENTE ---
+    info_data = [
         [
-            Paragraph(f"<b>Remisión No.</b> {num_str}<br/><b>Fecha</b> {fecha_str}<br/><b>Conductor</b> {conductor}", style_normal),
-            Paragraph(f"<b>Datos del cliente</b><br/><b>Nombre/Razón Social:</b> {cliente_datos['nombre']}<br/><b>Cédula/NIT:</b> {cliente_datos['cedula']}<br/><b>Dirección:</b> {cliente_datos['direccion']}<br/><b>Teléfono:</b> {cliente_datos['telefono']}<br/><b>Email:</b> {cliente_datos['email']}", style_normal)
-        ]
+            Paragraph("<b>Fecha</b>", style_bold),
+            Paragraph(f": {fecha_str}", style_normal),
+            Paragraph("<b>Datos del cliente</b>", style_subtitle),
+            ""
+        ],
+        [
+            Paragraph("<b>Conductor</b>", style_bold),
+            Paragraph(f": {conductor}", style_normal),
+            Paragraph("<b>Nombre/Razón Social</b>", style_bold),
+            Paragraph(f": {cliente_datos['nombre']}", style_normal)
+        ],
+        [
+            Paragraph("", style_normal),
+            Paragraph("", style_normal),
+            Paragraph("<b>Cédula/NIT</b>", style_bold),
+            Paragraph(f": {cliente_datos['cedula']}", style_normal)
+        ],
+        [
+            Paragraph("", style_normal),
+            Paragraph("", style_normal),
+            Paragraph("<b>Dirección</b>", style_bold),
+            Paragraph(f": {cliente_datos['direccion']}", style_normal)
+        ],
+        [
+            Paragraph("", style_normal),
+            Paragraph("", style_normal),
+            Paragraph("<b>Teléfono</b>", style_bold),
+            Paragraph(f": {cliente_datos['telefono']}", style_normal)
+        ],
+        [
+            Paragraph("", style_normal),
+            Paragraph("", style_normal),
+            Paragraph("<b>Email</b>", style_bold),
+            Paragraph(f": {cliente_datos['email']}", style_normal)
+        ],
     ]
-    t_info = Table(cliente_info_data, colWidths=[240, 300])
-    t_info.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('FONTSIZE', (0,0), (-1,-1), 9)]))
+    t_info = Table(info_data, colWidths=[70, 160, 110, 194])
+    t_info.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+    ]))
     story.append(t_info)
     story.append(Spacer(1, 15))
 
-    table_data = [["Descripción", "Cantidad", "Valor Unitario", "Valor total"]]
+    # --- TABLA DE ITEMS ---
+    table_data = [[
+        Paragraph("Descripción", style_th_left),
+        Paragraph("Cantidad", style_th),
+        Paragraph("Valor Unitario", style_th_right),
+        Paragraph("Valor total", style_th_right)
+    ]]
+    
     for _, fila in items_df.iterrows():
         table_data.append([
-            str(fila["Clasificación"]).upper(),
-            f"{int(fila['Cantidad (Huevos)']):,}",
-            f"$ {fila['Precio Unitario ($)']:,.2f}",
-            f"$ {fila['Subtotal ($)']:,.2f}"
+            Paragraph(str(fila["Clasificación"]).upper(), style_normal),
+            Paragraph(f"{int(fila['Cantidad (Huevos)']):,}".replace(",", "."), style_right),
+            Paragraph(f"$ {fila['Precio Unitario ($)']:,.0f}".replace(",", "."), style_right),
+            Paragraph(f"$ {fila['Subtotal ($)']:,.0f}".replace(",", "."), style_right)
         ])
 
-    for _ in range(max(0, 5 - len(items_df))):
-        table_data.append(["", "", "", ""])
-
-    t_items = Table(table_data, colWidths=[200, 100, 120, 120])
+    t_items = Table(table_data, colWidths=[140, 100, 130, 164])
     t_items.setStyle(TableStyle([
-        ('LINEBELOW', (0,0), (-1,0), 1.5, colors.HexColor("#0f2942")),
-        ('LINEABOVE', (0,0), (-1,0), 1.5, colors.HexColor("#0f2942")),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('ALIGN', (1,0), (-1,-1), 'CENTER'),
-        ('GRID', (0,1), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#f8fafc"), colors.white]),
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f2942")),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('BOTTOMPADDING', (0,0), (-1,-1), 6),
         ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor("#f8fafc"), colors.white]),
     ]))
     story.append(t_items)
     story.append(Spacer(1, 10))
 
+    # --- TOTALES ---
     totales_data = [
-        ["Subtotal", f"$ {total_factura:,.2f}"],
-        ["IVA", "$ 0.00"],
-        ["Total", f"$ {total_factura:,.2f}"]
+        [Paragraph("<b>Subtotal</b>", style_right), Paragraph(f"<b>$ {total_factura:,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_right_bold)],
+        [Paragraph("<b>IVA</b>", style_right), Paragraph("<b>$ 0,00</b>", style_right_bold)],
+        [Paragraph("<b>Total</b>", style_right), Paragraph(f"<b>$ {total_factura:,.2f}</b>".replace(",", "X").replace(".", ",").replace("X", "."), style_right_bold)]
     ]
-    t_totales = Table(totales_data, colWidths=[420, 120])
+    t_totales = Table(totales_data, colWidths=[374, 160])
     t_totales.setStyle(TableStyle([
         ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
-        ('FONTNAME', (0,2), (-1,2), 'Helvetica-Bold'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
         ('LINEABOVE', (0,2), (-1,2), 1, colors.HexColor("#0f2942")),
     ]))
     story.append(t_totales)
+    
     doc.build(story)
     buffer.seek(0)
     return buffer
@@ -610,7 +661,7 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
         
         st.subheader(f"📋 Nueva Remisión No. {num_remision_actual:06d}")
 
-        # --- Selector de Fecha de la Remisión ---
+        # --- Selector de Fecha editable ---
         fecha_remision = st.date_input("📅 Fecha de la Remisión", value=date.today())
 
         opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
@@ -716,8 +767,15 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                         registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, fecha_remision, items_dict)
                         st.success(f"¡Remisión No. {num_remision_actual:06d} guardada y deuda creada en cartera con éxito!")
                         
+                        # Formato de fecha en español idéntico a tu ejemplo
+                        dias_sem = {'Monday':'lunes', 'Tuesday':'martes', 'Wednesday':'miércoles', 'Thursday':'jueves', 'Friday':'viernes', 'Saturday':'sábado', 'Sunday':'domingo'}
+                        meses_anio = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
+                        dia_txt = dias_sem.get(fecha_remision.strftime('%A'), '')
+                        mes_txt = meses_anio.get(fecha_remision.month, '')
+                        fecha_formateada_str = f"{dia_txt}, {fecha_remision.day} de {mes_txt} de {fecha_remision.year}"
+
                         datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
-                        pdf_buffer = generar_pdf_remision(num_remision_actual, fecha_remision.strftime("%d/%m/%Y"), conductor, datos_cliente, df_agrupado_pdf, total_factura)
+                        pdf_buffer = generar_pdf_remision(num_remision_actual, fecha_formateada_str, conductor, datos_cliente, df_agrupado_pdf, total_factura)
                         st.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
 
     elif st.session_state.seccion_activa == "💰 Cartera":
@@ -827,7 +885,19 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                     f_sel = df_rem.iloc[0]
                     cli_nombre = str(f_sel.get('cliente', ''))
                     tot_val = df_rem['total'].sum() if 'total' in df_rem.columns else 0.0
-                    fecha_str = str(f_sel.get('fecha_emision', ''))[:10]
+                    fecha_db_val = f_sel.get('fecha_emision')
+                    
+                    if isinstance(fecha_db_val, (datetime, date)):
+                        dias_sem = {'Monday':'lunes', 'Tuesday':'martes', 'Wednesday':'miércoles', 'Thursday':'jueves', 'Friday':'viernes', 'Saturday':'sábado', 'Sunday':'domingo'}
+                        meses_anio = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
+                        f_date_obj = fecha_db_val if isinstance(fecha_db_val, date) else fecha_db_val.date()
+                        dia_txt = dias_sem.get(f_date_obj.strftime('%A'), '')
+                        mes_txt = meses_anio.get(f_date_obj.month, '')
+                        fecha_str = f"{dia_txt}, {f_date_obj.day} de {mes_txt} de {f_date_obj.year}"
+                        f_date_default = f_date_obj
+                    else:
+                        fecha_str = str(fecha_db_val)[:10]
+                        f_date_default = date.today()
                     
                     with st.expander(f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.2f} ({fecha_str})"):
                         tab_pdf, tab_editar = st.tabs(["👁️ Ver / Descargar PDF", "✏️ Editar o Eliminar"])
@@ -855,6 +925,7 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
 
                         with tab_editar:
                             with st.form(key=f"form_editar_{num_sel}"):
+                                c_fecha = st.date_input("Fecha de la Remisión", value=f_date_default, key=f"fec_{num_sel}")
                                 c_cliente = st.text_input("Cliente", value=cli_datos['nombre'], key=f"cli_{num_sel}")
                                 c_cedula = st.text_input("Cédula / NIT", value=cli_datos['cedula'], key=f"ced_{num_sel}")
                                 c_dir = st.text_input("Dirección", value=cli_datos['direccion'], key=f"dir_{num_sel}")
@@ -872,7 +943,7 @@ if st.session_state.sesion_principal == "📦 Stock y Ventas":
                                     items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
                                     items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
                                     items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
-                                    actualizar_remision_completa(num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, df_rem, items_dict)
+                                    actualizar_remision_completa(num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_fecha, df_rem, items_dict)
                                     st.success("Remisión y cartera actualizadas!")
                                     st.rerun()
                                 if sub_elm:

@@ -237,15 +237,16 @@ def obtener_siguiente_num_remision():
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT COALESCE(MAX(num_remision), 0) + 1 FROM remisiones")
+        cur.execute("SELECT COALESCE(MAX(num_remision), 191) + 1 FROM remisiones")
         num = cur.fetchone()[0]
     except Exception:
         conn.rollback()
-        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM remisiones")
+        cur.execute("SELECT COALESCE(MAX(id), 191) + 1 FROM remisiones")
         num = cur.fetchone()[0]
     cur.close()
     conn.close()
-    return num
+    # Forzar un mínimo de 192 por seguridad si la tabla está totalmente limpia
+    return max(num, 192)
 
 def cargar_cartera():
     inicializar_tablas_cartera()
@@ -1146,70 +1147,3 @@ else:
             str_app.date_input("Fecha")
             str_app.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
             str_app.form_submit_button("Guardar")
-def inicializar_tabla_registro_diario():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS registro_diario (
-            id SERIAL PRIMARY KEY,
-            fecha DATE NOT NULL,
-            galpon TEXT NOT NULL,
-            mortalidad INT DEFAULT 0,
-            alimento_kg NUMERIC DEFAULT 0,
-            yumbo INT DEFAULT 0,
-            extra INT DEFAULT 0,
-            aa INT DEFAULT 0,
-            a INT DEFAULT 0,
-            b INT DEFAULT 0,
-            c INT DEFAULT 0,
-            sucio INT DEFAULT 0,
-            roto INT DEFAULT 0,
-            observaciones TEXT,
-            UNIQUE(fecha, galpon)
-        );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def guardar_registro_diario(fecha, galpon, mortalidad, alimento, huevos_dict, observaciones):
-    inicializar_tabla_registro_diario()
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO registro_diario (fecha, galpon, mortalidad, alimento_kg, yumbo, extra, aa, a, b, c, sucio, roto, observaciones)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (fecha, galpon) DO UPDATE SET
-            mortalidad = EXCLUDED.mortalidad,
-            alimento_kg = EXCLUDED.alimento_kg,
-            yumbo = EXCLUDED.yumbo,
-            extra = EXCLUDED.extra,
-            aa = EXCLUDED.aa,
-            a = EXCLUDED.a,
-            b = EXCLUDED.b,
-            c = EXCLUDED.c,
-            sucio = EXCLUDED.sucio,
-            roto = EXCLUDED.roto,
-            observaciones = EXCLUDED.observaciones;
-    """, (
-        fecha, galpon, mortalidad, alimento,
-        huevos_dict.get('yumbo', 0),
-        huevos_dict.get('extra', 0),
-        huevos_dict.get('aa', 0),
-        huevos_dict.get('a', 0),
-        huevos_dict.get('b', 0),
-        huevos_dict.get('c', 0),
-        huevos_dict.get('sucio', 0),
-        huevos_dict.get('roto', 0),
-        observaciones
-    ))
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def cargar_registros_diarios():
-    inicializar_tabla_registro_diario()
-    conn = get_connection()
-    df = pd.read_sql_query("SELECT * FROM registro_diario ORDER BY fecha DESC, galpon ASC", conn)
-    conn.close()
-    return df

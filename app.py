@@ -270,10 +270,12 @@ def inicializar_tabla_registro_diario():
             consumo_alimento NUMERIC DEFAULT 0,
             mortalidad INT DEFAULT 0,
             produccion INT DEFAULT 0,
+            observaciones TEXT,
             UNIQUE(fecha, galpon)
         );
     """)
     try:
+        cur.execute("ALTER TABLE registro_diario ADD COLUMN IF NOT EXISTS observaciones TEXT;")
         cur.execute("ALTER TABLE registro_diario DROP COLUMN IF EXISTS edad_semanas;")
     except Exception:
         conn.rollback()
@@ -326,22 +328,23 @@ def actualizar_config_galpon(galpon, sem_ini, dias_ini, f_inicio):
     cur.close()
     conn.close()
 
-def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion):
+def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, observaciones):
     inicializar_tabla_galpones()
     inicializar_tabla_registro_diario()
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
-            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, observaciones)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (fecha, galpon) 
             DO UPDATE SET 
                 ingreso_alimento = EXCLUDED.ingreso_alimento,
                 consumo_alimento = EXCLUDED.consumo_alimento,
                 mortalidad = EXCLUDED.mortalidad,
-                produccion = EXCLUDED.produccion;
-        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion))
+                produccion = EXCLUDED.produccion,
+                observaciones = EXCLUDED.observaciones;
+        """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion, observaciones))
         
         cur.execute("""
             UPDATE galpones 
@@ -1399,9 +1402,12 @@ else:
                     str_app.markdown("#### 🥚 Producción")
                     produccion_val = str_app.number_input("Producción Total (Huevos)", min_value=0, step=1)
 
+                    str_app.markdown("---")
+                    observaciones_val = str_app.text_area("📝 Observaciones del día (Opcional)", placeholder="Ej. Aves activas, clima caluroso, cambio de lote de alimento...")
+
                     btn_guardar_rd = str_app.form_submit_button("💾 Guardar / Actualizar Registro Diario")
                     if btn_guardar_rd:
-                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val)
+                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val, observaciones_val)
                         str_app.success(f"¡Registro guardado correctamente para {galpon_seleccionado} en fecha {fecha_reg}!")
                         str_app.rerun()
 
@@ -1445,11 +1451,13 @@ else:
                     rd_con = float(row_rd['consumo_alimento'])
                     rd_mor = int(row_rd['mortalidad'])
                     rd_prod = int(row_rd['produccion'])
+                    rd_obs = row_rd.get('observaciones', '') or 'Ninguna'
 
                     with str_app.expander(f"📅 {rd_fecha} ({sem_r} sem, {dias_r} d) — Prod: {rd_prod} | Cons: {rd_con}kg | Mort: {rd_mor}"):
                         str_app.write(f"**Edad:** {sem_r} semanas y {dias_r} día(s)")
                         str_app.write(f"**Ingreso Alimento:** {rd_ing}kg | **Consumo Alimento:** {rd_con}kg")
                         str_app.write(f"**Producción Total:** {rd_prod}")
+                        str_app.write(f"**Observaciones:** {rd_obs}")
                         if rol_actual == "Administrador":
                             if str_app.button(f"🗑️ Eliminar Registro ID {rd_id}", key=f"del_rd_{rd_id}"):
                                 eliminar_registro_diario(rd_id)

@@ -237,15 +237,16 @@ def obtener_siguiente_num_remision():
     conn = get_connection()
     cur = conn.cursor()
     try:
-        cur.execute("SELECT COALESCE(MAX(num_remision), 0) + 1 FROM remisiones")
+        cur.execute("SELECT COALESCE(MAX(num_remision), 191) + 1 FROM remisiones")
         num = cur.fetchone()[0]
     except Exception:
         conn.rollback()
-        cur.execute("SELECT COALESCE(MAX(id), 0) + 1 FROM remisiones")
+        cur.execute("SELECT COALESCE(MAX(id), 191) + 1 FROM remisiones")
         num = cur.fetchone()[0]
     cur.close()
     conn.close()
-    return num
+    # Forzar un mínimo de 192 por seguridad si la tabla está totalmente limpia
+    return max(num, 192)
 
 def cargar_cartera():
     inicializar_tablas_cartera()

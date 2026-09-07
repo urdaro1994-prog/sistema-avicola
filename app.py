@@ -1501,24 +1501,5 @@ else:
 
                         str_app.markdown(f"#### 📊 Detalle por Galpón ({mes_u_nombre} {anio_u})")
                         str_app.dataframe(df_util_res, use_container_width=True, hide_index=True)
-import streamlit as st
 
-st.markdown("### Registro Diario")
-
-with st.form("form_registro_diario"):
-    fecha = st.date_input("Fecha")
-    galpon = st.selectbox("Galpón", ["Galpón 1", "Galpón 2"])
-    postura = st.number_input("Número de Huevos (Postura)", min_value=0, step=1)
-    mortalidad = st.number_input("Mortalidad", min_value=0, step=1)
-
-    submitted = st.form_submit_button("Guardar Registro")
-
-    if submitted:
-        # Agrega aquí la conexión y la consulta SQL INSERT hacia PostgreSQL
-        # Ejemplo:
-        # conn = psycopg2.connect(st.secrets["postgres"]["url"])
-        # cur = conn.cursor()
-        # cur.execute("INSERT INTO registro_diario (fecha, galpon, postura, mortalidad) VALUES (%s, %s, %s, %s)", (fecha, galpon, postura, mortalidad))
-        # conn.commit()
-
-        st.success("¡Datos guardados correctamente en la base de datos!")
+   

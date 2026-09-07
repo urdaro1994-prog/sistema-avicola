@@ -1210,7 +1210,7 @@ else:
                                                 str_app.warning("Remisión y registro de cartera eliminados.")
                                                 str_app.rerun()
 
-   elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+        elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario - Control Zootécnico (Hy-Line)")
         
         AVES_INICIALES_GALPON_1 = 16000  # Puedes ajustar o hacer dinámico según el galpón si lo requieres

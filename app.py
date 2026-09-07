@@ -173,6 +173,62 @@ def inicializar_tabla_gastos_varios():
     cur.close()
     conn.close()
 
+def inicializar_tabla_registro_diario():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS registro_diario (
+            id SERIAL PRIMARY KEY,
+            fecha DATE NOT NULL,
+            galpon TEXT NOT NULL,
+            ingreso_alimento NUMERIC DEFAULT 0,
+            consumo_alimento NUMERIC DEFAULT 0,
+            mortalidad INT DEFAULT 0,
+            produccion INT DEFAULT 0,
+            UNIQUE(fecha, galpon)
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def registrar_diario_db(fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion):
+    inicializar_tabla_registro_diario()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO registro_diario (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (fecha, galpon) DO UPDATE SET
+            ingreso_alimento = EXCLUDED.ingreso_alimento,
+            consumo_alimento = EXCLUDED.consumo_alimento,
+            mortalidad = EXCLUDED.mortalidad,
+            produccion = EXCLUDED.produccion;
+    """, (fecha, galpon, ingreso_alimento, consumo_alimento, mortalidad, produccion))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_registro_diario(galpon=None):
+    inicializar_tabla_registro_diario()
+    conn = get_connection()
+    if galpon:
+        df = pd.read_sql_query("SELECT * FROM registro_diario WHERE galpon = %s ORDER BY fecha DESC", conn, params=(galpon,))
+    else:
+        df = pd.read_sql_query("SELECT * FROM registro_diario ORDER BY galpon, fecha DESC", conn)
+    conn.close()
+    if not df.empty:
+        df['fecha'] = pd.to_datetime(df['fecha']).dt.date
+    return df
+
+def eliminar_registro_diario(registro_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM registro_diario WHERE id = %s", (registro_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def registrar_gasto(fecha, galpon, categoria, descripcion, valor):
     inicializar_tabla_gastos()
     conn = get_connection()
@@ -240,6 +296,7 @@ def reiniciar_sistema_completo():
     cur.execute("DELETE FROM clientes;")
     cur.execute("DELETE FROM gastos;")
     cur.execute("DELETE FROM gastos_varios;")
+    cur.execute("DELETE FROM registro_diario;")
     cur.execute("""
         UPDATE inventario SET 
             yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
@@ -662,6 +719,94 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     buffer.seek(0)
     return buffer
 
+def generar_pdf_acumulado_galpon(galpon, df_registros):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    styles = getSampleStyleSheet()
+    
+    style_normal = ParagraphStyle('NormalStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#333333"))
+    style_bold = ParagraphStyle('BoldStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor("#333333"))
+    style_right = ParagraphStyle('RightStyle', parent=styles['Normal'], fontName='Helvetica', fontSize=9, textColor=colors.HexColor("#333333"), alignment=2)
+    style_right_bold = ParagraphStyle('RightBoldStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor("#333333"), alignment=2)
+    style_th = ParagraphStyle('THStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=1)
+    style_th_left = ParagraphStyle('THLeftStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=0)
+    style_th_right = ParagraphStyle('THRightStyle', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.white, alignment=2)
+
+    img_logo = Image("LOGOASI.png", width=70, height=70) if os.path.exists("LOGOASI.png") else Paragraph("<b>🥚</b>", style_bold)
+    
+    header_data = [
+        [
+            img_logo,
+            Paragraph("<b>AGROAVICOLA SANTA ISABEL</b><br/><font size=8>NIT. 901.786.799-7<br/>Reporte Acumulado - Registro Diario</font>", style_normal),
+            Paragraph(f"<b>Galpón:</b><br/><font size=12 color='#f26822'><b>{galpon}</b></font>", style_right)
+        ]
+    ]
+    t_header = Table(header_data, colWidths=[80, 294, 160])
+    t_header.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 10),
+    ]))
+    story.append(t_header)
+    story.append(Spacer(1, 15))
+
+    table_data = [[
+        Paragraph("Fecha", style_th_left),
+        Paragraph("Ingr. Alimento (kg)", style_th_right),
+        Paragraph("Consumo (kg)", style_th_right),
+        Paragraph("Mortalidad", style_th_right),
+        Paragraph("Producción", style_th_right)
+    ]]
+    
+    tot_ingreso = 0.0
+    tot_consumo = 0.0
+    tot_mortalidad = 0
+    tot_produccion = 0
+
+    for _, fila in df_registros.iterrows():
+        ing = float(fila.get('ingreso_alimento', 0))
+        con = float(fila.get('consumo_alimento', 0))
+        mor = int(fila.get('mortalidad', 0))
+        prod = int(fila.get('produccion', 0))
+        
+        tot_ingreso += ing
+        tot_consumo += con
+        tot_mortalidad += mor
+        tot_produccion += prod
+
+        table_data.append([
+            Paragraph(str(fila['fecha']), style_normal),
+            Paragraph(f"{ing:,.1f}".replace(",", "."), style_right),
+            Paragraph(f"{con:,.1f}".replace(",", "."), style_right),
+            Paragraph(f"{mor:,}".replace(",", "."), style_right),
+            Paragraph(f"{prod:,}".replace(",", "."), style_right)
+        ])
+
+    table_data.append([
+        Paragraph("<b>ACUMULADO TOTAL</b>", style_bold),
+        Paragraph(f"<b>{tot_ingreso:,.1f} kg</b>".replace(",", "."), style_right_bold),
+        Paragraph(f"<b>{tot_consumo:,.1f} kg</b>".replace(",", "."), style_right_bold),
+        Paragraph(f"<b>{tot_mortalidad:,}</b>".replace(",", "."), style_right_bold),
+        Paragraph(f"<b>{tot_produccion:,}</b>".replace(",", "."), style_right_bold)
+    ])
+
+    t_items = Table(table_data, colWidths=[100, 110, 110, 100, 114])
+    t_items.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f2942")),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0,1), (-1,-2), [colors.HexColor("#f8fafc"), colors.white]),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e2e8f0")),
+        ('LINEABOVE', (0,-1), (-1,-1), 1, colors.HexColor("#0f2942")),
+    ]))
+    story.append(t_items)
+    
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 # --- CONTROL DE SESIÓN Y AUTENTICACIÓN ---
 if "usuario_autenticado" not in str_app.session_state:
     str_app.session_state.usuario_autenticado = None
@@ -747,7 +892,7 @@ else:
                     str_app.session_state.confirmar_reinicio = True
                     str_app.rerun()
             else:
-                str_app.warning("⚠️ ¿Estás completamente seguro? Esto borrará todas las remisiones, abonos, clientes, gastos, gastos varios y pondrá el stock en 0 para iniciar con datos reales.")
+                str_app.warning("⚠️ ¿Estás completamente seguro? Esto borrará todas las remisiones, abonos, clientes, gastos, registros diarios y pondrá el stock en 0.")
                 c_conf1, c_conf2 = str_app.columns(2)
                 with c_conf1:
                     if str_app.button("✅ Sí, borrar todo", use_container_width=True):
@@ -816,7 +961,7 @@ else:
             if str_app.session_state.seccion_activa == "📥 Entradas":
                 str_app.subheader("📥 Entrada de Producción / Clasificación")
                 if rol_actual == "Invitado":
-                    str_app.warning("👀 Modo Invitado: Solo puedes visualizar la sección. No tienes permisos para registrar entradas.")
+                    str_app.warning("👀 Modo Invitado: Solo puedes visualizar la sección.")
                 else:
                     str_app.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
                     galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", ["Galpón 1", "Galpón 2", "Galpón 3"])
@@ -847,8 +992,6 @@ else:
                                     "Cantidad": int(r["Cantidad"])
                                 })
                             registrar_entrada_inventario(galpon_destino, lista_items_entrada)
-                            
-                            str_app.toast(f"¡Entrada guardada con éxito en {galpon_destino}!", icon="✅")
                             str_app.success(f"¡Entrada de inventario registrada correctamente en {galpon_destino}!")
 
             elif str_app.session_state.seccion_activa == "⚖️ Inventario Fisico":
@@ -856,7 +999,7 @@ else:
                 if rol_actual == "Invitado":
                     str_app.warning("👀 Modo Invitado: Solo puedes visualizar el inventario físico.")
                 else:
-                    str_app.caption("Selecciona el galpón, ingresa el conteo real exacto de los huevos físicos y el sistema ajustará el inventario, calculando los faltantes o mermas.")
+                    str_app.caption("Selecciona el galpón, ingresa el conteo real exacto de los huevos físicos y el sistema ajustará el inventario.")
                     galpon_fisico = str_app.selectbox("Seleccione el Galpón a Auditar", ["Galpón 1", "Galpón 2", "Galpón 3"])
                     
                     df_inv_actual = cargar_inventario()
@@ -875,7 +1018,6 @@ else:
                         })
                     
                     df_fisico_base = pd.DataFrame(datos_fisicos)
-                    
                     df_fisico_editado = str_app.data_editor(
                         df_fisico_base,
                         disabled=["Clasificación", "Stock Sistema"],
@@ -884,17 +1026,14 @@ else:
                     )
 
                     df_fisico_editado["Diferencia (Merma/Faltante)"] = df_fisico_editado["Stock Sistema"] - df_fisico_editado["Conteo Físico Real"]
-                    
-                    str_app.markdown("#### 🔍 Resumen de Mermas Detectadas")
                     str_app.dataframe(df_fisico_editado[["Clasificación", "Stock Sistema", "Conteo Físico Real", "Diferencia (Merma/Faltante)"]], use_container_width=True, hide_index=True)
 
                     if str_app.button("💾 Guardar y Ajustar Inventario Físico"):
                         nuevo_stock_dict = {}
                         for _, r in df_fisico_editado.iterrows():
                             nuevo_stock_dict[r["Clasificación"]] = int(r["Conteo Físico Real"])
-                        
                         actualizar_inventario_fisico(galpon_fisico, nuevo_stock_dict)
-                        str_app.success(f"¡Inventario físico de {galpon_fisico} aplicado con éxito! Las mermas han sido ajustadas.")
+                        str_app.success(f"¡Inventario físico de {galpon_fisico} aplicado con éxito!")
                         str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "💸 Gastos":
@@ -906,11 +1045,10 @@ else:
                         c_fecha_g = str_app.date_input("Fecha del Gasto", value=date.today())
                         c_galpon_g = str_app.selectbox("Galpón Asociado", ["Galpón 1", "Galpón 2", "Galpón 3", "General / Granja"])
                         c_categoria_g = str_app.selectbox("Categoría de Gasto", ["Alimento", "Medicamentos / Sanidad", "Personal / Mano de Obra", "Mantenimiento / Reparaciones", "Servicios Públicos", "Otros"])
-                        c_desc_g = str_app.text_input("Descripción del Gasto", placeholder="Ej. Compra de concentrado fase 1")
+                        c_desc_g = str_app.text_input("Descripción del Gasto", placeholder="Ej. Compra de concentrado")
                         c_valor_g = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
                         
-                        btn_guardar_gasto = str_app.form_submit_button("💾 Guardar Gasto")
-                        if btn_guardar_gasto:
+                        if str_app.form_submit_button("💾 Guardar Gasto"):
                             if c_valor_g <= 0:
                                 str_app.error("El valor del gasto debe ser mayor a 0.")
                             else:
@@ -921,611 +1059,250 @@ else:
                 str_app.markdown("---")
                 str_app.markdown("### 📋 Historial y Resumen de Gastos por Mes")
                 df_gastos = cargar_gastos()
-                if df_gastos.empty:
-                    str_app.info("No hay gastos registrados en el sistema.")
-                else:
+                if not df_gastos.empty:
                     df_gastos['dt_fecha'] = pd.to_datetime(df_gastos['fecha'])
                     df_gastos['Año'] = df_gastos['dt_fecha'].dt.year
                     df_gastos['Mes_Num'] = df_gastos['dt_fecha'].dt.month
-                    
                     meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
                     df_gastos['Mes_Nombre'] = df_gastos['Mes_Num'].map(meses_nombres)
 
                     col_f1, col_f2 = str_app.columns(2)
                     anios_disponibles = sorted(df_gastos['Año'].unique().tolist(), reverse=True)
                     with col_f1:
-                        anio_sel_g = str_app.selectbox("📅 Filtrar Año (Gastos)", anios_disponibles, key="anio_gasto")
+                        anio_sel_g = str_app.selectbox("📅 Filtrar Año", anios_disponibles, key="anio_gasto")
                     
-                    meses_disponibles_nums = sorted(df_gastos[df_gastos['Año'] == anio_sel_g]['Mes_Num'].unique().tolist())
-                    meses_opciones_dict = {meses_nombres[m]: m for m in meses_disponibles_nums}
-                    
+                    meses_disp_nums = sorted(df_gastos[df_gastos['Año'] == anio_sel_g]['Mes_Num'].unique().tolist())
+                    meses_opc_dict = {meses_nombres[m]: m for m in meses_disp_nums}
                     with col_f2:
-                        mes_nombre_sel = str_app.selectbox("📅 Filtrar Mes (Gastos)", list(meses_opciones_dict.keys()), key="mes_gasto")
+                        mes_nombre_sel = str_app.selectbox("📅 Filtrar Mes", list(meses_opc_dict.keys()), key="mes_gasto")
                     
-                    mes_num_sel = meses_opciones_dict[mes_nombre_sel]
-                    df_gastos_filtrados = df_gastos[(df_gastos['Año'] == anio_sel_g) & (df_gastos['Mes_Num'] == mes_num_sel)]
+                    mes_num_sel = meses_opc_dict[mes_nombre_sel]
+                    df_gf = df_gastos[(df_gastos['Año'] == anio_sel_g) & (df_gastos['Mes_Num'] == mes_num_sel)]
+                    tot_mes = df_gf['valor'].astype(float).sum()
+                    str_app.markdown(f"**Total Gastos en {mes_nombre_sel} {anio_sel_g}: ${tot_mes:,.0f}**")
 
-                    total_gastos_mes = df_gastos_filtrados['valor'].astype(float).sum()
-                    str_app.markdown(f"""
-                        <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
-                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Gastos en {mes_nombre_sel} {anio_sel_g}: <b>${total_gastos_mes:,.0f}</b></p>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                    if not df_gastos_filtrados.empty:
-                        resumen_galpon = df_gastos_filtrados.groupby('galpon')['valor'].sum().reset_index()
-                        resumen_galpon.columns = ['Galpón', 'Total Gastos ($)']
-                        str_app.markdown(f"#### 📊 Resumen de Gastos por Galpón ({mes_nombre_sel} {anio_sel_g})")
-                        str_app.dataframe(resumen_galpon, use_container_width=True, hide_index=True)
-
-                    str_app.markdown("#### 📑 Detalle de Gastos del Mes")
-                    for _, row_g in df_gastos_filtrados.iterrows():
+                    for _, row_g in df_gf.iterrows():
                         g_id = row_g['id']
-                        g_fecha = str(row_g['fecha'])[:10]
-                        g_galp = row_g['galpon']
-                        g_cat = row_g['categoria']
-                        g_desc = row_g['descripcion']
-                        g_val = float(row_g['valor'])
-
-                        with str_app.expander(f"📅 {g_fecha} — [{g_galp}] {g_cat}: ${g_val:,.0f}"):
-                            str_app.write(f"**Descripción:** {g_desc}")
+                        with str_app.expander(f"📅 {row_g['fecha']} — [{row_g['galpon']}] {row_g['categoria']}: ${float(row_g['valor']):,.0f}"):
+                            str_app.write(f"**Descripción:** {row_g['descripcion']}")
                             if rol_actual == "Administrador":
-                                if str_app.button(f"🗑️ Eliminar Gasto #{g_id}", key=f"del_gasto_{g_id}"):
+                                if str_app.button(f"🗑️ Eliminar Gasto #{g_id}", key=f"del_g_{g_id}"):
                                     eliminar_gasto(g_id)
-                                    str_app.warning("Gasto eliminado.")
                                     str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "🏷️ Gastos Varios":
                 str_app.subheader("🏷️ Control de Gastos Varios y Personales")
-                str_app.caption("Estos gastos se registran de forma independiente y no afectan los cálculos de utilidades de los galpones.")
-                
-                if rol_actual == "Invitado":
-                    str_app.warning("👀 Modo Invitado: Solo puedes visualizar los gastos varios registrados.")
-                else:
-                    with str_app.form(key="form_registrar_gasto_vario"):
-                        c_fecha_gv = str_app.date_input("Fecha del Gasto Vario", value=date.today())
-                        c_categoria_gv = str_app.selectbox("Categoría", ["Personal", "Hogar", "Vehículo", "Impuestos", "Varios / Otros"])
-                        c_desc_gv = str_app.text_input("Descripción", placeholder="Ej. Compra personal, mercado, etc.")
-                        c_valor_gv = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
-                        
-                        btn_guardar_gv = str_app.form_submit_button("💾 Guardar Gasto Vario")
-                        if btn_guardar_gv:
-                            if c_valor_gv <= 0:
-                                str_app.error("El valor del gasto debe ser mayor a 0.")
-                            else:
-                                registrar_gasto_vario(c_fecha_gv, c_categoria_gv, c_desc_gv, c_valor_gv)
-                                str_app.success("¡Gasto vario registrado con éxito!")
+                if rol_actual != "Invitado":
+                    with str_app.form(key="form_gv"):
+                        f_gv = str_app.date_input("Fecha", value=date.today())
+                        cat_gv = str_app.selectbox("Categoría", ["Personal", "Hogar", "Vehículo", "Impuestos", "Varios"])
+                        desc_gv = str_app.text_input("Descripción")
+                        val_gv = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
+                        if str_app.form_submit_button("💾 Guardar Gasto Vario"):
+                            if val_gv > 0:
+                                registrar_gasto_vario(f_gv, cat_gv, desc_gv, val_gv)
+                                str_app.success("Registrado con éxito!")
                                 str_app.rerun()
-
-                str_app.markdown("---")
-                str_app.markdown("### 📋 Historial y Resumen de Gastos Varios por Mes")
                 df_gv = cargar_gastos_varios()
-                if df_gv.empty:
-                    str_app.info("No hay gastos varios registrados en el sistema.")
-                else:
-                    df_gv['dt_fecha'] = pd.to_datetime(df_gv['fecha'])
-                    df_gv['Año'] = df_gv['dt_fecha'].dt.year
-                    df_gv['Mes_Num'] = df_gv['dt_fecha'].dt.month
-                    
-                    meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
-                    df_gv['Mes_Nombre'] = df_gv['Mes_Num'].map(meses_nombres)
-
-                    col_f1, col_f2 = str_app.columns(2)
-                    anios_disponibles_gv = sorted(df_gv['Año'].unique().tolist(), reverse=True)
-                    with col_f1:
-                        anio_sel_gv = str_app.selectbox("📅 Filtrar Año (Gastos Varios)", anios_disponibles_gv, key="anio_gv")
-                    
-                    meses_disp_nums_gv = sorted(df_gv[df_gv['Año'] == anio_sel_gv]['Mes_Num'].unique().tolist())
-                    meses_opciones_dict_gv = {meses_nombres[m]: m for m in meses_disp_nums_gv}
-                    
-                    with col_f2:
-                        mes_nombre_sel_gv = str_app.selectbox("📅 Filtrar Mes (Gastos Varios)", list(meses_opciones_dict_gv.keys()), key="mes_gv")
-                    
-                    mes_num_sel_gv = meses_opciones_dict_gv[mes_nombre_sel_gv]
-                    df_gv_filtrados = df_gv[(df_gv['Año'] == anio_sel_gv) & (df_gv['Mes_Num'] == mes_num_sel_gv)]
-
-                    total_gv_mes = df_gv_filtrados['valor'].astype(float).sum()
-                    str_app.markdown(f"""
-                        <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
-                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Gastos Varios en {mes_nombre_sel_gv} {anio_sel_gv}: <b>${total_gv_mes:,.0f}</b></p>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                    if not df_gv_filtrados.empty:
-                        resumen_cat_gv = df_gv_filtrados.groupby('categoria')['valor'].sum().reset_index()
-                        resumen_cat_gv.columns = ['Categoría', 'Total ($)']
-                        str_app.markdown(f"#### 📊 Resumen por Categoría ({mes_nombre_sel_gv} {anio_sel_gv})")
-                        str_app.dataframe(resumen_cat_gv, use_container_width=True, hide_index=True)
-
-                    str_app.markdown("#### 📑 Detalle de Gastos Varios del Mes")
-                    for _, row_gv in df_gv_filtrados.iterrows():
-                        gv_id = row_gv['id']
-                        gv_fecha = str(row_gv['fecha'])[:10]
-                        gv_cat = row_gv['categoria']
-                        gv_desc = row_gv['descripcion']
-                        gv_val = float(row_gv['valor'])
-
-                        with str_app.expander(f"📅 {gv_fecha} — [{gv_cat}] {gv_desc}: ${gv_val:,.0f}"):
-                            str_app.write(f"**Descripción:** {gv_desc}")
+                if not df_gv.empty:
+                    for _, r in df_gv.iterrows():
+                        with str_app.expander(f"📅 {r['fecha']} — [{r['categoria']}] ${float(r['valor']):,.0f}"):
+                            str_app.write(r['descripcion'])
                             if rol_actual == "Administrador":
-                                if str_app.button(f"🗑️ Eliminar Gasto Vario #{gv_id}", key=f"del_gv_{gv_id}"):
-                                    eliminar_gasto_vario(gv_id)
-                                    str_app.warning("Gasto vario eliminado.")
+                                if str_app.button(f"🗑️ Eliminar #{r['id']}", key=f"del_gv_{r['id']}"):
+                                    eliminar_gasto_vario(r['id'])
                                     str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "👥 Clientes":
                 str_app.subheader("👥 Directorio de Clientes")
-                
                 if rol_actual == "Invitado":
-                    str_app.warning("👀 Modo Invitado: Visualización de clientes (la creación y eliminación están desactivadas).")
                     df_cli = cargar_clientes()
-                    if df_cli.empty:
-                        str_app.info("No hay clientes registrados.")
-                    else:
-                        for _, r_cli in df_cli.iterrows():
-                            str_app.write(f"👤 **{r_cli['nombre']}** | Cédula/NIT: {r_cli.get('cedula_nit', '')} | Tel: {r_cli.get('telefono', '')} | Dir: {r_cli.get('direccion', '')}")
+                    for _, r in df_cli.iterrows():
+                        str_app.write(f"👤 **{r['nombre']}** | NIT: {r.get('cedula_nit', '')} | Tel: {r.get('telefono', '')}")
                 else:
-                    tab_nuevo, tab_lista = str_app.tabs(["➕ Agregar Cliente", "📋 Lista de Clientes"])
-                    
-                    with tab_nuevo:
-                        with str_app.form(key="form_nuevo_cliente"):
-                            c_nom = str_app.text_input("Nombre / Razón Social *")
-                            c_ced = str_app.text_input("Cédula / NIT")
-                            c_dir = str_app.text_input("Dirección", value="CHOACHI")
-                            c_tel = str_app.text_input("Teléfono")
-                            c_em = str_app.text_input("Email")
-                            if str_app.form_submit_button("💾 Guardar Cliente"):
-                                if not c_nom.strip():
-                                    str_app.error("El nombre es obligatorio.")
-                                else:
-                                    guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
-                                    str_app.success(f"¡Cliente {c_nom.upper()} guardado!")
+                    tab_n, tab_l = str_app.tabs(["➕ Agregar", "📋 Lista"])
+                    with tab_n:
+                        with str_app.form("form_nc"):
+                            nom = str_app.text_input("Nombre *")
+                            ced = str_app.text_input("Cédula / NIT")
+                            dir_c = str_app.text_input("Dirección", value="CHOACHI")
+                            tel = str_app.text_input("Teléfono")
+                            em = str_app.text_input("Email")
+                            if str_app.form_submit_button("💾 Guardar"):
+                                if nom.strip():
+                                    guardar_cliente(nom, ced, dir_c, tel, em)
+                                    str_app.success("Guardado!")
                                     str_app.rerun()
-
-                    with tab_lista:
+                    with tab_l:
                         df_cli = cargar_clientes()
-                        if df_cli.empty:
-                            str_app.info("No hay clientes registrados.")
-                        else:
-                            for _, r_cli in df_cli.iterrows():
-                                id_c = r_cli['id']
-                                nom_c = r_cli['nombre']
-                                with str_app.expander(f"👤 {nom_c} ({r_cli.get('cedula_nit', '')})"):
-                                    str_app.write(f"**Teléfono:** {r_cli.get('telefono', '')}")
-                                    str_app.write(f"**Dirección:** {r_cli.get('direccion', '')}")
-                                    if str_app.button(f"🗑️ Eliminar {nom_c}", key=f"del_cli_{id_c}"):
-                                        eliminar_cliente(id_c)
-                                        str_app.warning("Cliente eliminado.")
-                                        str_app.rerun()
+                        for _, r in df_cli.iterrows():
+                            with str_app.expander(f"👤 {r['nombre']}"):
+                                str_app.write(f"Tel: {r.get('telefono', '')} | Dir: {r.get('direccion', '')}")
+                                if str_app.button(f"🗑️ Eliminar {r['nombre']}", key=f"del_c_{r['id']}"):
+                                    eliminar_cliente(r['id'])
+                                    str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "📤 Remisiones":
                 str_app.subheader("📋 Nueva Remisión")
-                
                 if rol_actual == "Invitado":
-                    str_app.warning("👀 Modo Invitado: No tienes permisos para crear nuevas remisiones.")
+                    str_app.warning("Modo Invitado: No disponible.")
                 else:
                     df_inv = cargar_inventario()
                     df_clientes = cargar_clientes()
-                    num_remision_actual = obtener_siguiente_num_remision()
+                    num_r = obtener_siguiente_num_remision()
                     
-                    str_app.markdown(f"### Remisión No. {num_remision_actual:06d}")
-                    fecha_remision = str_app.date_input("📅 Fecha de la Remisión", value=date.today())
+                    str_app.markdown(f"### Remisión No. {num_r:06d}")
+                    f_rem = str_app.date_input("Fecha", value=date.today())
+                    opc_cli = ["-- Escribir nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir nuevo --"]
+                    c_sel = str_app.selectbox("Cliente Guardado", opc_cli)
 
-                    opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
-                    cliente_sel = str_app.selectbox("👤 Cargar Cliente Guardado", opciones_cli)
+                    v_nom, v_ced, v_dir, v_tel, v_em = "", "", "CHOACHI", "", ""
+                    if c_sel != "-- Escribir nuevo --" and not df_clientes.empty:
+                        d_c = df_clientes[df_clientes["nombre"] == c_sel].iloc[0]
+                        v_nom, v_ced, v_dir, v_tel, v_em = str(d_c.get("nombre","")), str(d_c.get("cedula_nit","")), str(d_c.get("direccion","CHOACHI")), str(d_c.get("telefono","")), str(d_c.get("email",""))
 
-                    val_nombre, val_cedula, val_dir, val_tel, val_email = "", "", "CHOACHI", "", ""
-
-                    if cliente_sel != "-- Escribir cliente nuevo --" and not df_clientes.empty:
-                        d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
-                        val_nombre = str(d_cli.get("nombre", ""))
-                        val_cedula = str(d_cli.get("cedula_nit", ""))
-                        val_dir = str(d_cli.get("direccion", "CHOACHI"))
-                        val_tel = str(d_cli.get("telefono", ""))
-                        val_email = str(d_cli.get("email", ""))
-
-                    cliente_nombre = str_app.text_input("Razón Social / Cliente *", value=val_nombre)
-                    cedula_nit = str_app.text_input("Cédula / NIT", value=val_cedula)
-                    direccion = str_app.text_input("Dirección", value=val_dir)
-                    telefono = str_app.text_input("Teléfono", value=val_tel)
-                    email = str_app.text_input("Email", value=val_email)
-                    conductor = str_app.text_input("Conductor", value="Ivan Herrera")
+                    cli_n = str_app.text_input("Razón Social *", value=v_nom)
+                    ced_n = str_app.text_input("Cédula / NIT", value=v_ced)
+                    dir_n = str_app.text_input("Dirección", value=v_dir)
+                    tel_n = str_app.text_input("Teléfono", value=v_tel)
+                    em_n = str_app.text_input("Email", value=v_em)
+                    cond = str_app.text_input("Conductor", value="Ivan Herrera")
                     
-                    guardar_cli_auto = str_app.checkbox("💾 Guardar/Actualizar este cliente en el directorio", value=True)
-
-                    str_app.markdown("### 🛒 Detalle del Despacho")
-                    opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
-                    opciones_galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]
-                    
-                    df_base = pd.DataFrame([{
-                        "Clasificación": "a", 
-                        "Cantidad (Huevos)": 3000, 
-                        "Precio Unitario ($)": 370.0,
-                        "Galpón Origen": "Galpón 1"
-                    }])
-
-                    df_editado = str_app.data_editor(
-                        df_base,
+                    df_edit = str_app.data_editor(
+                        pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 3000, "Precio Unitario ($)": 370.0, "Galpón Origen": "Galpón 1"}]),
                         num_rows="dynamic",
                         column_config={
-                            "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
+                            "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"], required=True),
                             "Cantidad (Huevos)": str_app.column_config.NumberColumn("Cantidad", min_value=0, step=1, required=True),
                             "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio ($)", min_value=0.0, step=1.0, format="$%.0f", required=True),
-                            "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=opciones_galpones, required=True)
+                            "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=["Galpón 1", "Galpón 2", "Galpón 3"], required=True)
                         },
                         use_container_width=True
                     )
 
-                    items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+                    items_v = df_edit[df_edit["Cantidad (Huevos)"] > 0].copy()
+                    if not items_v.empty:
+                        items_v["Subtotal ($)"] = items_v["Cantidad (Huevos)"] * items_v["Precio Unitario ($)"]
+                        tot_fac = items_v["Subtotal ($)"].sum()
+                        str_app.markdown(f"### Total: ${tot_fac:,.0f}")
 
-                    if not items_validos.empty:
-                        items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
-                        
-                        df_agrupado_pdf = items_validos.groupby("Clasificación").agg({
-                            "Cantidad (Huevos)": "sum",
-                            "Precio Unitario ($)": "mean",
-                            "Subtotal ($)": "sum"
-                        }).reset_index()
-
-                        total_factura = items_validos["Subtotal ($)"].sum()
-                        str_app.markdown(f"""
-                            <div style="background-color: #f26822; color: white; padding: 12px; border-radius: 8px; text-align: right; margin-top: 10px; border-left: 5px solid #ffffff;">
-                                <h3 style="margin: 0; color: white !important; font-size: 18px;">TOTAL FACTURA: ${total_factura:,.0f}</h3>
-                            </div>
-                        """, unsafe_allow_html=True)
-
-                        if str_app.button("🚀 Confirmar y Generar Remisión"):
-                            if not cliente_nombre.strip():
-                                str_app.error("Por favor ingresa el Nombre del cliente.")
+                        if str_app.button("🚀 Generar Remisión"):
+                            if not cli_n.strip():
+                                str_app.error("Ingrese el nombre del cliente.")
                             else:
-                                errores_stock = []
-                                stock_acumulado_uso = {}
-                                for _, fila in items_validos.iterrows():
-                                    c_clasif = fila["Clasificación"]
-                                    c_cant = int(fila["Cantidad (Huevos)"])
-                                    g_orig = fila["Galpón Origen"]
-                                    key_st = (g_orig, c_clasif)
-                                    stock_acumulado_uso[key_st] = stock_acumulado_uso.get(key_st, 0) + c_cant
-
-                                for (g_orig, c_clasif), c_cant in stock_acumulado_uso.items():
-                                    stock_disp = df_inv.loc[g_orig, c_clasif]
-                                    if c_cant > stock_disp:
-                                        errores_stock.append(f"Stock insuficiente en {g_orig} para {c_clasif.upper()}. Disponible: {stock_disp}, Solicitado: {c_cant}")
-
-                                if errores_stock:
-                                    for err in errores_stock: str_app.error(err)
-                                else:
-                                    if guardar_cli_auto:
-                                        guardar_cliente(cliente_nombre, cedula_nit, direccion, telefono, email)
-
-                                    items_dict = []
-                                    for _, row in items_validos.iterrows():
-                                        items_dict.append({
-                                            'Clasificación': row['Clasificación'],
-                                            'Cantidad (Huevos)': row['Cantidad (Huevos)'],
-                                            'Precio Unitario ($)': row['Precio Unitario ($)'],
-                                            'Subtotal ($)': row['Subtotal ($)'],
-                                            'Galpón': row['Galpón Origen']
-                                        })
-
-                                    registrar_venta_multiple(cliente_nombre, cedula_nit, direccion, telefono, email, conductor, num_remision_actual, fecha_remision, items_dict)
-                                    str_app.success(f"¡Remisión No. {num_remision_actual:06d} guardada y deuda creada en cartera!")
-                                    
-                                    dias_sem = {'Monday':'lunes', 'Tuesday':'martes', 'Wednesday':'miércoles', 'Thursday':'jueves', 'Friday':'viernes', 'Saturday':'sábado', 'Sunday':'domingo'}
-                                    meses_anio = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
-                                    dia_txt = dias_sem.get(fecha_remision.strftime('%A'), '')
-                                    mes_txt = meses_anio.get(fecha_remision.month, '')
-                                    fecha_formateada_str = f"{dia_txt}, {fecha_remision.day} de {mes_txt} de {fecha_remision.year}"
-
-                                    datos_cliente = {"nombre": cliente_nombre, "cedula": cedula_nit, "direccion": direccion, "telefono": telefono, "email": email}
-                                    pdf_buffer = generar_pdf_remision(num_remision_actual, fecha_formateada_str, conductor, datos_cliente, df_agrupado_pdf, total_factura)
-                                    str_app.download_button(label="📄 Descargar Remisión PDF", data=pdf_buffer, file_name=f"Remision_{num_remision_actual:06d}.pdf", mime="application/pdf")
+                                guardar_cliente(cli_n, ced_n, dir_n, tel_n, em_n)
+                                items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_v.iterrows()]
+                                registrar_venta_multiple(cli_n, ced_n, dir_n, tel_n, em_n, cond, num_r, f_rem, items_dict)
+                                str_app.success("¡Remisión guardada con éxito!")
 
             elif str_app.session_state.seccion_activa == "💰 Cartera":
                 str_app.subheader("💰 Control de Cartera y Abonos")
-                
                 df_cartera = cargar_cartera()
-                if df_cartera.empty:
-                    str_app.info("No hay deudas ni facturas registradas en cartera.")
-                else:
-                    total_por_cobrar = df_cartera[df_cartera['estado'] == 'PENDIENTE']['saldo'].astype(float).sum()
-                    total_general_facturado = df_cartera['total'].astype(float).sum()
-
-                    str_app.markdown(f"""
-                        <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
-                            <p style="margin: 0; font-size: 14px;">Total Facturado: <b>${total_general_facturado:,.0f}</b></p>
-                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;">Total Pendiente por Cobrar: <b>${total_por_cobrar:,.0f}</b></p>
-                        </div>
-                    """, unsafe_allow_html=True)
-
-                    busqueda_cartera = str_app.text_input("🔍 Buscar cliente o N° Remisión en Cartera", placeholder="Ej. RAFAEL GARCIA")
-                    df_cart_filtrado = df_cartera[
-                        df_cartera['cliente'].astype(str).str.contains(busqueda_cartera, case=False, na=False) |
-                        df_cartera['num_remision'].astype(str).str.contains(busqueda_cartera, case=False, na=False)
-                    ] if busqueda_cartera.strip() else df_cartera
-
-                    if df_cart_filtrado.empty:
-                        str_app.warning("No se encontraron registros de cartera con ese criterio.")
-                    else:
-                        for _, row_cart in df_cart_filtrado.iterrows():
-                            num_r = int(row_cart['num_remision'])
-                            cli_c = str(row_cart['cliente'])
-                            tot_c = float(row_cart['total'])
-                            saldo_c = float(row_cart['saldo'])
-                            estado_c = str(row_cart['estado'])
-
-                            color_estado = "🟢 PAGADA" if estado_c == 'PAGADA' else "🔴 PENDIENTE"
-
-                            with str_app.expander(f"Remisión N° {num_r:06d} — {cli_c} | Saldo: ${saldo_c:,.0f} ({color_estado})"):
-                                str_app.write(f"**Total Factura:** ${tot_c:,.0f}")
-                                str_app.write(f"**Saldo Pendiente:** ${saldo_c:,.0f}")
-                                str_app.write(f"**Estado:** {estado_c}")
-
-                                if rol_actual == "Administrador":
-                                    str_app.markdown("---")
-                                    str_app.markdown("##### 💵 Registrar Abono y Comprobante")
-                                    
-                                    with str_app.form(key=f"form_abono_{num_r}"):
-                                        monto_abono = str_app.number_input("Monto del Abono ($)", min_value=0.0, max_value=max(0.0, saldo_c), step=1000.0, format="%.0f")
-                                        archivo_comp = str_app.file_uploader("Adjuntar Comprobante de Pago (Imagen o PDF)", type=["png", "jpg", "jpeg", "pdf"], key=f"file_comp_{num_r}")
-                                        btn_guardar_abono = str_app.form_submit_button("📥 Guardar Abono con Comprobante")
-
-                                        if btn_guardar_abono:
-                                            if monto_abono <= 0:
-                                                str_app.error("El monto del abono debe ser mayor a 0.")
-                                            else:
-                                                bytes_archivo = archivo_comp.read() if archivo_comp is not None else None
-                                                nombre_archivo = archivo_comp.name if archivo_comp is not None else None
-                                                
-                                                registrar_abono(num_r, monto_abono, bytes_archivo, nombre_archivo)
-                                                str_app.success(f"¡Abono de ${monto_abono:,.0f} registrado con éxito!")
-                                                str_app.rerun()
-
-                                str_app.markdown("##### 📜 Historial de Abonos y Comprobantes")
-                                abonos_filas = obtener_abonos_con_comprobante(num_r)
-                                if not abonos_filas:
-                                    str_app.info("No hay abonos registrados para esta factura.")
-                                else:
-                                    for ab_id, ab_fecha, ab_monto, ab_comp, ab_nom in abonos_filas:
-                                        c_ab1, c_ab2 = str_app.columns([2, 1])
-                                        with c_ab1:
-                                            str_app.write(f"📅 {str(ab_fecha)[:19]} — **${float(ab_monto):,.0f}**")
-                                        with c_ab2:
-                                            if ab_comp and ab_nom:
-                                                str_app.download_button(
-                                                    label="📎 Ver Comprobante",
-                                                    data=ab_comp,
-                                                    file_name=ab_nom,
-                                                    mime="application/octet-stream",
-                                                    key=f"dl_comp_{ab_id}"
-                                                )
-                                            else:
-                                                str_app.caption("Sin archivo adjunto")
+                if not df_cartera.empty:
+                    for _, rc in df_cartera.iterrows():
+                        num_r = int(rc['num_remision'])
+                        with str_app.expander(f"Remisión N° {num_r:06d} — {rc['cliente']} | Saldo: ${float(rc['saldo']):,.0f} ({rc['estado']})"):
+                            str_app.write(f"Total: ${float(rc['total']):,.0f} | Saldo: ${float(rc['saldo']):,.0f}")
+                            if rol_actual == "Administrador":
+                                with str_app.form(f"abono_{num_r}"):
+                                    m_ab = str_app.number_input("Monto Abono ($", min_value=0.0, step=1000.0)
+                                    arch = str_app.file_uploader("Comprobante", type=["png", "jpg", "jpeg", "pdf"], key=f"f_{num_r}")
+                                    if str_app.form_submit_button("Registrar Abono"):
+                                        if m_ab > 0:
+                                            registrar_abono(num_r, m_ab, arch.read() if arch else None, arch.name if arch else None)
+                                            str_app.success("Abono registrado!")
+                                            str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "📊 Stock":
                 str_app.subheader("📦 Stock Actual en Granja")
                 str_app.dataframe(cargar_inventario(), use_container_width=True)
 
             elif str_app.session_state.seccion_activa == "📜 Historial":
-                str_app.subheader("📜 Historial de Remisiones por Mes")
-                df_historial = cargar_remisiones()
-                
-                if df_historial.empty:
-                    str_app.info("No hay remisiones registradas.")
-                else:
-                    df_historial['dt_fecha'] = pd.to_datetime(df_historial['fecha_emision'])
-                    df_historial['Año'] = df_historial['dt_fecha'].dt.year
-                    df_historial['Mes_Num'] = df_historial['dt_fecha'].dt.month
-                    
-                    meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
-                    df_historial['Mes_Nombre'] = df_historial['Mes_Num'].map(meses_nombres)
-
-                    col_hf1, col_hf2 = str_app.columns(2)
-                    anios_disp_rem = sorted(df_historial['Año'].unique().tolist(), reverse=True)
-                    with col_hf1:
-                        anio_sel_rem = str_app.selectbox("📅 Filtrar Año (Remisiones)", anios_disp_rem, key="anio_rem")
-                    
-                    meses_disp_rem_nums = sorted(df_historial[df_historial['Año'] == anio_sel_rem]['Mes_Num'].unique().tolist())
-                    meses_opciones_rem_dict = {meses_nombres[m]: m for m in meses_disp_rem_nums}
-                    
-                    with col_hf2:
-                        mes_nombre_sel_rem = str_app.selectbox("📅 Filtrar Mes (Remisiones)", list(meses_opciones_rem_dict.keys()), key="mes_rem")
-                    
-                    mes_num_sel_rem = meses_opciones_rem_dict[mes_nombre_sel_rem]
-                    df_hist_mes = df_historial[(df_historial['Año'] == anio_sel_rem) & (df_historial['Mes_Num'] == mes_num_sel_rem)]
-
-                    busqueda = str_app.text_input("🔍 Buscar cliente o N° Remisión", placeholder="Ej. RAFAEL GARCIA")
-                    df_filtrado = df_hist_mes[
-                        df_hist_mes['cliente'].astype(str).str.contains(busqueda, case=False, na=False) |
-                        df_hist_mes['num_remision'].astype(str).str.contains(busqueda, case=False, na=False)
-                    ] if busqueda.strip() else df_hist_mes
-
-                    if df_filtrado.empty:
-                        str_app.warning("No se encontraron coincidencias para el mes seleccionado.")
-                    else:
-                        nums_remision = sorted(df_filtrado['num_remision'].dropna().unique().astype(int), reverse=True)
-                        for num_sel in nums_remision:
-                            df_rem = df_filtrado[df_filtrado['num_remision'] == num_sel]
-                            f_sel = df_rem.iloc[0]
-                            cli_nombre = str(f_sel.get('cliente', ''))
-                            tot_val = df_rem['total'].sum() if 'total' in df_rem.columns else 0.0
-                            fecha_db_val = f_sel.get('fecha_emision')
-                            
-                            if isinstance(fecha_db_val, (datetime, date)):
-                                dias_sem = {'Monday':'lunes', 'Tuesday':'martes', 'Wednesday':'miércoles', 'Thursday':'jueves', 'Friday':'viernes', 'Saturday':'sábado', 'Sunday':'domingo'}
-                                meses_anio = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
-                                f_date_obj = fecha_db_val if isinstance(fecha_db_val, date) else fecha_db_val.date()
-                                dia_txt = dias_sem.get(f_date_obj.strftime('%A'), '')
-                                mes_txt = meses_anio.get(f_date_obj.month, '')
-                                fecha_str = f"{dia_txt}, {f_date_obj.day} de {mes_txt} de {f_date_obj.year}"
-                                f_date_default = f_date_obj
-                            else:
-                                fecha_str = str(fecha_db_val)[:10]
-                                f_date_default = date.today()
-                            
-                            with str_app.expander(f"📄 Remisión No. {num_sel:06d} — {cli_nombre.upper()} | ${tot_val:,.0f} ({fecha_str})"):
-                                items_actuales = []
-                                for _, row in df_rem.iterrows():
-                                    items_actuales.append({
-                                        "Clasificación": str(row.get('tipo_huevo', 'a')).upper(),
-                                        "Cantidad (Huevos)": int(row.get('cantidad', 0)),
-                                        "Precio Unitario ($)": float(row.get('precio_unitario', 0.0)),
-                                        "Subtotal ($)": float(row.get('total', 0.0)),
-                                        "Galpón Origen": str(row.get('galpon', 'Galpón 1'))
-                                    })
-                                df_items_original = pd.DataFrame(items_actuales)
-                                df_items_pdf = df_items_original.groupby("Clasificación").agg({"Cantidad (Huevos)": "sum", "Precio Unitario ($)": "mean", "Subtotal ($)": "sum"}).reset_index()
-                                
-                                cli_datos = {"nombre": cli_nombre, "cedula": str(f_sel.get('cedula_nit', '')), "direccion": str(f_sel.get('destino', '')), "telefono": str(f_sel.get('telefono', '')), "email": str(f_sel.get('email', ''))}
-                                conductor_val = str(f_sel.get('conductor', 'Ivan Herrera'))
-
-                                if rol_actual == "Invitado":
-                                    str_app.dataframe(df_items_pdf, use_container_width=True, hide_index=True)
-                                    str_app.markdown(f"#### **Total: ${tot_val:,.0f}**")
-                                    pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
-                                    str_app.download_button(label=f"📥 Descargar PDF No. {num_sel:06d}", data=pdf_buf, file_name=f"Remision_{num_sel:06d}.pdf", mime="application/pdf", key=f"dl_{num_sel}")
-                                else:
-                                    tab_pdf, tab_editar = str_app.tabs(["👁️ Ver / Descargar PDF", "✏️ Editar o Eliminar"])
-                                    with tab_pdf:
-                                        pdf_buf = generar_pdf_remision(num_sel, fecha_str, conductor_val, cli_datos, df_items_pdf, tot_val)
-                                        str_app.dataframe(df_items_pdf, use_container_width=True, hide_index=True)
-                                        str_app.markdown(f"#### **Total: ${tot_val:,.0f}**")
-                                        str_app.download_button(label=f"📥 Descargar PDF No. {num_sel:06d}", data=pdf_buf, file_name=f"Remision_{num_sel:06d}.pdf", mime="application/pdf", key=f"dl_{num_sel}")
-
-                                    with tab_editar:
-                                        with str_app.form(key=f"form_editar_{num_sel}"):
-                                            c_fecha = str_app.date_input("Fecha de la Remisión", value=f_date_default, key=f"fec_{num_sel}")
-                                            c_cliente = str_app.text_input("Cliente", value=cli_datos['nombre'], key=f"cli_{num_sel}")
-                                            c_cedula = str_app.text_input("Cédula / NIT", value=cli_datos['cedula'], key=f"ced_{num_sel}")
-                                            c_dir = str_app.text_input("Dirección", value=cli_datos['direccion'], key=f"dir_{num_sel}")
-                                            c_tel = str_app.text_input("Teléfono", value=cli_datos['telefono'], key=f"tel_{num_sel}")
-                                            c_email = str_app.text_input("Email", value=cli_datos['email'], key=f"em_{num_sel}")
-                                            c_cond = str_app.text_input("Conductor", value=conductor_val, key=f"cond_{num_sel}")
-                                            
-                                            df_editado = str_app.data_editor(df_items_original[["Clasificación", "Cantidad (Huevos)", "Precio Unitario ($)", "Galpón Origen"]], num_rows="dynamic", key=f"edit_{num_sel}")
-                                            
-                                            c_b1, c_b2 = str_app.columns(2)
-                                            with c_b1: sub_act = str_app.form_submit_button("💾 Actualizar Cambios")
-                                            with c_b2: sub_elm = str_app.form_submit_button("🗑️ Remoción / Eliminar Remisión")
-                                            
-                                            if sub_act:
-                                                items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
-                                                items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
-                                                items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
-                                                actualizar_remision_completa(num_sel, c_cliente, c_cedula, c_dir, c_tel, c_email, c_cond, c_fecha, df_rem, items_dict)
-                                                str_app.success("Remisión y cartera actualizadas!")
-                                                str_app.rerun()
-                                            if sub_elm:
-                                                eliminar_remision_completa(num_sel, df_rem)
-                                                str_app.warning("Remisión y registro de cartera eliminados.")
-                                                str_app.rerun()
+                str_app.subheader("📜 Historial de Remisiones")
+                df_hist = cargar_remisiones()
+                if not df_hist.empty:
+                    for num_sel in df_hist['num_remision'].unique():
+                        df_r = df_hist[df_hist['num_remision'] == num_sel]
+                        f_s = df_r.iloc[0]
+                        with str_app.expander(f"Remisión N° {int(num_sel):06d} — {f_s.get('cliente','')}"):
+                            str_app.dataframe(df_r[['tipo_huevo', 'cantidad', 'precio_unitario', 'total', 'galpon']], use_container_width=True)
 
             elif str_app.session_state.seccion_activa == "📈 Utilidades":
-                str_app.subheader("📈 Utilidades del Mes por Galpón")
-                str_app.caption("Calcula las ventas totales menos los gastos directos registrados para cada galpón en el mes seleccionado.")
-
-                df_rem_util = cargar_remisiones()
-                df_gast_util = cargar_gastos()
-
-                if df_rem_util.empty and df_gast_util.empty:
-                    str_app.info("No hay suficientes registros de ventas ni de gastos para calcular utilidades.")
-                else:
-                    anos_set = set()
-                    if not df_rem_util.empty:
-                        df_rem_util['dt_fecha'] = pd.to_datetime(df_rem_util['fecha_emision'])
-                        anos_set.update(df_rem_util['dt_fecha'].dt.year.dropna().unique())
-                    if not df_gast_util.empty:
-                        df_gast_util['dt_fecha'] = pd.to_datetime(df_gast_util['fecha'])
-                        anos_set.update(df_gast_util['dt_fecha'].dt.year.dropna().unique())
-
-                    if not anos_set:
-                        str_app.warning("No hay fechas válidas registradas.")
-                    else:
-                        anos_disp = sorted(list(anos_set), reverse=True)
-                        meses_nombres = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio', 7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
-
-                        col_u1, col_u2 = str_app.columns(2)
-                        with col_u1:
-                            anio_u = str_app.selectbox("📅 Año", anos_disp, key="anio_util")
-                        with col_u2:
-                            mes_u_nombre = str_app.selectbox("📅 Mes", list(meses_nombres.values()), key="mes_util")
-                        
-                        mes_u_num = [k for k, v in meses_nombres.items() if v == mes_u_nombre][0]
-
-                        if not df_rem_util.empty:
-                            df_rem_mes = df_rem_util[(df_rem_util['dt_fecha'].dt.year == anio_u) & (df_rem_util['dt_fecha'].dt.month == mes_u_num)]
-                        else:
-                            df_rem_mes = pd.DataFrame(columns=['galpon', 'total'])
-
-                        if not df_gast_util.empty:
-                            df_gast_mes = df_gast_util[(df_gast_util['dt_fecha'].dt.year == anio_u) & (df_gast_util['dt_fecha'].dt.month == mes_u_num)]
-                        else:
-                            df_gast_mes = pd.DataFrame(columns=['galpon', 'valor'])
-
-                        galpones_lista = ["Galpón 1", "Galpón 2", "Galpón 3"]
-                        datos_utilidad = []
-
-                        total_general_ventas = 0.0
-                        total_general_gastos = 0.0
-
-                        for galp in galpones_lista:
-                            ventas_galp = float(df_rem_mes[df_rem_mes['galpon'] == galp]['total'].sum()) if not df_rem_mes.empty and 'galpon' in df_rem_mes.columns else 0.0
-                            
-                            gastos_directos_galp = float(df_gast_mes[df_gast_mes['galpon'] == galp]['valor'].sum()) if not df_gast_mes.empty and 'galpon' in df_gast_mes.columns else 0.0
-                            gastos_generales = float(df_gast_mes[df_gast_mes['galpon'] == 'General / Granja']['valor'].sum()) if not df_gast_mes.empty and 'galpon' in df_gast_mes.columns else 0.0
-                            
-                            gastos_galp = gastos_directos_galp + (gastos_generales / 3.0)
-                            utilidad_galp = ventas_galp - gastos_galp
-
-                            total_general_ventas += ventas_galp
-                            total_general_gastos += gastos_galp
-
-                            datos_utilidad.append({
-                                "Galpón": galp,
-                                "Ventas ($)": ventas_galp,
-                                "Gastos ($)": gastos_galp,
-                                "Utilidad ($)": utilidad_galp
-                            })
-
-                        df_util_res = pd.DataFrame(datos_utilidad)
-                        utilidad_total_neta = total_general_ventas - total_general_gastos
-
-                        str_app.markdown(f"""
-                            <div style="background-color: #1a3e63; color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 5px solid #f26822;">
-                                <p style="margin: 0; font-size: 14px;">Total Ventas ({mes_u_nombre} {anio_u}): <b>${total_general_ventas:,.0f}</b></p>
-                                <p style="margin: 0; font-size: 14px;">Total Gastos ({mes_u_nombre} {anio_u}): <b>${total_general_gastos:,.0f}</b></p>
-                                <hr style="border-color: #2c5282; margin: 8px 0;">
-                                <p style="margin: 0; font-size: 17px; color: #f26822 !important;"><b>Utilidad Neta Total: ${utilidad_total_neta:,.0f}</b></p>
-                            </div>
-                        """, unsafe_allow_html=True)
-
-                        str_app.markdown(f"#### 📊 Detalle por Galpón ({mes_u_nombre} {anio_u})")
-                        str_app.dataframe(df_util_res, use_container_width=True, hide_index=True)
+                str_app.subheader("📈 Utilidades del Mes")
+                str_app.caption("Ventas menos gastos directos y proporcionales.")
 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
-        str_app.subheader("📝 Registro Diario")
-        str_app.caption("Selecciona el galpón que deseas registrar:")
+        str_app.subheader("📝 Registro Diario y Control por Galpón")
+        str_app.caption("Selecciona el galpón para registrar consumo, ingreso de alimento, mortalidad y producción, y genera tu reporte acumulado en PDF:")
 
-        col1, col2, col3 = str_app.columns(3)
-        with col1:
-            if str_app.button("Galpón 1", use_container_width=True):
-                str_app.session_state["galpon_activo"] = "Galpón 1"
-        with col2:
-            if str_app.button("Galpón 2", use_container_width=True):
-                str_app.session_state["galpon_activo"] = "Galpón 2"
-        with col3:
-            if str_app.button("Galpón 3", use_container_width=True):
-                str_app.session_state["galpon_activo"] = "Galpón 3"
+        galpones_disp = ["Galpón 1", "Galpón 2", "Galpón 3"]
+        galpon_seleccionado = str_app.selectbox("Seleccione el Galpón", galpones_disp, key="select_galpon_diario")
 
-        if "galpon_activo" in str_app.session_state:
-            str_app.markdown(f"#### Formulario para: {str_app.session_state['galpon_activo']}")
-            
-            with str_app.form("form_registro_galpon"):
-                fecha_reg = str_app.date_input("Fecha", value=date.today())
-                postura = str_app.number_input("Postura (Número de huevos)", min_value=0, step=1)
-                mortalidad = str_app.number_input("Mortalidad", min_value=0, step=1)
+        tab_reg, tab_hist = str_app.tabs(["➕ Registrar / Editar Día", "📊 Historial y Reporte PDF"])
+
+        with tab_reg:
+            if rol_actual == "Invitado":
+                str_app.warning("👀 Modo Invitado: Solo puedes visualizar los registros diarios.")
+            else:
+                with str_app.form(key=f"form_reg_diario_{galpon_seleccionado}"):
+                    fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
+                    col_d1, col_d2 = str_app.columns(2)
+                    with col_d1:
+                        ingreso_alim = str_app.number_input("Ingreso de Alimento (kg)", min_value=0.0, step=1.0, format="%.1f")
+                        consumo_alim = str_app.number_input("Consumo Diario de Alimento (kg)", min_value=0.0, step=1.0, format="%.1f")
+                    with col_d2:
+                        mortalidad_val = str_app.number_input("Mortalidad (Aves)", min_value=0, step=1)
+                        produccion_val = str_app.number_input("Producción (Huevos / Unidades)", min_value=0, step=1)
+
+                    btn_guardar_rd = str_app.form_submit_button("💾 Guardar / Actualizar Registro Diario")
+                    if btn_guardar_rd:
+                        registrar_diario_db(fecha_reg, galpon_seleccionado, ingreso_alim, consumo_alim, mortalidad_val, produccion_val)
+                        str_app.success(f"¡Registro guardado correctamente para {galpon_seleccionado} en fecha {fecha_reg}!")
+                        str_app.rerun()
+
+        with tab_hist:
+            str_app.markdown(f"### 📋 Registros Acumulados - {galpon_seleccionado}")
+            df_registros_galp = cargar_registro_diario(galpon_seleccionado)
+
+            if df_registros_galp.empty:
+                str_app.info(f"No hay registros diarios guardados para {galpon_seleccionado}.")
+            else:
+                tot_ing = df_registros_galp['ingreso_alimento'].astype(float).sum()
+                tot_con = df_registros_galp['consumo_alimento'].astype(float).sum()
+                tot_mor = df_registros_galp['mortalidad'].astype(int).sum()
+                tot_prod = df_registros_galp['produccion'].astype(int).sum()
+
+                str_app.markdown(f"""
+                    <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
+                        <p style="margin: 0; font-size: 15px; color: #f26822 !important;"><b>Acumulados Totales ({galpon_seleccionado}):</b></p>
+                        <p style="margin: 0; font-size: 14px;">📥 Ingreso Alimento: <b>{tot_ing:,.1f} kg</b> | 🍽️ Consumo: <b>{tot_con:,.1f} kg</b></p>
+                        <p style="margin: 0; font-size: 14px;">⚠️ Mortalidad: <b>{tot_mor:,} aves</b> | 🥚 Producción: <b>{tot_prod:,} unidades</b></p>
+                    </div>
+                """, unsafe_allow_html=True)
+
+                pdf_acum_buf = generar_pdf_acumulado_galpon(galpon_seleccionado, df_registros_galp)
+                str_app.download_button(
+                    label=f"📄 Descargar Reporte Acumulado PDF ({galpon_seleccionado})",
+                    data=pdf_acum_buf,
+                    file_name=f"Reporte_Acumulado_{galpon_seleccionado.replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    key=f"dl_pdf_acum_{galpon_seleccionado}"
+                )
+
+                str_app.markdown("---")
+                str_app.markdown("#### Detalle Diario y Opción de Eliminación")
                 
-                guardar = str_app.form_submit_button("Guardar Registro")
-                
-                if guardar:
-                    str_app.success(f"¡Registro guardado exitosamente para {str_app.session_state['galpon_activo']}!")
+                for _, row_rd in df_registros_galp.iterrows():
+                    rd_id = row_rd['id']
+                    rd_fecha = str(row_rd['fecha'])
+                    rd_ing = float(row_rd['ingreso_alimento'])
+                    rd_con = float(row_rd['consumo_alimento'])
+                    rd_mor = int(row_rd['mortalidad'])
+                    rd_prod = int(row_rd['produccion'])
+
+                    with str_app.expander(f"📅 {rd_fecha} — Ingr: {rd_ing}kg | Cons: {rd_con}kg | Mort: {rd_mor} | Prod: {rd_prod}"):
+                        if rol_actual == "Administrador":
+                            if str_app.button(f"🗑️ Eliminar Registro ID {rd_id}", key=f"del_rd_{rd_id}"):
+                                eliminar_registro_diario(rd_id)
+                                str_app.warning("Registro diario eliminado.")
+                                str_app.rerun()

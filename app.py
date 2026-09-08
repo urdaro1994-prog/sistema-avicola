@@ -1153,7 +1153,7 @@ if str_app.session_state.seccion_activa == "📊 Utilidades":
 if str_app.session_state.sesion_principal == "📜 Registro Diario":
     str_app.subheader("📜 Módulo de Registro Diario (Edades, Mortalidad y Concentrado)")
     galpon_reg = str_app.selectbox("Seleccione el Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"], key="galp_reg_sel")
-                tab_config, tab_diario, tab_historial = str_app.tabs(["⚙️ Configuración Inicial", "✍️ Registrar Día", "📊 Historial y PDF"])
+    tab_config, tab_diario, tab_historial = str_app.tabs(["⚙️ Configuración Inicial", "✍️ Registrar Día", "📊 Historial y PDF"])
         
         with tab_config:
             str_app.markdown("#### Configuración Inicial del Lote (Se ingresa una sola vez)")

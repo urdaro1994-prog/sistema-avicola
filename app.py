@@ -453,20 +453,17 @@ def cargar_remisiones():
             df['fecha_emision'] = pd.to_datetime(df['fecha_emision']).dt.date
     return df
 
-def obtener_siguiente_num_remision():
-    inicializar_tabla_remisiones()
-    conn = get_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute("SELECT COALESCE(MAX(num_remision), 191) + 1 FROM remisiones")
-        num = cur.fetchone()[0]
-    except Exception:
-        conn.rollback()
-        cur.execute("SELECT COALESCE(MAX(id), 191) + 1 FROM remisiones")
-        num = cur.fetchone()[0]
-    cur.close()
-    conn.close()
-    return max(num, 192)
+def obtener_siguiente_remision():
+    # Consulta el número más alto registrado en la tabla remisiones
+    response = supabase.table("remisiones").select("num_remision").order("num_remision", desc=True).limit(1).execute()
+    
+    if response.data and response.data[0].get("num_remision") is not None:
+        ultimo_num = int(response.data[0]["num_remision"])
+        # Retorna el siguiente número, asegurando que como mínimo sea 192 si la tabla estuviera por debajo
+        return max(ultimo_num + 1, 192)
+    
+    # Si la tabla está totalmente vacía, inicia en 192
+    return 192
 
 def cargar_cartera():
     inicializar_tablas_cartera()

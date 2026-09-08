@@ -1316,6 +1316,24 @@ else:
                                 file_name=f"Remision_{num_rem_act:06d}.pdf",
                                 mime="application/pdf"
                             )
+                            # Validación de stock antes de generar la remisión
+    error_stock = False
+    for _, row in df_editado.iterrows():
+        cant_pedida = row.get("Cantidad (Huevos)", 0)
+        clasif = row.get("clasificación")
+        galpon = row.get("Galpón Origen")
+        
+        if cant_pedida > 0:
+            # Obtener el stock actual de ese galpón y clasificación desde tu fuente de datos/DataFrame de stock
+            # (Asegúrate de usar la variable donde consultas tu stock actual, por ejemplo df_stock_actual)
+            stock_disponible = df_stock_actual.loc[df_stock_actual['galpon'] == galpon, clasif].values[0]
+            
+            if cant_pedida > stock_disponible:
+                str_app.error(f"❌ Stock insuficiente en **{galpon}** para **{clasif}**. Stock disponible: {stock_disponible}, Cantidad solicitada: {cant_pedida}")
+                error_stock = True
+
+    if error_stock:
+        str_app.stop()  # Detiene la ejecución para que no se guarde la remisión
 
             elif str_app.session_state.seccion_activa == "💰 Cartera":
                 str_app.subheader("💰 Control de Cartera")

@@ -1097,7 +1097,17 @@ else:
                             
                             items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
                             registrar_venta_multiple(c_nom, c_ced, c_dir, c_tel, c_em, c_cond, num_rem_act, fecha_rem, items_dict)
-                            str_app.success("¡Remisión guardada!")
+                            str_app.success("¡Remisión guardada con éxito!")
+
+                            # Generar y mostrar botón de descarga PDF de la remisión actual
+                            cliente_datos = {"nombre": c_nom, "cedula": c_ced, "direccion": c_dir, "telefono": c_tel, "email": c_em}
+                            pdf_buf = generar_pdf_remision(num_rem_act, str(fecha_rem), c_cond, cliente_datos, items_validos, tot_fac)
+                            str_app.download_button(
+                                label="📄 Descargar Remisión en PDF",
+                                data=pdf_buf,
+                                file_name=f"Remision_{num_rem_act:06d}.pdf",
+                                mime="application/pdf"
+                            )
 
             elif str_app.session_state.seccion_activa == "💰 Cartera":
                 str_app.subheader("💰 Control de Cartera")

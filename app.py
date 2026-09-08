@@ -475,6 +475,13 @@ def cargar_cartera():
     conn.close()
     return df
 
+def cargar_abonos_remision(num_remision):
+    inicializar_tablas_cartera()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM abonos_cartera WHERE num_remision = %s ORDER BY fecha_abono DESC", conn, params=(num_remision,))
+    conn.close()
+    return df
+
 def registrar_abono(num_remision, monto_abono, comprobante_bytes=None, nombre_comprobante=None):
     inicializar_tablas_cartera()
     conn = get_connection()
@@ -511,6 +518,20 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
     inicializar_tabla_inventario()
     conn = get_connection()
     cur = conn.cursor()
+
+    # Validación estricta de stock antes de procesar la remisión
+    for item in items_venta:
+        clasificacion = item['Clasificación'].lower()
+        cantidad = int(item['Cantidad (Huevos)'])
+        galp_origen = item.get('Galpón', 'Galpón 1')
+        
+        cur.execute(f"SELECT {clasificacion} FROM inventario WHERE galpon = %s", (galp_origen,))
+        res = cur.fetchone()
+        stock_actual = res[0] if res else 0
+        if cantidad > stock_actual:
+            cur.close()
+            conn.close()
+            raise ValueError(f"Stock insuficiente de '{clasificacion.upper()}' en {galp_origen}. Stock actual: {stock_actual:,}, solicitado: {cantidad:,}".replace(",", "."))
 
     cur.execute("""
         SELECT column_name, is_generated, identity_generation 
@@ -1304,36 +1325,55 @@ else:
                                 guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
                             
                             items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
-                            registrar_venta_multiple(c_nom, c_ced, c_dir, c_tel, c_em, c_cond, num_rem_act, fecha_rem, items_dict)
-                            str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
-                            str_app.success("¡Remisión guardada con éxito!")
+                            
+                            try:
+                                registrar_venta_multiple(c_nom, c_ced, c_dir, c_tel, c_em, c_cond, num_rem_act, fecha_rem, items_dict)
+                                str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
+                                str_app.success("¡Remisión guardada con éxito!")
 
-                            cliente_datos = {"nombre": c_nom, "cedula": c_ced, "direccion": c_dir, "telefono": c_tel, "email": c_em}
-                            pdf_buf = generar_pdf_remision(num_rem_act, str(fecha_rem), c_cond, cliente_datos, items_validos, tot_fac)
-                            str_app.download_button(
-                                label="📄 Descargar Remisión en PDF",
-                                data=pdf_buf,
-                                file_name=f"Remision_{num_rem_act:06d}.pdf",
-                                mime="application/pdf"
-                            )
+                                cliente_datos = {"nombre": c_nom, "cedula": c_ced, "direccion": c_dir, "telefono": c_tel, "email": c_em}
+                                pdf_buf = generar_pdf_remision(num_rem_act, str(fecha_rem), c_cond, cliente_datos, items_validos, tot_fac)
+                                str_app.download_button(
+                                    label="📄 Descargar Remisión en PDF",
+                                    data=pdf_buf,
+                                    file_name=f"Remision_{num_rem_act:06d}.pdf",
+                                    mime="application/pdf"
+                                )
+                            except ValueError as e:
+                                str_app.error(str(e))
 
             elif str_app.session_state.seccion_activa == "💰 Cartera":
-                str_app.subheader("💰 Control de Cartera")
+                str_app.subheader("💰 Control de Cartera e Historial de Abonos")
                 df_cartera = cargar_cartera()
                 if df_cartera.empty:
-                    str_app.info("Sin deudas.")
+                    str_app.info("Sin deudas registradas.")
                 else:
                     for _, row in df_cartera.iterrows():
                         with str_app.expander(f"Remisión N° {int(row['num_remision']):06d} — {row['cliente']} | Saldo: ${float(row['saldo']):,.0f} ({row['estado']})"):
+                            str_app.markdown("#### 📜 Historial de Abonos")
+                            df_abonos = cargar_abonos_remision(int(row['num_remision']))
+                            if not df_abonos.empty:
+                                df_abonos_mostrar = df_abonos[['fecha_abono', 'monto', 'nombre_comprobante']].copy()
+                                df_abonos_mostrar.columns = ['Fecha y Hora', 'Monto ($)', 'Comprobante']
+                                df_abonos_mostrar['Monto ($)'] = df_abonos_mostrar['Monto ($)'].apply(lambda x: f"${float(x):,.0f}".replace(",", "."))
+                                str_app.dataframe(df_abonos_mostrar, use_container_width=True, hide_index=True)
+                            else:
+                                str_app.info("No hay abonos registrados para esta remisión.")
+
+                            str_app.markdown("---")
                             if rol_actual == "Administrador":
                                 with str_app.form(key=f"ab_{row['num_remision']}"):
+                                    str_app.markdown("#### ➕ Registrar Nuevo Abono")
                                     monto = str_app.number_input("Abono ($)", min_value=0.0, max_value=float(row['saldo']), step=1000.0, format="%.0f")
-                                    arch = str_app.file_uploader("Comprobante", type=["png","jpg","jpeg","pdf"], key=f"f_{row['num_remision']}")
+                                    arch = str_app.file_uploader("Comprobante (Opcional)", type=["png","jpg","jpeg","pdf"], key=f"f_{row['num_remision']}")
                                     if str_app.form_submit_button("Registrar Abono"):
-                                        registrar_abono(int(row['num_remision']), monto, arch.read() if arch else None, arch.name if arch else None)
-                                        str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
-                                        str_app.success("Abono registrado!")
-                                        str_app.rerun()
+                                        if monto <= 0:
+                                            str_app.error("El monto del abono debe ser mayor a 0.")
+                                        else:
+                                            registrar_abono(int(row['num_remision']), monto, arch.read() if arch else None, arch.name if arch else None)
+                                            str_app.toast("¡Abono registrado con éxito! 🎉", icon="✅")
+                                            str_app.success("¡Abono registrado correctamente!")
+                                            str_app.rerun()
 
             elif str_app.session_state.seccion_activa == "📊 Stock":
                 str_app.subheader("📦 Stock Actual")

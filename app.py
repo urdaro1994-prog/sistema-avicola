@@ -1045,7 +1045,7 @@ else:
                         num_rows="dynamic",
                         column_config={
                             "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=opciones_clasif, required=True),
-                            "Cantidad": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, required=True)
+                            "Cantidad": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True)
                         },
                         use_container_width=True,
                         key="editor_entradas_stock"
@@ -1088,6 +1088,10 @@ else:
                     df_fisico_editado = str_app.data_editor(
                         df_fisico_base,
                         disabled=["Clasificación", "Stock Sistema"],
+                        column_config={
+                            "Stock Sistema": str_app.column_config.NumberColumn("Stock Sistema", format="%d"),
+                            "Conteo Físico Real": str_app.column_config.NumberColumn("Conteo Físico Real", min_value=0, step=1, format="%d")
+                        },
                         use_container_width=True,
                         key=f"editor_fisico_{galpon_fisico}"
                     )
@@ -1247,7 +1251,17 @@ else:
                     guardar_cli_auto = str_app.checkbox("Guardar cliente", value=True)
 
                     df_base = pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 3000, "Precio Unitario ($)": 370.0, "Galpón Origen": "Galpón 1"}])
-                    df_editado = str_app.data_editor(df_base, num_rows="dynamic", use_container_width=True)
+                    df_editado = str_app.data_editor(
+                        df_base, 
+                        num_rows="dynamic", 
+                        column_config={
+                            "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"], required=True),
+                            "Cantidad (Huevos)": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True),
+                            "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio Unitario ($)", min_value=0.0, step=10.0, format="$#,##0", required=True),
+                            "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=["Galpón 1", "Galpón 2", "Galpón 3"], required=True)
+                        },
+                        use_container_width=True
+                    )
                     items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
 
                     if not items_validos.empty:
@@ -1283,7 +1297,7 @@ else:
                         with str_app.expander(f"Remisión N° {int(row['num_remision']):06d} — {row['cliente']} | Saldo: ${float(row['saldo']):,.0f} ({row['estado']})"):
                             if rol_actual == "Administrador":
                                 with str_app.form(key=f"ab_{row['num_remision']}"):
-                                    monto = str_app.number_input("Abono ($)", min_value=0.0, max_value=float(row['saldo']), step=1000.0)
+                                    monto = str_app.number_input("Abono ($)", min_value=0.0, max_value=float(row['saldo']), step=1000.0, format="%.0f")
                                     arch = str_app.file_uploader("Comprobante", type=["png","jpg","jpeg","pdf"], key=f"f_{row['num_remision']}")
                                     if str_app.form_submit_button("Registrar Abono"):
                                         registrar_abono(int(row['num_remision']), monto, arch.read() if arch else None, arch.name if arch else None)

@@ -120,7 +120,7 @@ str_app.markdown(
 
 # --- FUNCIONES DE BASE DE DATOS ---
 def get_connection():
-    return psycopg2.connect(str_app.secrets["postgres"]["url"])[cite: 4]
+    return psycopg2.connect(str_app.secrets["postgres"]["url"])
 
 def inicializar_tabla_clientes():
     conn = get_connection()
@@ -137,7 +137,7 @@ def inicializar_tabla_clientes():
     """)
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def inicializar_tabla_inventario():
     conn = get_connection()
@@ -160,7 +160,7 @@ def inicializar_tabla_inventario():
     cur.execute("INSERT INTO inventario (galpon) VALUES ('Galpón 3') ON CONFLICT (galpon) DO NOTHING;")
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def inicializar_tabla_remisiones():
     conn = get_connection()
@@ -185,7 +185,7 @@ def inicializar_tabla_remisiones():
     """)
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def inicializar_tablas_cartera():
     conn = get_connection()
@@ -216,7 +216,7 @@ def inicializar_tablas_cartera():
         conn.rollback()
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def inicializar_tabla_gastos():
     conn = get_connection()
@@ -233,7 +233,7 @@ def inicializar_tabla_gastos():
     """)
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def inicializar_tabla_gastos_varios():
     conn = get_connection()
@@ -249,7 +249,7 @@ def inicializar_tabla_gastos_varios():
     """)
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def inicializar_tablas_registro_diario():
     conn = get_connection()
@@ -276,7 +276,7 @@ def inicializar_tablas_registro_diario():
     """)
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def registrar_gasto(fecha, galpon, categoria, descripcion, valor):
     inicializar_tabla_gastos()
@@ -288,7 +288,7 @@ def registrar_gasto(fecha, galpon, categoria, descripcion, valor):
     """, (fecha, galpon, categoria, descripcion, valor))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def cargar_gastos():
     inicializar_tabla_gastos()
@@ -297,7 +297,7 @@ def cargar_gastos():
     conn.close()
     if not df.empty:
         df['fecha'] = pd.to_datetime(df['fecha']).dt.date
-    return df[cite: 4]
+    return df
 
 def eliminar_gasto(gasto_id):
     conn = get_connection()
@@ -305,7 +305,7 @@ def eliminar_gasto(gasto_id):
     cur.execute("DELETE FROM gastos WHERE id = %s", (gasto_id,))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def registrar_gasto_vario(fecha, categoria, descripcion, valor):
     inicializar_tabla_gastos_varios()
@@ -317,7 +317,7 @@ def registrar_gasto_vario(fecha, categoria, descripcion, valor):
     """, (fecha, categoria, descripcion, valor))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def cargar_gastos_varios():
     inicializar_tabla_gastos_varios()
@@ -326,7 +326,7 @@ def cargar_gastos_varios():
     conn.close()
     if not df.empty:
         df['fecha'] = pd.to_datetime(df['fecha']).dt.date
-    return df[cite: 4]
+    return df
 
 def eliminar_gasto_vario(gasto_id):
     conn = get_connection()
@@ -334,7 +334,7 @@ def eliminar_gasto_vario(gasto_id):
     cur.execute("DELETE FROM gastos_varios WHERE id = %s", (gasto_id,))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def reiniciar_sistema_completo():
     inicializar_tabla_clientes()
@@ -365,14 +365,14 @@ def reiniciar_sistema_completo():
         
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def cargar_clientes():
     inicializar_tabla_clientes()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM clientes ORDER BY nombre ASC", conn)
     conn.close()
-    return df[cite: 4]
+    return df
 
 def guardar_cliente(nombre, cedula, direccion, telefono, email):
     inicializar_tabla_clientes()
@@ -389,7 +389,7 @@ def guardar_cliente(nombre, cedula, direccion, telefono, email):
     """, (nombre.strip().upper(), cedula, direccion, telefono, email))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def eliminar_cliente(cliente_id):
     conn = get_connection()
@@ -397,14 +397,14 @@ def eliminar_cliente(cliente_id):
     cur.execute("DELETE FROM clientes WHERE id = %s", (cliente_id,))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def cargar_inventario():
     inicializar_tabla_inventario()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM inventario ORDER BY galpon", conn)
     conn.close()
-    return df.set_index('galpon')[cite: 4]
+    return df.set_index('galpon')
 
 def registrar_entrada_inventario(galpon, items_entrada):
     inicializar_tabla_inventario()
@@ -416,7 +416,7 @@ def registrar_entrada_inventario(galpon, items_entrada):
         cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} + %s WHERE galpon = %s", (cantidad, galpon))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
     inicializar_tabla_inventario()
@@ -439,7 +439,7 @@ def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
     ))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def cargar_remisiones():
     inicializar_tabla_remisiones()
@@ -451,7 +451,7 @@ def cargar_remisiones():
             df['num_remision'] = df['id']
         if 'fecha_emision' in df.columns:
             df['fecha_emision'] = pd.to_datetime(df['fecha_emision']).dt.date
-    return df[cite: 4]
+    return df
 
 def obtener_siguiente_num_remision():
     inicializar_tabla_remisiones()
@@ -466,14 +466,14 @@ def obtener_siguiente_num_remision():
         num = cur.fetchone()[0]
     cur.close()
     conn.close()
-    return max(num, 192)[cite: 4]
+    return max(num, 192)
 
 def cargar_cartera():
     inicializar_tablas_cartera()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM cartera ORDER BY num_remision DESC", conn)
     conn.close()
-    return df[cite: 4]
+    return df
 
 def registrar_abono(num_remision, monto_abono, comprobante_bytes=None, nombre_comprobante=None):
     inicializar_tablas_cartera()
@@ -503,7 +503,7 @@ def registrar_abono(num_remision, monto_abono, comprobante_bytes=None, nombre_co
         
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, fecha_remision, items_venta):
     inicializar_tablas_cartera()
@@ -561,7 +561,7 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
 
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, items_df, total_factura):
     buffer = io.BytesIO()
@@ -687,7 +687,7 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     
     doc.build(story)
     buffer.seek(0)
-    return buffer[cite: 4]
+    return buffer
 
 def guardar_config_galpon(galpon, semanas, dias, aves):
     inicializar_tablas_registro_diario()
@@ -703,7 +703,7 @@ def guardar_config_galpon(galpon, semanas, dias, aves):
     """, (galpon, semanas, dias, aves))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def cargar_config_galpon(galpon):
     inicializar_tablas_registro_diario()
@@ -715,7 +715,7 @@ def cargar_config_galpon(galpon):
     conn.close()
     if res:
         return {"edad_semanas": res[0], "edad_dias": res[1], "aves_iniciales": res[2]}
-    return None[cite: 4]
+    return None
 
 def registrar_dia_galpon(fecha, galpon, mortalidad, conc_ingresado, conc_consumido, huevos, observaciones):
     inicializar_tablas_registro_diario()
@@ -727,7 +727,7 @@ def registrar_dia_galpon(fecha, galpon, mortalidad, conc_ingresado, conc_consumi
     """, (fecha, galpon, mortalidad, conc_ingresado, conc_consumido, huevos, observaciones))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def cargar_registros_diarios(galpon=None):
     inicializar_tablas_registro_diario()
@@ -739,7 +739,7 @@ def cargar_registros_diarios(galpon=None):
     conn.close()
     if not df.empty:
         df['fecha'] = pd.to_datetime(df['fecha']).dt.date
-    return df[cite: 4]
+    return df
 
 def eliminar_registro_diario(reg_id):
     conn = get_connection()
@@ -747,7 +747,7 @@ def eliminar_registro_diario(reg_id):
     cur.execute("DELETE FROM registros_diarios WHERE id = %s", (reg_id,))
     conn.commit()
     cur.close()
-    conn.close()[cite: 4]
+    conn.close()
 
 def generar_pdf_registro_diario(galpon_nombre, config, df_reg, current_edad_str, current_aves, saldo_conc):
     buffer = io.BytesIO()
@@ -824,7 +824,7 @@ def generar_pdf_registro_diario(galpon_nombre, config, df_reg, current_edad_str,
     
     doc.build(story)
     buffer.seek(0)
-    return buffer[cite: 4]
+    return buffer
 
 def generar_pdf_gastos(df_gastos, titulo_reporte):
     buffer = io.BytesIO()
@@ -905,7 +905,7 @@ def generar_pdf_gastos(df_gastos, titulo_reporte):
     
     doc.build(story)
     buffer.seek(0)
-    return buffer[cite: 4]
+    return buffer
 
 
 # --- CONTROL DE SESIÓN Y AUTENTICACIÓN ---
@@ -1567,4 +1567,3 @@ else:
                                 str_app.rerun()
                 else:
                     str_app.info("No hay registros diarios ingresados todavía para este galpón.")
-```[cite: 4]

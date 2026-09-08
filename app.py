@@ -91,15 +91,20 @@ str_app.markdown(
         color: #ffffff;
     }
 
-    /* Corrección específica para Expander (Remisiones) */
+    /* Estilo armónico para los Expander (Historial / Remisiones) */
     [data-testid="stExpander"] {
-        background-color: #ffffff !important;
+        background-color: #163559 !important;
         border-radius: 8px !important;
+        border: 1px solid #244c7c !important;
     }
     
     [data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span {
-        color: #0f2942 !important;
+        color: #ffffff !important;
         font-weight: bold !important;
+    }
+
+    [data-testid="stExpanderDetails"] {
+        color: #ffffff !important;
     }
     
     /* Etiquetas de los campos */

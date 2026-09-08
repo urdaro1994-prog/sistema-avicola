@@ -1332,7 +1332,7 @@ else:
                 str_app.subheader("📦 Stock Actual en Granja")
                 str_app.dataframe(cargar_inventario(), use_container_width=True)
 
-                elif str_app.session_state.seccion_activa == "📜 Historial":
+            elif str_app.session_state.seccion_activa == "📜 Historial":
                 str_app.subheader("📜 Historial de Remisiones")
                 df_hist = cargar_remisiones()
                 if not df_hist.empty:

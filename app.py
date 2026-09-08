@@ -92,23 +92,37 @@ str_app.markdown(
 def get_connection():
     return psycopg2.connect(str_app.secrets["postgres"]["url"])
 
-def inicializar_tabla_clientes():
+def inicializar_tabla_remisiones():
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS clientes (
+        CREATE TABLE IF NOT EXISTS remisiones (
             id SERIAL PRIMARY KEY,
-            nombre TEXT UNIQUE NOT NULL,
+            num_remision INT,
+            fecha_emision DATE,
+            cliente TEXT,
             cedula_nit TEXT,
-            direccion TEXT,
             telefono TEXT,
-            email TEXT
+            destino TEXT,
+            email TEXT,
+            conductor TEXT,
+            tipo_huevo TEXT,
+            cantidad INT,
+            precio_unitario NUMERIC,
+            total NUMERIC,
+            galpon TEXT
         );
     """)
+    # Esta es la protección clave que faltaba para actualizar bases de datos antiguas
+    try:
+        cur.execute("ALTER TABLE remisiones ADD COLUMN IF NOT EXISTS tipo_huevo TEXT;")
+        cur.execute("ALTER TABLE remisiones ADD COLUMN IF NOT EXISTS galpon TEXT;")
+    except Exception:
+        conn.rollback()
+        
     conn.commit()
     cur.close()
     conn.close()
-
 def inicializar_tablas_cartera():
     conn = get_connection()
     cur = conn.cursor()

@@ -1187,7 +1187,7 @@ else:
                 str_app.subheader("📦 Stock Actual")
                 str_app.dataframe(cargar_inventario(), use_container_width=True)
 
-elif str_app.session_state.seccion_activa == "📜 Historial"
+            elif str_app.session_state.seccion_activa == "📜 Historial"
 
             elif str_app.session_state.seccion_activa == "📈 Utilidades":
                 str_app.subheader("📈 Utilidades por Galpón")

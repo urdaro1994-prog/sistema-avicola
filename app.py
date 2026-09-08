@@ -773,14 +773,10 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     return buffer
 
 def obtener_porcentaje_teorico_hyline(semana_vida):
-    """
-    Retorna el porcentaje de producción teórico estándar para una gallina Hy-Line Brown
-    según su semana de vida.
-    """
     if semana_vida < 18:
         return 0.0
     elif 22 <= semana_vida <= 50:
-        return 94.5  # Pico de producción óptimo sostenido
+        return 94.5
     elif semana_vida > 50:
         produccion = 94.5 - (semana_vida - 50) * 0.35
         return max(produccion, 50.0)
@@ -875,7 +871,6 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
     story.append(t_items)
     story.append(Spacer(1, 15))
 
-    # --- CÁLCULO DE PORCENTAJES DE PRODUCCIÓN AL FINAL DEL PDF ---
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT cantidad_aves FROM galpones WHERE nombre = %s", (galpon,))
@@ -957,7 +952,6 @@ if str_app.session_state.usuario_autenticado is None:
                 str_app.error("Contraseña de Invitado incorrecta.")
 
 else:
-    # --- ENCABEZADO ---
     col_logo, col_tit = str_app.columns([1, 3.5])
     with col_logo:
         if os.path.exists("LOGOASI.png"): str_app.image("LOGOASI.png", width=75)
@@ -975,7 +969,6 @@ else:
 
     str_app.markdown("---")
 
-    # --- LÓGICA DE NAVEGACIÓN PRINCIPAL ---
     if "sesion_principal" not in str_app.session_state:
         str_app.session_state.sesion_principal = None
 
@@ -991,7 +984,6 @@ else:
                 str_app.session_state.sesion_principal = "📝 Registro Diario"
                 str_app.rerun()
 
-        # Botón de reinicio global solo para Administrador
         if rol_actual == "Administrador":
             str_app.markdown("---")
             if "confirmar_reinicio" not in str_app.session_state:
@@ -1020,7 +1012,6 @@ else:
             str_app.session_state.seccion_activa = None
             str_app.rerun()
 
-    # --- CONTENIDO DE LAS SESIONES ---
     if str_app.session_state.sesion_principal == "📦 Stock y Ventas":
         
         if "seccion_activa" not in str_app.session_state or str_app.session_state.seccion_activa is None:
@@ -1402,7 +1393,6 @@ else:
         galpones_disp = ["Galpón 1", "Galpón 2", "Galpón 3"]
         galpon_seleccionado = str_app.selectbox("Seleccione el Galpón", galpones_disp, key="select_galpon_diario")
 
-        # Configuración inicial de edad del lote
         with str_app.expander(f"⚙️ Configurar Edad Inicial del Lote ({galpon_seleccionado})"):
             conn_c = get_connection()
             cur_c = conn_c.cursor()

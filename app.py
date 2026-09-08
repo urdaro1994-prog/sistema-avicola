@@ -1452,8 +1452,8 @@ else:
                     with str_app.form(f"form_reg_diario_{galpon_reg}"):
                         fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
                         mortalidad = str_app.number_input("Mortalidad del Día (Aves muertas)", min_value=0, value=0, step=1)
-                        conc_ing = str_app.number_input("Concentrado Ingresado (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%.1f")
-                        conc_cons = str_app.number_input("Concentrado Consumido (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%.1f")
+                        conc_ing = str_app.number_input("Concentrado Ingresado (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%g")
+                        conc_cons = str_app.number_input("Concentrado Consumido (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%g")
                         huevos = str_app.number_input("Huevos Recolectados (Opcional)", min_value=0, value=0, step=1)
                         obs = str_app.text_input("Observaciones / Novedades")
                         

@@ -173,6 +173,33 @@ def inicializar_tabla_gastos_varios():
     cur.close()
     conn.close()
 
+def inicializar_tablas_registro_diario():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS galpon_config (
+            galpon TEXT PRIMARY KEY,
+            edad_semanas INT DEFAULT 0,
+            edad_dias INT DEFAULT 0,
+            aves_iniciales INT DEFAULT 0
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS registros_diarios (
+            id SERIAL PRIMARY KEY,
+            fecha DATE,
+            galpon TEXT,
+            mortalidad INT DEFAULT 0,
+            concentrado_ingresado NUMERIC DEFAULT 0,
+            concentrado_consumido NUMERIC DEFAULT 0,
+            huevos_recolectados INT DEFAULT 0,
+            observaciones TEXT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def registrar_gasto(fecha, galpon, categoria, descripcion, valor):
     inicializar_tabla_gastos()
     conn = get_connection()
@@ -232,20 +259,30 @@ def eliminar_gasto_vario(gasto_id):
     conn.close()
 
 def reiniciar_sistema_completo():
+    inicializar_tabla_clientes()
+    inicializar_tablas_cartera()
+    inicializar_tabla_gastos()
+    inicializar_tabla_gastos_varios()
+    inicializar_tablas_registro_diario()
+    
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM abonos_cartera;")
-    cur.execute("DELETE FROM cartera;")
-    cur.execute("DELETE FROM remisiones;")
-    cur.execute("DELETE FROM clientes;")
-    cur.execute("DELETE FROM gastos;")
-    cur.execute("DELETE FROM gastos_varios;")
-    cur.execute("DELETE FROM registros_diarios;")
-    cur.execute("DELETE FROM galpon_config;")
-    cur.execute("""
-        UPDATE inventario SET 
-            yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
-    """)
+    
+    tablas_a_limpiar = ["abonos_cartera", "cartera", "remisiones", "clientes", "gastos", "gastos_varios", "registros_diarios", "galpon_config"]
+    for tabla in tablas_a_limpiar:
+        try:
+            cur.execute(f"DELETE FROM {tabla};")
+        except Exception:
+            conn.rollback()
+            
+    try:
+        cur.execute("""
+            UPDATE inventario SET 
+                yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
+        """)
+    except Exception:
+        conn.rollback()
+        
     conn.commit()
     cur.close()
     conn.close()
@@ -382,16 +419,6 @@ def registrar_abono(num_remision, monto_abono, comprobante_bytes=None, nombre_co
     cur.close()
     conn.close()
 
-def obtener_abonos_con_comprobante(num_remision):
-    inicializar_tablas_cartera()
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, fecha_abono, monto, comprobante, nombre_comprobante FROM abonos_cartera WHERE num_remision = %s ORDER BY fecha_abono DESC", (num_remision,))
-    filas = cur.fetchall()
-    cur.close()
-    conn.close()
-    return filas
-
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, fecha_remision, items_venta):
     inicializar_tablas_cartera()
     conn = get_connection()
@@ -443,96 +470,6 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
             total = EXCLUDED.total,
             saldo = EXCLUDED.saldo;
     """, (num_remision, cliente.strip().upper(), total_venta_acumulado, total_venta_acumulado))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def actualizar_remision_completa(num_remision, cliente, cedula, direccion, telefono, email, conductor, fecha_remision, df_viejos, items_nuevos):
-    inicializar_tablas_cartera()
-    conn = get_connection()
-    cur = conn.cursor()
-
-    for _, row in df_viejos.iterrows():
-        c_tipo = str(row.get('tipo_huevo', 'a')).lower()
-        c_cant = int(row.get('cantidad', 0))
-        g_bd = row.get('galpon', 'Galpón 1')
-        cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
-
-    cur.execute("""
-        SELECT column_name, is_generated, identity_generation 
-        FROM information_schema.columns 
-        WHERE table_name = 'remisiones';
-    """)
-    filas_cols = cur.fetchall()
-    columnas_totales = [col[0] for col in filas_cols]
-    columnas_validas = {c[0] for c in filas_cols if c[1] != 'ALWAYS' and c[2] != 'ALWAYS'}
-
-    col_filtro = "num_remision" if "num_remision" in columnas_totales else "id"
-    cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
-
-    nuevo_total_calc = 0.0
-    for item in items_nuevos:
-        clasif = item['Clasificación'].lower()
-        cant = int(item['Cantidad (Huevos)'])
-        subtotal = float(item['Subtotal ($)'])
-        precio_u = float(item['Precio Unitario ($)'])
-        galp_origen = item.get('Galpón', 'Galpón 1')
-        nuevo_total_calc += subtotal
-
-        datos_insert = {
-            "num_remision": num_remision, "fecha_emision": fecha_remision,
-            "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
-            "destino": direccion, "email": email, "conductor": conductor,
-            "tipo_huevo": clasif, "cantidad": cant,
-            "precio_unitario": precio_u, "total": subtotal, "galpon": galp_origen
-        }
-        
-        datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
-
-        if datos_reales:
-            cols = ", ".join(datos_reales.keys())
-            vals = tuple(datos_reales.values())
-            placeholders = ", ".join(["%s"] * len(datos_reales))
-            cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
-
-        cur.execute(f"UPDATE inventario SET {clasif} = {clasif} - %s WHERE galpon = %s", (cant, galp_origen))
-
-    cur.execute("SELECT COALESCE(SUM(monto), 0) FROM abonos_cartera WHERE num_remision = %s", (num_remision,))
-    total_abonos = float(cur.fetchone()[0])
-    nuevo_saldo = max(0.0, nuevo_total_calc - total_abonos)
-    nuevo_estado = 'PAGADA' if nuevo_saldo <= 0 else 'PENDIENTE'
-
-    cur.execute("""
-        INSERT INTO cartera (num_remision, cliente, total, saldo, estado)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (num_remision) DO UPDATE SET
-            cliente = EXCLUDED.cliente,
-            total = EXCLUDED.total,
-            saldo = EXCLUDED.saldo,
-            estado = EXCLUDED.estado;
-    """, (num_remision, cliente.strip().upper(), nuevo_total_calc, nuevo_saldo, nuevo_estado))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-def eliminar_remision_completa(num_remision, df_viejos):
-    conn = get_connection()
-    cur = conn.cursor()
-    for _, row in df_viejos.iterrows():
-        c_tipo = str(row.get('tipo_huevo', 'a')).lower()
-        c_cant = int(row.get('cantidad', 0))
-        g_bd = row.get('galpon', 'Galpón 1')
-        cur.execute(f"UPDATE inventario SET {c_tipo} = {c_tipo} + %s WHERE galpon = %s", (c_cant, g_bd))
-        
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'remisiones';")
-    cols_existentes = [r[0] for r in cur.fetchall()]
-    col_filtro = "num_remision" if "num_remision" in cols_existentes else "id"
-
-    cur.execute(f"DELETE FROM remisiones WHERE {col_filtro} = %s", (num_remision,))
-    cur.execute("DELETE FROM cartera WHERE num_remision = %s", (num_remision,))
-    cur.execute("DELETE FROM abonos_cartera WHERE num_remision = %s", (num_remision,))
 
     conn.commit()
     cur.close()
@@ -663,34 +600,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
     doc.build(story)
     buffer.seek(0)
     return buffer
-
-# --- NUEVAS FUNCIONES PARA REGISTRO DIARIO (EDAD, MORTALIDAD, CONCENTRADO) ---
-def inicializar_tablas_registro_diario():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS galpon_config (
-            galpon TEXT PRIMARY KEY,
-            edad_semanas INT DEFAULT 0,
-            edad_dias INT DEFAULT 0,
-            aves_iniciales INT DEFAULT 0
-        );
-    """)
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS registros_diarios (
-            id SERIAL PRIMARY KEY,
-            fecha DATE,
-            galpon TEXT,
-            mortalidad INT DEFAULT 0,
-            concentrado_ingresado NUMERIC DEFAULT 0,
-            concentrado_consumido NUMERIC DEFAULT 0,
-            huevos_recolectados INT DEFAULT 0,
-            observaciones TEXT
-        );
-    """)
-    conn.commit()
-    cur.close()
-    conn.close()
 
 def guardar_config_galpon(galpon, semanas, dias, aves):
     inicializar_tablas_registro_diario()
@@ -1279,7 +1188,6 @@ else:
             if not config:
                 str_app.info("Galpón sin configuración inicial.")
             else:
-                # Cálculos automáticos solicitados
                 dias_acumulados = len(df_reg)
                 total_dias_calc = config['edad_dias'] + dias_acumulados
                 semanas_extra = total_dias_calc // 7
@@ -1294,7 +1202,6 @@ else:
                 total_conc_cons = float(df_reg['concentrado_consumido'].sum()) if not df_reg.empty else 0.0
                 saldo_concentrado = total_conc_ing - total_conc_cons
 
-                # Tarjetas informativas
                 str_app.markdown(f"""
                     <div style="background-color: #1a3e63; color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
                         <p style="margin: 0; font-size: 16px; color: #f26822 !important;"><b>Edad Actual del Lote:</b> {edad_actual_str}</p>
@@ -1307,7 +1214,6 @@ else:
                 """, unsafe_allow_html=True)
 
                 if not df_reg.empty:
-                    # Botón de Descarga PDF
                     pdf_buf = generar_pdf_registro_diario(galpon_reg, config, df_reg, edad_actual_str, aves_actuales, saldo_concentrado)
                     str_app.download_button(
                         label=f"📄 Descargar Reporte PDF de {galpon_reg}",

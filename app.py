@@ -1582,7 +1582,7 @@ else:
                         str_app.markdown(f"#### 📊 Detalle por Galpón ({mes_u_nombre} {anio_u})")
                         str_app.dataframe(df_util_res, use_container_width=True, hide_index=True)
 
-            if str_app.session_state.sesion_principal == "📝 Registro Diario":
+if str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario de Postura, Mortalidad y Edad")
         
         galpon_reg_sel = str_app.selectbox("Seleccione el Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"], key="galp_reg_diario")

@@ -454,15 +454,21 @@ def cargar_remisiones():
     return df
 
 def obtener_siguiente_num_remision():
+    inicializar_tabla_remisiones()
+    conn = get_connection()
+    cur = conn.cursor()
     try:
-        response = supabase.table("remisiones").select("id").order("id", desc=True).limit(1).execute()
-        if response.data and len(response.data) > 0:
-            ultimo_num = response.data[0].get("id")
-            if ultimo_num is not None:
-                return max(int(ultimo_num) + 1, 192)
-        return 192
-    except Exception as e:
-        return 192
+        cur.execute("SELECT MAX(num_remision) FROM remisiones;")
+        res = cur.fetchone()
+        if res and res[0] is not None:
+            ultimo_num = int(res[0])
+            return max(ultimo_num + 1, 192)
+    except Exception:
+        pass
+    finally:
+        cur.close()
+        conn.close()
+    return 192
 
 def cargar_cartera():
     inicializar_tablas_cartera()

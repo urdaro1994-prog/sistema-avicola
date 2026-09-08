@@ -1495,10 +1495,10 @@ else:
         with tab_config:
             str_app.markdown("#### Configuración Inicial del Lote (Se ingresa una sola vez)")
             config_actual = cargar_config_galpon(galpon_reg)
-            
-            ini_sem = config_actual['edad_semanas'] if config_actual else 35
+        
+            ini_sem = config_actual['edad_semanas'] if config_actual else 0
             ini_dias = config_actual['edad_dias'] if config_actual else 0
-            ini_aves = config_actual['aves_iniciales'] if config_actual else 5000
+            ini_aves = config_actual['aves_iniciales'] if config_actual else 0
             
             with str_app.form(f"form_config_{galpon_reg}"):
                 c_sem = str_app.number_input("Edad Inicial (Semanas)", min_value=0, value=int(ini_sem), step=1)

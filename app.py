@@ -351,19 +351,25 @@ def reiniciar_sistema_completo():
     tablas_a_limpiar = ["abonos_cartera", "cartera", "remisiones", "clientes", "gastos", "gastos_varios", "registros_diarios", "galpon_config"]
     for tabla in tablas_a_limpiar:
         try:
-            cur.execute(f"DELETE FROM {tabla};")
+            cur.execute(f"TRUNCATE TABLE {tabla} RESTART IDENTITY CASCADE;")
+            conn.commit()
         except Exception:
             conn.rollback()
+            try:
+                cur.execute(f"DELETE FROM {tabla};")
+                conn.commit()
+            except Exception:
+                conn.rollback()
             
     try:
         cur.execute("""
             UPDATE inventario SET 
                 yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;
         """)
+        conn.commit()
     except Exception:
         conn.rollback()
         
-    conn.commit()
     cur.close()
     conn.close()
 

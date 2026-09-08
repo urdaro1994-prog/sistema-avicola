@@ -1188,6 +1188,53 @@ else:
                 str_app.dataframe(cargar_inventario(), use_container_width=True)
 
             elif str_app.session_state.seccion_activa == "📜 Historial":
+                str_app.subheader("📜 Historial de Remisiones")
+                df_h = cargar_remisiones()
+                if not df_h.empty:
+                    for num_sel in sorted(df_h['num_remision'].unique(), reverse=True):
+                        df_r = df_h[df_h['num_remision'] == num_sel]
+                        f_sel = df_r.iloc[0]
+                        cliente_nombre = f_sel.get('cliente', '')
+                        
+                        with str_app.expander(f"Remisión #{int(num_sel):06d} – {cliente_nombre}"):
+                            columnas_deseadas = ['tipo_huevo', 'cantidad', 'precio_unitario', 'total', 'galpon']
+                            columnas_validas = [col for col in columnas_deseadas if col in df_r.columns]
+                            
+                            if not df_r.empty and columnas_validas:
+                                str_app.dataframe(df_r[columnas_validas], use_container_width=True)
+                                
+                                cliente_datos = {
+                                    "nombre": cliente_nombre,
+                                    "cedula": f_sel.get('cedula_nit', ''),
+                                    "direccion": f_sel.get('destino', 'CHOACHI'),
+                                    "telefono": f_sel.get('telefono', ''),
+                                    "email": f_sel.get('email', '')
+                                }
+                                
+                                items_pdf = df_r.rename(columns={
+                                    'tipo_huevo': 'Clasificación',
+                                    'cantidad': 'Cantidad (Huevos)',
+                                    'precio_unitario': 'Precio Unitario ($)',
+                                    'total': 'Subtotal ($)'
+                                })
+                                
+                                total_factura = df_r['total'].sum()
+                                fecha_str = str(f_sel.get('fecha_emision', date.today()))
+                                conductor_val = f_sel.get('conductor', 'Ivan Herrera')
+                                
+                                pdf_buf = generar_pdf_remision(int(num_sel), fecha_str, conductor_val, cliente_datos, items_pdf, total_factura)
+                                
+                                str_app.download_button(
+                                    label=f"📄 Descargar PDF Remisión #{int(num_sel):06d}",
+                                    data=pdf_buf,
+                                    file_name=f"Remision_{int(num_sel):06d}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_hist_{num_sel}"
+                                )
+                            else:
+                                str_app.warning("No se encontraron registros o columnas válidas para esta remisión.")
+                else:
+                    str_app.info("No hay remisiones registradas.")
 
             elif str_app.session_state.seccion_activa == "📈 Utilidades":
                 str_app.subheader("📈 Utilidades por Galpón")

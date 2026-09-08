@@ -89,6 +89,16 @@ str_app.markdown(
 )
 
 # --- FUNCIONES DE BASE DE DATOS ---
+import psycopg2
+
+def get_connection():
+    return psycopg2.connect(
+        host=str_app.secrets["postgres"]["host"],
+        database=str_app.secrets["postgres"]["database"],
+        user=str_app.secrets["postgres"]["user"],
+        password=str_app.secrets["postgres"]["password"],
+        port=str_app.secrets["postgres"]["port"]
+    )
 def inicializar_tablas_diario():
     conn = get_connection()
     cur = conn.cursor()

@@ -104,13 +104,22 @@ def inicializar_tablas_diario():
         CREATE TABLE IF NOT EXISTS registro_diario (
             id SERIAL PRIMARY KEY,
             fecha DATE,
-            galpon TEXT,
-            semanas INT,
-            dias INT,
-            postura INT,
-            mortalidad INT
+            galpon TEXT
         );
     """)
+    columnas_requeridas = [
+        ("semanas", "INT DEFAULT 0"),
+        ("dias", "INT DEFAULT 0"),
+        ("postura", "INT DEFAULT 0"),
+        ("mortalidad", "INT DEFAULT 0"),
+        ("consumo_alimento", "FLOAT DEFAULT 0"),
+        ("entrada_alimento", "FLOAT DEFAULT 0")
+    ]
+    for col, tipo in columnas_requeridas:
+        try:
+            cur.execute(f"ALTER TABLE registro_diario ADD COLUMN IF NOT EXISTS {col} {tipo};")
+        except Exception:
+            conn.rollback()
     conn.commit()
     cur.close()
     conn.close()
@@ -141,14 +150,14 @@ def obtener_config_galpon(galpon):
     conn.close()
     return res
 
-def registrar_diario(fecha, galpon, semanas, dias, postura, mortalidad):
+def registrar_diario(fecha, galpon, semanas, dias, postura, mortalidad, consumo_alimento, entrada_alimento):
     inicializar_tablas_diario()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO registro_diario (fecha, galpon, semanas, dias, postura, mortalidad)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, (fecha, galpon, semanas, dias, postura, mortalidad))
+        INSERT INTO registro_diario (fecha, galpon, semanas, dias, postura, mortalidad, consumo_alimento, entrada_alimento)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    """, (fecha, galpon, semanas, dias, postura, mortalidad, consumo_alimento, entrada_alimento))
     conn.commit()
     cur.close()
     conn.close()
@@ -169,8 +178,6 @@ def eliminar_registro_diario(reg_id):
     conn.commit()
     cur.close()
     conn.close()
-def get_connection():
-    return psycopg2.connect(str_app.secrets["postgres"]["url"])
 
 def inicializar_tabla_clientes():
     conn = get_connection()
@@ -1583,7 +1590,7 @@ else:
                         str_app.dataframe(df_util_res, use_container_width=True, hide_index=True)
 
 if str_app.session_state.get("sesion_principal") == "📝 Registro Diario":
-        str_app.subheader("📝 Registro Diario de Postura, Mortalidad y Edad")
+        str_app.subheader("📝 Registro Diario de Postura, Mortalidad, Alimento y Edad")
         
         galpon_reg_sel = str_app.selectbox("Seleccione el Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"], key="galp_reg_diario")
         
@@ -1632,12 +1639,14 @@ if str_app.session_state.get("sesion_principal") == "📝 Registro Diario":
                     col_d1, col_d2 = str_app.columns(2)
                     with col_d1:
                         postura = str_app.number_input("Cantidad de Huevos Recolectados", min_value=0, step=1, value=0)
+                        consumo_alimento = str_app.number_input("Consumo de Alimento (Bultos)", min_value=0.0, step=0.1, value=0.0, format="%.1f")
                     with col_d2:
                         mortalidad = str_app.number_input("Mortalidad (Aves muertas)", min_value=0, step=1, value=0)
+                        entrada_alimento = str_app.number_input("Entrada de Alimento (Bultos)", min_value=0.0, step=0.1, value=0.0, format="%.1f")
                     
                     btn_guardar_reg = str_app.form_submit_button("💾 Guardar Registro Diario")
                     if btn_guardar_reg:
-                        registrar_diario(fecha_reg, galpon_reg_sel, calc_semanas, calc_dias, postura, mortalidad)
+                        registrar_diario(fecha_reg, galpon_reg_sel, calc_semanas, calc_dias, postura, mortalidad, consumo_alimento, entrada_alimento)
                         str_app.success(f"¡Registro diario guardado correctamente! Edad registrada: {calc_semanas} semanas y {calc_dias} días.")
                         str_app.rerun()
 
@@ -1658,8 +1667,15 @@ if str_app.session_state.get("sesion_principal") == "📝 Registro Diario":
                         r_di = row_d['dias']
                         r_post = row_d['postura']
                         r_mort = row_d['mortalidad']
+                        r_cons = row_d.get('consumo_alimento', 0)
+                        r_entr = row_d.get('entrada_alimento', 0)
                         
-                        with str_app.expander(f"📅 {r_fec} — {galpon_reg_sel} | Edad: {r_sem} sem, {r_di} días | Postura: {r_post:,} | Mortalidad: {r_mort}"):
+                        with str_app.expander(f"📅 {r_fec} — {galpon_reg_sel} | Edad: {r_sem} sem, {r_di} días | Postura: {r_post:,} | Consumo: {r_cons} bultos"):
+                            str_app.write(f"- **Postura:** {r_post:,} huevos")
+                            str_app.write(f"- **Mortalidad:** {r_mort} aves")
+                            str_app.write(f"- **Consumo de Alimento:** {r_cons} bultos")
+                            str_app.write(f"- **Entrada de Alimento:** {r_entr} bultos")
+                            
                             if rol_actual == "Administrador":
                                 if str_app.button(f"🗑️ Eliminar Registro #{r_id}", key=f"del_reg_{r_id}"):
                                     eliminar_registro_diario(r_id)

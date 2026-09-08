@@ -1332,7 +1332,7 @@ else:
                 str_app.subheader("📦 Stock Actual en Granja")
                 str_app.dataframe(cargar_inventario(), use_container_width=True)
 
-            elif str_app.session_state.seccion_activa == "📜 Historial":
+                elif str_app.session_state.seccion_activa == "📜 Historial":
                 str_app.subheader("📜 Historial de Remisiones")
                 df_hist = cargar_remisiones()
                 if not df_hist.empty:
@@ -1340,7 +1340,11 @@ else:
                         df_r = df_hist[df_hist['num_remision'] == num_sel]
                         f_s = df_r.iloc[0]
                         with str_app.expander(f"Remisión N° {int(num_sel):06d} — {f_s.get('cliente','')}"):
-                            str_app.dataframe(df_r[['tipo_huevo', 'cantidad', 'precio_unitario', 'total', 'galpon']], use_container_width=True)
+                            cols_disponibles = [c for c in ['tipo_huevo', 'cantidad', 'precio_unitario', 'total', 'galpon'] if c in df_r.columns]
+                            if cols_disponibles:
+                                str_app.dataframe(df_r[cols_disponibles], use_container_width=True)
+                            else:
+                                str_app.dataframe(df_r, use_container_width=True)
 
             elif str_app.session_state.seccion_activa == "📈 Utilidades":
                 str_app.subheader("📈 Utilidades del Mes")

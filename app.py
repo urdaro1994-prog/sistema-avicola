@@ -1194,7 +1194,7 @@ if str_app.session_state.sesion_principal == "📜 Registro Diario":
                             str_app.success(f"¡Registro diario guardado para {galpon_reg}! La edad y el stock de aves se han actualizado automáticamente.")
                             str_app.rerun()
 
-        with tab_historial:
+    with tab_historial:
             str_app.markdown(f"#### 📊 Resumen y Registros de {galpon_reg}")
             config = cargar_config_galpon(galpon_reg)
             df_reg = cargar_registros_diarios(galpon_reg)

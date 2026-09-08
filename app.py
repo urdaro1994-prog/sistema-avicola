@@ -89,6 +89,86 @@ str_app.markdown(
 )
 
 # --- FUNCIONES DE BASE DE DATOS ---
+def inicializar_tablas_diario():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS config_galpon (
+            galpon TEXT PRIMARY KEY,
+            edad_semanas INT,
+            edad_dias INT,
+            fecha_referencia DATE
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS registro_diario (
+            id SERIAL PRIMARY KEY,
+            fecha DATE,
+            galpon TEXT,
+            semanas INT,
+            dias INT,
+            postura INT,
+            mortalidad INT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def guardar_config_galpon(galpon, semanas, dias, fecha_ref):
+    inicializar_tablas_diario()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO config_galpon (galpon, edad_semanas, edad_dias, fecha_referencia)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (galpon) DO UPDATE SET
+            edad_semanas = EXCLUDED.edad_semanas,
+            edad_dias = EXCLUDED.edad_dias,
+            fecha_referencia = EXCLUDED.fecha_referencia;
+    """, (galpon, semanas, dias, fecha_ref))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def obtener_config_galpon(galpon):
+    inicializar_tablas_diario()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT edad_semanas, edad_dias, fecha_referencia FROM config_galpon WHERE galpon = %s", (galpon,))
+    res = cur.fetchone()
+    cur.close()
+    conn.close()
+    return res
+
+def registrar_diario(fecha, galpon, semanas, dias, postura, mortalidad):
+    inicializar_tablas_diario()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO registro_diario (fecha, galpon, semanas, dias, postura, mortalidad)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (fecha, galpon, semanas, dias, postura, mortalidad))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def cargar_registros_diarios():
+    inicializar_tablas_diario()
+    conn = get_connection()
+    df = pd.read_sql_query("SELECT * FROM registro_diario ORDER BY fecha DESC, id DESC", conn)
+    conn.close()
+    if not df.empty:
+        df['fecha'] = pd.to_datetime(df['fecha']).dt.date
+    return df
+
+def eliminar_registro_diario(reg_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM registro_diario WHERE id = %s", (reg_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
 def get_connection():
     return psycopg2.connect(str_app.secrets["postgres"]["url"])
 
@@ -1502,10 +1582,88 @@ else:
                         str_app.markdown(f"#### 📊 Detalle por Galpón ({mes_u_nombre} {anio_u})")
                         str_app.dataframe(df_util_res, use_container_width=True, hide_index=True)
 
-    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
-        str_app.subheader("📝 Registro Diario")
-        str_app.info("💡 Sección lista para alimentación de datos de postura y mortalidad próximamente.")
-        with str_app.form("diario"):
-            str_app.date_input("Fecha")
-            str_app.selectbox("Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"])
-            str_app.form_submit_button("Guardar")
+            elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+        str_app.subheader("📝 Registro Diario de Postura, Mortalidad y Edad")
+        
+        galpon_reg_sel = str_app.selectbox("Seleccione el Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"], key="galp_reg_diario")
+        
+        config_galp = obtener_config_galpon(galpon_reg_sel)
+        
+        tab_reg_diario, tab_conf_edad, tab_hist_diario = str_app.tabs(["➕ Nuevo Registro Diario", "⚙️ Configurar Edad Inicial", "📋 Historial Diario"])
+        
+        with tab_conf_edad:
+            str_app.markdown(f"### Configurar Edad Inicial para {galpon_reg_sel}")
+            str_app.caption("Define la edad de inicio una sola vez. A partir de esta fecha de referencia, el sistema sumará automáticamente los días en los nuevos registros.")
+            
+            s_inic = config_galp[0] if config_galp else 35
+            d_inic = config_galp[1] if config_galp else 0
+            f_ref_inic = config_galp[2] if config_galp and config_galp[2] else date.today()
+            
+            with str_app.form(f"form_config_edad_{galpon_reg_sel}"):
+                c_semana_ini = str_app.number_input("Semanas de Inicio", min_value=1, value=int(s_inic), step=1)
+                c_dias_ini = str_app.number_input("Días de Inicio (0 a 6)", min_value=0, max_value=6, value=int(d_inic), step=1)
+                c_fecha_ref = str_app.date_input("Fecha de Referencia Inicial", value=f_ref_inic)
+                
+                btn_guardar_conf = str_app.form_submit_button("💾 Guardar Configuración de Edad")
+                if btn_guardar_conf:
+                    guardar_config_galpon(galpon_reg_sel, c_semana_ini, c_dias_ini, c_fecha_ref)
+                    str_app.success(f"¡Configuración guardada para {galpon_reg_sel}! Edad inicial: {c_semana_ini} semanas y {c_dias_ini} días.")
+                    str_app.rerun()
+
+        with tab_reg_diario:
+            if not config_galp:
+                str_app.warning("⚠️ Primero debes configurar la edad inicial de este galpón en la pestaña '⚙️ Configurar Edad Inicial'.")
+            else:
+                s_base, d_base, f_ref = config_galp
+                str_app.markdown(f"**Galpón Activo:** {galpon_reg_sel} (Base: {s_base} sem, {d_base} días desde {f_ref})")
+                
+                with str_app.form(f"form_reg_diario_{galpon_reg_sel}"):
+                    fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
+                    
+                    delta = (fecha_reg - f_ref).days
+                    total_dias = (s_base * 7) + d_base + delta
+                    if total_dias < 0:
+                        total_dias = 0
+                    calc_semanas = total_dias // 7
+                    calc_dias = total_dias % 7
+                    
+                    str_app.info(f"📊 Edad calculada para la fecha {fecha_reg}: **{calc_semanas} semanas y {calc_dias} días**")
+                    
+                    col_d1, col_d2 = str_app.columns(2)
+                    with col_d1:
+                        postura = str_app.number_input("Cantidad de Huevos Recolectados", min_value=0, step=1, value=0)
+                    with col_d2:
+                        mortalidad = str_app.number_input("Mortalidad (Aves muertas)", min_value=0, step=1, value=0)
+                    
+                    btn_guardar_reg = str_app.form_submit_button("💾 Guardar Registro Diario")
+                    if btn_guardar_reg:
+                        registrar_diario(fecha_reg, galpon_reg_sel, calc_semanas, calc_dias, postura, mortalidad)
+                        str_app.success(f"¡Registro diario guardado correctamente! Edad registrada: {calc_semanas} semanas y {calc_dias} días.")
+                        str_app.rerun()
+
+        with tab_hist_diario:
+            str_app.markdown("### Historial de Registros Diarios")
+            df_hist_d = cargar_registros_diarios()
+            if df_hist_d.empty:
+                str_app.info("No hay registros diarios guardados.")
+            else:
+                df_hist_galp = df_hist_d[df_hist_d['galpon'] == galpon_reg_sel]
+                if df_hist_galp.empty:
+                    str_app.info(f"No hay registros para {galpon_reg_sel}.")
+                else:
+                    for _, row_d in df_hist_galp.iterrows():
+                        r_id = row_d['id']
+                        r_fec = str(row_d['fecha'])[:10]
+                        r_sem = row_d['semanas']
+                        r_di = row_d['dias']
+                        r_post = row_d['postura']
+                        r_mort = row_d['mortalidad']
+                        
+                        with str_app.expander(f"📅 {r_fec} — {galpon_reg_sel} | Edad: {r_sem} sem, {r_di} días | Postura: {r_post:,} | Mortalidad: {r_mort}"):
+                            if rol_actual == "Administrador":
+                                if str_app.button(f"🗑️ Eliminar Registro #{r_id}", key=f"del_reg_{r_id}"):
+                                    eliminar_registro_diario(r_id)
+                                    str_app.warning("Registro diario eliminado.")
+                                    str_app.rerun()
+                            else:
+                                str_app.caption("Modo Invitado: No se pueden eliminar registros.")

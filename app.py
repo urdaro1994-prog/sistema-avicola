@@ -1150,8 +1150,8 @@ if str_app.session_state.seccion_activa == "📊 Utilidades":
     str_app.subheader("📊 Utilidades por Galpón")
     str_app.info("Módulo activo de utilidades basado en ventas y gastos.")
 
-    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
-        str_app.subheader("📝 Módulo de Registro Diario (Edades, Mortalidad y Concentrado)")
+if str_app.session_state.sesion_principal == "📜 Registro Diario":
+    str_app.subheader("📜 Módulo de Registro Diario (Edades, Mortalidad y Concentrado)")
         
         galpon_reg = str_app.selectbox("Seleccione el Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"], key="galp_reg_sel")
         

@@ -1287,7 +1287,7 @@ else:
                         column_config={
                             "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"], required=True),
                             "Cantidad (Huevos)": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True),
-                            "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio Unitario ($)", min_value=0.0, step=10.0, format="$#,##0", required=True),
+                            "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio Unitario ($)", min_value=0, format="$%d", required=True),
                             "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=["Galpón 1", "Galpón 2", "Galpón 3"], required=True)
                         },
                         use_container_width=True

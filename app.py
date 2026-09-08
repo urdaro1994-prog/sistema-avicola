@@ -1173,7 +1173,7 @@ if str_app.session_state.sesion_principal == "📜 Registro Diario":
                     str_app.success(f"¡Configuración de {galpon_reg} guardada con éxito!")
                     str_app.rerun()
 
-        with tab_diario:
+    with tab_diario:
             if rol_actual == "Invitado":
                 str_app.warning("👀 Modo Invitado: No tienes permisos para registrar datos diarios.")
             else:

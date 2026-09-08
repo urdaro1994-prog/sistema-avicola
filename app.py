@@ -1146,7 +1146,7 @@ if not df_r.empty and columnas_validas:
 else:
     st.warning("No se encontraron registros o columnas válidas para esta remisión.")
 
-            elif str_app.session_state.seccion_activa == "📈 Utilidades":
+    elif str_app.session_state.seccion_activa == "📈 Utilidades":
                 str_app.subheader("📈 Utilidades por Galpón")
                 str_app.info("Módulo activo de utilidades basado en ventas y gastos.")
 

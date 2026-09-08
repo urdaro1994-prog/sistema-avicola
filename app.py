@@ -45,7 +45,7 @@ str_app.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS ---
+# --- ESTILOS CSS (MEJORA DE VISIBILIDAD EN CAMPOS Y BOTONES) ---
 str_app.markdown(
     """
     <style>
@@ -66,15 +66,25 @@ str_app.markdown(
         border: 1px solid #1a3e63;
     }
     
-    .stButton>button {
+    /* Estilo unificado para botones normales, de formulario y de descarga para máxima visibilidad */
+    .stButton>button, .stFormSubmitButton>button, .stDownloadButton>button {
         width: 100%; border-radius: 10px; height: 3.2em;
-        font-weight: 650; background-color: #f26822;
-        color: white; border: 2px solid #ffffff;
+        font-weight: 650; background-color: #f26822 !important;
+        color: white !important; border: 2px solid #ffffff !important;
         transition: all 0.2s ease-in-out;
     }
     
-    .stButton>button:hover {
-        background-color: #ffffff; color: #f26822; border-color: #f26822;
+    .stButton>button:hover, .stFormSubmitButton>button:hover, .stDownloadButton>button:hover {
+        background-color: #ffffff !important; color: #f26822 !important; border-color: #f26822 !important;
+    }
+
+    /* Corrección de visibilidad para campos de entrada, selectores y fechas */
+    .stTextInput input, .stNumberInput input, .stSelectbox select, .stDateInput input {
+        background-color: #ffffff !important;
+        color: #0f2942 !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        border: 1px solid #cbd5e1 !important;
     }
 
     h1, h2, h3, h4, p, label, .stMarkdown, span, .stSubheader {
@@ -1397,10 +1407,41 @@ else:
 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario y Control por Galpón")
-        str_app.caption("Selecciona el galpón para configurar la edad inicial del lote, registrar parámetros productivos y generar tu reporte acumulado en PDF:")
+        str_app.caption("Selecciona el galpón para configurar la edad inicial del lote, registrar parámetros productivos y ver el estado en vivo:")
 
         galpones_disp = ["Galpón 1", "Galpón 2", "Galpón 3"]
         galpon_seleccionado = str_app.selectbox("Seleccione el Galpón", galpones_disp, key="select_galpon_diario")
+
+        # --- PANEL DE MÉTRICAS EN VIVO: Aves, Alimento en Bultos y % de Producción ---
+        conn_m = get_connection()
+        cur_m = conn_m.cursor()
+        cur_m.execute("SELECT cantidad_aves FROM galpones WHERE nombre = %s", (galpon_seleccionado,))
+        res_av_m = cur_m.fetchone()
+        aves_actuales = res_av_m[0] if res_av_m else 0
+
+        df_reg_m = cargar_registro_diario(galpon_seleccionado)
+        tot_ing_m = df_reg_m['ingreso_alimento'].astype(float).sum() if not df_reg_m.empty else 0.0
+        tot_con_m = df_reg_m['consumo_alimento'].astype(float).sum() if not df_reg_m.empty else 0.0
+        alimento_restante_kg = max(0.0, tot_ing_m - tot_con_m)
+        bultos_restantes = alimento_restante_kg / 40.0  # Asumiendo bulto estándar de 40 kg
+
+        tot_prod_m = df_reg_m['produccion'].astype(int).sum() if not df_reg_m.empty else 0
+        tot_mor_m = df_reg_m['mortalidad'].astype(int).sum() if not df_reg_m.empty else 0
+        dias_reg_m = len(df_reg_m)
+        aves_prom_m = max(1, aves_actuales + (tot_mor_m / 2))
+        porcentaje_prod_real_m = (tot_prod_m / (aves_prom_m * dias_reg_m)) * 100 if dias_reg_m > 0 else 0.0
+        cur_m.close()
+        conn_m.close()
+
+        str_app.markdown(f"""
+            <div style="background-color: #1a3e63; color: white; padding: 14px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #2c5282;">
+                <p style="margin: 0; font-size: 15px; color: #f26822 !important;"><b>📊 Estado Actual - {galpon_seleccionado}:</b></p>
+                <hr style="border-color: #2c5282; margin: 6px 0;">
+                <p style="margin: 0; font-size: 14px;">🐔 Aves Vivas Actuales: <b>{aves_actuales:,}</b></p>
+                <p style="margin: 0; font-size: 14px;">🌾 Alimento Restante: <b>{alimento_restante_kg:,.1f} kg</b> (~<b>{bultos_restantes:,.1f} bultos</b> de 40kg)</p>
+                <p style="margin: 0; font-size: 14px;">📈 % de Producción Acumulado: <b>{porcentaje_prod_real_m:.2f}%</b></p>
+            </div>
+        """, unsafe_allow_html=True)
 
         # Configuración inicial de edad del lote
         with str_app.expander(f"⚙️ Configurar Edad Inicial del Lote ({galpon_seleccionado})"):
@@ -1470,14 +1511,6 @@ else:
                 tot_con = df_registros_galp['consumo_alimento'].astype(float).sum()
                 tot_mor = df_registros_galp['mortalidad'].astype(int).sum()
                 tot_prod = df_registros_galp['produccion'].astype(int).sum()
-
-                str_app.markdown(f"""
-                    <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
-                        <p style="margin: 0; font-size: 15px; color: #f26822 !important;"><b>Acumulados Totales ({galpon_seleccionado}):</b></p>
-                        <p style="margin: 0; font-size: 14px;">📥 Ingreso Alimento: <b>{tot_ing:,.1f} kg</b> | 🍽️ Consumo Alimento: <b>{tot_con:,.1f} kg</b></p>
-                        <p style="margin: 0; font-size: 14px;">⚠️ Mortalidad: <b>{tot_mor:,} aves</b> | 🥚 Producción Total: <b>{tot_prod:,}</b></p>
-                    </div>
-                """, unsafe_allow_html=True)
 
                 pdf_acum_buf = generar_pdf_acumulado_galpon(galpon_seleccionado, df_registros_galp)
                 str_app.download_button(

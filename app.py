@@ -1206,7 +1206,62 @@ else:
 
             elif str_app.session_state.seccion_activa == "📈 Utilidades":
                 str_app.subheader("📈 Utilidades por Galpón")
-                str_app.info("Módulo activo de utilidades basado en ventas y gastos.")
+                str_app.caption("Análisis financiero de ingresos por ventas, gastos directos y utilidad neta por galpón.")
+                
+                df_rem = cargar_remisiones()
+                df_gas = cargar_gastos()
+                
+                if df_rem.empty and df_gas.empty:
+                    str_app.info("No hay datos suficientes de ventas o gastos para calcular utilidades.")
+                else:
+                    galpones = ["Galpón 1", "Galpón 2", "Galpón 3"]
+                    resumen_utilidades = []
+                    
+                    for g in galpones:
+                        ingresos = 0.0
+                        if not df_rem.empty and 'galpon' in df_rem.columns and 'total' in df_rem.columns:
+                            ingresos = float(df_rem[df_rem['galpon'] == g]['total'].sum())
+                        
+                        gastos = 0.0
+                        if not df_gas.empty and 'galpon' in df_gas.columns and 'valor' in df_gas.columns:
+                            gastos = float(df_gas[df_gas['galpon'] == g]['valor'].sum())
+                        
+                        utilidad = ingresos - gastos
+                        resumen_utilidades.append({
+                            "Galpón": g,
+                            "Ingresos ($)": ingresos,
+                            "Gastos ($)": gastos,
+                            "Utilidad ($)": utilidad
+                        })
+                    
+                    gastos_generales = 0.0
+                    if not df_gas.empty and 'galpon' in df_gas.columns and 'valor' in df_gas.columns:
+                        gastos_generales = float(df_gas[df_gas['galpon'] == "General / Granja"]['valor'].sum())
+                    
+                    df_util = pd.DataFrame(resumen_utilidades)
+                    
+                    total_ingresos = df_util["Ingresos ($)"].sum()
+                    total_gastos_galpones = df_util["Gastos ($)"].sum()
+                    total_gastos_gral = gastos_generales
+                    utilidad_neta_total = total_ingresos - (total_gastos_galpones + total_gastos_gral)
+                    
+                    col_u1, col_u2, col_u3 = str_app.columns(3)
+                    col_u1.metric("Total Ingresos", f"${total_ingresos:,.0f}".replace(",", "."))
+                    col_u2.metric("Total Gastos", f"${(total_gastos_galpones + total_gastos_gral):,.0f}".replace(",", "."))
+                    col_u3.metric("Utilidad Neta", f"${utilidad_neta_total:,.0f}".replace(",", "."))
+                    
+                    str_app.markdown("---")
+                    str_app.markdown("#### 📋 Detalle Financiero por Galpón")
+                    
+                    df_mostrar = df_util.copy()
+                    df_mostrar["Ingresos ($)"] = df_mostrar["Ingresos ($)"].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
+                    df_mostrar["Gastos ($)"] = df_mostrar["Gastos ($)"].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
+                    df_mostrar["Utilidad ($)"] = df_mostrar["Utilidad ($)"].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
+                    
+                    str_app.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+                    
+                    if gastos_generales > 0:
+                        str_app.info(f"💡 Gastos Generales / Granja no asignados a un galpón específico: $ {gastos_generales:,.0f}".replace(",", "."))
 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📜 Módulo de Registro Diario (Edades, Mortalidad y Concentrado)")

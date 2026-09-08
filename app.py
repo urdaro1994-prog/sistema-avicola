@@ -1254,7 +1254,7 @@ else:
                         with str_app.form("form_cli"):
                             nom = str_app.text_input("Nombre *")
                             ced = str_app.text_input("Cédula/NIT")
-                            dir_ = str_app.text_input("Dirección", value="CHOACHI")
+                            dir_ = str_app.text_input("Dirección")
                             tel = str_app.text_input("Teléfono")
                             em = str_app.text_input("Email")
                             if str_app.form_submit_button("Guardar"):

@@ -1089,7 +1089,7 @@ else:
                     galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", ["Galpón 1", "Galpón 2", "Galpón 3"])
                     
                     opciones_clasif = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
-                    df_base_entrada = pd.DataFrame([{"Clasificación": "a", "Cantidad": 1000}])
+                    df_base_entrada = pd.DataFrame([{"Clasificación": "a", "Cantidad": 0}])
                     
                     df_entrada_editado = str_app.data_editor(
                         df_base_entrada,

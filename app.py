@@ -454,9 +454,9 @@ def cargar_remisiones():
     return df
 
 def obtener_siguiente_num_remision():
-    response = supabase.table("remisiones").select("num_remision").order("num_remision", desc=True).limit(1).execute()
-    if response.data and response.data[0].get("num_remision") is not None:
-        ultimo_num = int(response.data[0]["num_remision"])
+    response = supabase.table("remisiones").select("id").order("id", desc=True).limit(1).execute()
+    if response.data and response.data[0].get("id") is not None:
+        ultimo_num = int(response.data[0]["id"])
         return max(ultimo_num + 1, 192)
     return 192
 

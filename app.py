@@ -1137,7 +1137,7 @@ else:
                     for num_sel in sorted(df_h['num_remision'].unique(), reverse=True):
                         df_r = df_h[df_h['num_remision'] == num_sel]
                         f_sel = df_r.iloc[0]
-                       with str_app.expander(f"Remisión #{int(num_sel):06d} – {f_sel.get('cliente','')}"):
+                        with str_app.expander(f"Remisión #{int(num_sel):06d} – {f_sel.get('cliente','')}"):
     columnas_deseadas = ['tipo_huevo', 'cantidad']
     columnas_validas = [col for col in columnas_deseadas if col in df_r.columns]
 

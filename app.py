@@ -1138,7 +1138,13 @@ else:
                         df_r = df_h[df_h['num_remision'] == num_sel]
                         f_sel = df_r.iloc[0]
                         with str_app.expander(f"Remisión #{int(num_sel):06d} — {f_sel.get('cliente','')}"):
-                            str_app.dataframe(df_r[['tipo_huevo', 'cantidad', 'precio_unitario', 'total', 'galpon']], use_container_width=True, hide_index=True)
+                            columnas_deseadas = ['tipo_huevo', 'cantidad']  # Agrega aquí las demás columnas que estabas seleccionando
+columnas_validas = [col for col in columnas_deseadas if col in df_r.columns]
+
+if not df_r.empty and columnas_validas:
+    st.dataframe(df_r[columnas_validas])
+else:
+    st.warning("No se encontraron registros o columnas válidas para esta remisión.")
 
             elif str_app.session_state.seccion_activa == "📈 Utilidades":
                 str_app.subheader("📈 Utilidades por Galpón")

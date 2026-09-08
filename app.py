@@ -982,6 +982,7 @@ else:
                                     "Cantidad": int(r["Cantidad"])
                                 })
                             registrar_entrada_inventario(galpon_destino, lista_items_entrada)
+                            str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                             str_app.success(f"¡Entrada de inventario registrada correctamente en {galpon_destino}!")
 
             elif str_app.session_state.seccion_activa == "⚖️ Inventario Fisico":
@@ -1016,6 +1017,7 @@ else:
                     if str_app.button("💾 Guardar y Ajustar Inventario Físico"):
                         nuevo_stock_dict = {r["Clasificación"]: int(r["Conteo Físico Real"]) for _, r in df_fisico_editado.iterrows()}
                         actualizar_inventario_fisico(galpon_fisico, nuevo_stock_dict)
+                        str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                         str_app.success(f"¡Inventario físico de {galpon_fisico} aplicado con éxito!")
                         str_app.rerun()
 
@@ -1036,6 +1038,7 @@ else:
                                 str_app.error("El valor del gasto debe ser mayor a 0.")
                             else:
                                 registrar_gasto(c_fecha_g, c_galpon_g, c_categoria_g, c_desc_g, c_valor_g)
+                                str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                                 str_app.success("¡Gasto registrado con éxito!")
                                 str_app.rerun()
 
@@ -1073,6 +1076,7 @@ else:
                         c_val_gv = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
                         if str_app.form_submit_button("💾 Guardar Gasto Vario"):
                             registrar_gasto_vario(c_fecha_gv, c_cat_gv, c_desc_gv, c_val_gv)
+                            str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                             str_app.success("¡Guardado!")
                             str_app.rerun()
 
@@ -1100,6 +1104,7 @@ else:
                             if str_app.form_submit_button("Guardar"):
                                 if nom.strip():
                                     guardar_cliente(nom, ced, dir_, tel, em)
+                                    str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                                     str_app.success("Guardado!")
                                     str_app.rerun()
                     with tab_l:
@@ -1155,6 +1160,7 @@ else:
                             
                             items_dict = [{'Clasificación': r['Clasificación'], 'Cantidad (Huevos)': r['Cantidad (Huevos)'], 'Precio Unitario ($)': r['Precio Unitario ($)'], 'Subtotal ($)': r['Subtotal ($)'], 'Galpón': r['Galpón Origen']} for _, r in items_validos.iterrows()]
                             registrar_venta_multiple(c_nom, c_ced, c_dir, c_tel, c_em, c_cond, num_rem_act, fecha_rem, items_dict)
+                            str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                             str_app.success("¡Remisión guardada con éxito!")
 
                             cliente_datos = {"nombre": c_nom, "cedula": c_ced, "direccion": c_dir, "telefono": c_tel, "email": c_em}
@@ -1180,6 +1186,7 @@ else:
                                     arch = str_app.file_uploader("Comprobante", type=["png","jpg","jpeg","pdf"], key=f"f_{row['num_remision']}")
                                     if str_app.form_submit_button("Registrar Abono"):
                                         registrar_abono(int(row['num_remision']), monto, arch.read() if arch else None, arch.name if arch else None)
+                                        str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                                         str_app.success("Abono registrado!")
                                         str_app.rerun()
 
@@ -1315,6 +1322,7 @@ else:
                 
                 if str_app.form_submit_button("💾 Guardar Configuración del Galpón"):
                     guardar_config_galpon(galpon_reg, c_sem, c_dias, c_aves)
+                    str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                     str_app.success(f"¡Configuración de {galpon_reg} guardada con éxito!")
                     str_app.rerun()
 
@@ -1336,6 +1344,7 @@ else:
                         
                         if str_app.form_submit_button("📥 Guardar Registro Diario"):
                             registrar_dia_galpon(fecha_reg, galpon_reg, int(mortalidad), float(conc_ing), float(conc_cons), int(huevos), obs)
+                            str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                             str_app.success(f"¡Registro diario guardado para {galpon_reg}! La edad y el stock de aves se han actualizado automáticamente.")
                             str_app.rerun()
 

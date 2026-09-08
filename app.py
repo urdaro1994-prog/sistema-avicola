@@ -45,7 +45,7 @@ str_app.markdown(f"""
     </script>
 """, unsafe_allow_html=True)
 
-# --- ESTILOS CSS (MEJORA DE VISIBILIDAD EN CAMPOS Y BOTONES) ---
+# --- ESTILOS CSS ---
 str_app.markdown(
     """
     <style>
@@ -66,25 +66,15 @@ str_app.markdown(
         border: 1px solid #1a3e63;
     }
     
-    /* Estilo unificado para botones normales, de formulario y de descarga para máxima visibilidad */
-    .stButton>button, .stFormSubmitButton>button, .stDownloadButton>button {
+    .stButton>button {
         width: 100%; border-radius: 10px; height: 3.2em;
-        font-weight: 650; background-color: #f26822 !important;
-        color: white !important; border: 2px solid #ffffff !important;
+        font-weight: 650; background-color: #f26822;
+        color: white; border: 2px solid #ffffff;
         transition: all 0.2s ease-in-out;
     }
     
-    .stButton>button:hover, .stFormSubmitButton>button:hover, .stDownloadButton>button:hover {
-        background-color: #ffffff !important; color: #f26822 !important; border-color: #f26822 !important;
-    }
-
-    /* Corrección de visibilidad para campos de entrada, selectores y fechas */
-    .stTextInput input, .stNumberInput input, .stSelectbox select, .stDateInput input {
-        background-color: #ffffff !important;
-        color: #0f2942 !important;
-        font-weight: 600 !important;
-        border-radius: 8px !important;
-        border: 1px solid #cbd5e1 !important;
+    .stButton>button:hover {
+        background-color: #ffffff; color: #f26822; border-color: #f26822;
     }
 
     h1, h2, h3, h4, p, label, .stMarkdown, span, .stSubheader {
@@ -291,7 +281,7 @@ def inicializar_tabla_registro_diario():
     cur.close()
     conn.close()
 
-# Asegurar creación inicial de todas las tablas requeridas
+# Asegurar creación inicial de todas las tablas requeridas[cite: 3]
 inicializar_tabla_galpones()
 inicializar_tabla_inventario()
 inicializar_tabla_remisiones()
@@ -785,12 +775,12 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 def obtener_porcentaje_teorico_hyline(semana_vida):
     """
     Retorna el porcentaje de producción teórico estándar para una gallina Hy-Line Brown
-    según su semana de vida.
+    según su semana de vida.[cite: 3]
     """
     if semana_vida < 18:
         return 0.0
     elif 22 <= semana_vida <= 50:
-        return 94.5  # Pico de producción óptimo sostenido
+        return 94.5  # Pico de producción óptimo sostenido[cite: 3]
     elif semana_vida > 50:
         produccion = 94.5 - (semana_vida - 50) * 0.35
         return max(produccion, 50.0)
@@ -817,7 +807,7 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
     header_data = [
         [
             img_logo,
-            Paragraph("<b>AGROAVICOLA SANTA ISABEL</b><br/><font size=7>NIT. 901.786.799-7<br/>Reporte Acumulado - Registro Diario</font>", style_normal),
+            Paragraph("<b>AGROAVICOLA SANTA ISABEL</b><br/><font size=7>NIT. 901.786.799-7<br/>Reporte Acumulado - Registro Diario (Bultos de 40kg)</font>", style_normal),
             Paragraph(f"<b>Galpón:</b><br/><font size=11 color='#f26822'><b>{galpon}</b></font>", style_right)
         ]
     ]
@@ -832,12 +822,13 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
     table_data = [[
         Paragraph("Fecha", style_th_left),
         Paragraph("Edad", style_th),
-        Paragraph("Alim. (kg)", style_th_right),
+        Paragraph("Alim. (Bultos)", style_th_right),
+        Paragraph("Alim. (Kg)", style_th_right),
         Paragraph("Mort.", style_th_right),
         Paragraph("Prod. Total", style_th_right)
     ]]
     
-    tot_con = 0.0
+    tot_bultos = 0.0
     tot_mortalidad = 0
     tot_produccion = 0
 
@@ -847,31 +838,35 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
         edad_str = f"{sem} sem, {dias} d"
         
         fec_str = str(fec)
-        con = float(fila.get('consumo_alimento', 0))
+        bultos = float(fila.get('consumo_alimento', 0))
+        kg_totales = bultos * 40.0
         mor = int(fila.get('mortalidad', 0))
         prod = int(fila.get('produccion', 0))
         
-        tot_con += con
+        tot_bultos += bultos
         tot_mortalidad += mor
         tot_produccion += prod
 
         table_data.append([
             Paragraph(fec_str, style_normal),
             Paragraph(edad_str, style_normal),
-            Paragraph(f"{con:,.1f}".replace(",", "."), style_right),
+            Paragraph(f"{bultos:,.2f}".replace(",", "."), style_right),
+            Paragraph(f"{kg_totales:,.1f}".replace(",", "."), style_right),
             Paragraph(f"{mor:,}".replace(",", "."), style_right),
             Paragraph(f"{prod:,}".replace(",", "."), style_right)
         ])
 
+    tot_kg_totales = tot_bultos * 40.0
     table_data.append([
         Paragraph("<b>TOTAL</b>", style_bold),
         Paragraph("-", style_bold),
-        Paragraph(f"<b>{tot_con:,.1f}</b>".replace(",", "."), style_right_bold),
+        Paragraph(f"<b>{tot_bultos:,.2f}</b>".replace(",", "."), style_right_bold),
+        Paragraph(f"<b>{tot_kg_totales:,.1f}</b>".replace(",", "."), style_right_bold),
         Paragraph(f"<b>{tot_mortalidad:,}</b>".replace(",", "."), style_right_bold),
         Paragraph(f"<b>{tot_produccion:,}</b>".replace(",", "."), style_right_bold)
     ])
 
-    t_items = Table(table_data, colWidths=[90, 80, 110, 100, 154])
+    t_items = Table(table_data, colWidths=[80, 70, 95, 95, 80, 120])
     t_items.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#0f2942")),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -885,7 +880,7 @@ def generar_pdf_acumulado_galpon(galpon, df_registros):
     story.append(t_items)
     story.append(Spacer(1, 15))
 
-    # --- CÁLCULO DE PORCENTAJES DE PRODUCCIÓN AL FINAL DEL PDF ---
+    # --- CÁLCULO DE PORCENTAJES DE PRODUCCIÓN AL FINAL DEL PDF ---[cite: 3]
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT cantidad_aves FROM galpones WHERE nombre = %s", (galpon,))
@@ -1001,7 +996,7 @@ else:
                 str_app.session_state.sesion_principal = "📝 Registro Diario"
                 str_app.rerun()
 
-        # Botón de reinicio global solo para Administrador
+        # Botón de reinicio global solo para Administrador[cite: 3]
         if rol_actual == "Administrador":
             str_app.markdown("---")
             if "confirmar_reinicio" not in str_app.session_state:
@@ -1407,41 +1402,10 @@ else:
 
     elif str_app.session_state.sesion_principal == "📝 Registro Diario":
         str_app.subheader("📝 Registro Diario y Control por Galpón")
-        str_app.caption("Selecciona el galpón para configurar la edad inicial del lote, registrar parámetros productivos y ver el estado en vivo:")
+        str_app.caption("Selecciona el galpón para configurar la edad inicial del lote, registrar parámetros productivos y generar tu reporte acumulado en PDF:")
 
         galpones_disp = ["Galpón 1", "Galpón 2", "Galpón 3"]
         galpon_seleccionado = str_app.selectbox("Seleccione el Galpón", galpones_disp, key="select_galpon_diario")
-
-        # --- PANEL DE MÉTRICAS EN VIVO: Aves, Alimento en Bultos y % de Producción ---
-        conn_m = get_connection()
-        cur_m = conn_m.cursor()
-        cur_m.execute("SELECT cantidad_aves FROM galpones WHERE nombre = %s", (galpon_seleccionado,))
-        res_av_m = cur_m.fetchone()
-        aves_actuales = res_av_m[0] if res_av_m else 0
-
-        df_reg_m = cargar_registro_diario(galpon_seleccionado)
-        tot_ing_m = df_reg_m['ingreso_alimento'].astype(float).sum() if not df_reg_m.empty else 0.0
-        tot_con_m = df_reg_m['consumo_alimento'].astype(float).sum() if not df_reg_m.empty else 0.0
-        alimento_restante_kg = max(0.0, tot_ing_m - tot_con_m)
-        bultos_restantes = alimento_restante_kg / 40.0  # Asumiendo bulto estándar de 40 kg
-
-        tot_prod_m = df_reg_m['produccion'].astype(int).sum() if not df_reg_m.empty else 0
-        tot_mor_m = df_reg_m['mortalidad'].astype(int).sum() if not df_reg_m.empty else 0
-        dias_reg_m = len(df_reg_m)
-        aves_prom_m = max(1, aves_actuales + (tot_mor_m / 2))
-        porcentaje_prod_real_m = (tot_prod_m / (aves_prom_m * dias_reg_m)) * 100 if dias_reg_m > 0 else 0.0
-        cur_m.close()
-        conn_m.close()
-
-        str_app.markdown(f"""
-            <div style="background-color: #1a3e63; color: white; padding: 14px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #2c5282;">
-                <p style="margin: 0; font-size: 15px; color: #f26822 !important;"><b>📊 Estado Actual - {galpon_seleccionado}:</b></p>
-                <hr style="border-color: #2c5282; margin: 6px 0;">
-                <p style="margin: 0; font-size: 14px;">🐔 Aves Vivas Actuales: <b>{aves_actuales:,}</b></p>
-                <p style="margin: 0; font-size: 14px;">🌾 Alimento Restante: <b>{alimento_restante_kg:,.1f} kg</b> (~<b>{bultos_restantes:,.1f} bultos</b> de 40kg)</p>
-                <p style="margin: 0; font-size: 14px;">📈 % de Producción Acumulado: <b>{porcentaje_prod_real_m:.2f}%</b></p>
-            </div>
-        """, unsafe_allow_html=True)
 
         # Configuración inicial de edad del lote
         with str_app.expander(f"⚙️ Configurar Edad Inicial del Lote ({galpon_seleccionado})"):
@@ -1484,9 +1448,11 @@ else:
 
                     c_d1, c_d2 = str_app.columns(2)
                     with c_d1:
-                        ingreso_alim = str_app.number_input("Ingreso Alimento (kg)", min_value=0.0, step=1.0, format="%.1f")
+                        ingreso_alim = str_app.number_input("Ingreso Alimento (Bultos de 40 kg)", min_value=0.0, step=0.25, format="%.2f")
                     with c_d2:
-                        consumo_alim = str_app.number_input("Consumo Alimento (kg)", min_value=0.0, step=1.0, format="%.1f")
+                        consumo_alim = str_app.number_input("Consumo Alimento (Bultos de 40 kg)", min_value=0.0, step=0.25, format="%.2f")
+
+                    str_app.caption(f"Equivalente en peso: Ingreso = {ingreso_alim * 40:.1f} kg | Consumo = {consumo_alim * 40:.1f} kg")
 
                     mortalidad_val = str_app.number_input("Mortalidad (Aves)", min_value=0, step=1)
 
@@ -1512,6 +1478,18 @@ else:
                 tot_mor = df_registros_galp['mortalidad'].astype(int).sum()
                 tot_prod = df_registros_galp['produccion'].astype(int).sum()
 
+                tot_ing_kg = tot_ing * 40.0
+                tot_con_kg = tot_con * 40.0
+
+                str_app.markdown(f"""
+                    <div style="background-color: #1a3e63; color: white; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
+                        <p style="margin: 0; font-size: 15px; color: #f26822 !important;"><b>Acumulados Totales ({galpon_seleccionado}):</b></p>
+                        <p style="margin: 0; font-size: 14px;">📥 Ingreso Alimento: <b>{tot_ing:,.2f} bultos ({tot_ing_kg:,.1f} kg)</b></p>
+                        <p style="margin: 0; font-size: 14px;">🍽️ Consumo Alimento: <b>{tot_con:,.2f} bultos ({tot_con_kg:,.1f} kg)</b></p>
+                        <p style="margin: 0; font-size: 14px;">⚠️ Mortalidad: <b>{tot_mor:,} aves</b> | 🥚 Producción Total: <b>{tot_prod:,}</b></p>
+                    </div>
+                """, unsafe_allow_html=True)
+
                 pdf_acum_buf = generar_pdf_acumulado_galpon(galpon_seleccionado, df_registros_galp)
                 str_app.download_button(
                     label=f"📄 Descargar Reporte Acumulado PDF ({galpon_seleccionado})",
@@ -1533,9 +1511,9 @@ else:
                     rd_mor = int(row_rd['mortalidad'])
                     rd_prod = int(row_rd['produccion'])
 
-                    with str_app.expander(f"📅 {rd_fecha} ({sem_r} sem, {dias_r} d) — Prod: {rd_prod} | Cons: {rd_con}kg | Mort: {rd_mor}"):
+                    with str_app.expander(f"📅 {rd_fecha} ({sem_r} sem, {dias_r} d) — Prod: {rd_prod} | Cons: {rd_con:.2f} bultos | Mort: {rd_mor}"):
                         str_app.write(f"**Edad:** {sem_r} semanas y {dias_r} día(s)")
-                        str_app.write(f"**Ingreso Alimento:** {rd_ing}kg | **Consumo Alimento:** {rd_con}kg")
+                        str_app.write(f"**Ingreso Alimento:** {rd_ing:.2f} bultos ({rd_ing * 40:.1f} kg) | **Consumo Alimento:** {rd_con:.2f} bultos ({rd_con * 40:.1f} kg)")
                         str_app.write(f"**Producción Total:** {rd_prod}")
                         if rol_actual == "Administrador":
                             if str_app.button(f"🗑️ Eliminar Registro ID {rd_id}", key=f"del_rd_{rd_id}"):

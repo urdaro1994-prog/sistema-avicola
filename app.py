@@ -1155,7 +1155,7 @@ if str_app.session_state.sesion_principal == "📜 Registro Diario":
     galpon_reg = str_app.selectbox("Seleccione el Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"], key="galp_reg_sel")
     tab_config, tab_diario, tab_historial = str_app.tabs(["⚙️ Configuración Inicial", "✍️ Registrar Día", "📊 Historial y PDF"])
         
-        with tab_config:
+            with tab_config:
             str_app.markdown("#### Configuración Inicial del Lote (Se ingresa una sola vez)")
             config_actual = cargar_config_galpon(galpon_reg)
             

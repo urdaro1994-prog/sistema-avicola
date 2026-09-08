@@ -69,16 +69,30 @@ str_app.markdown(
     .stButton>button {
         width: 100%; border-radius: 10px; height: 3.2em;
         font-weight: 650; background-color: #f26822;
-        color: white; border: 2px solid #ffffff;
+        color: white !important; border: 2px solid #ffffff;
         transition: all 0.2s ease-in-out;
     }
     
+    .stButton>button p {
+        color: white !important;
+    }
+    
     .stButton>button:hover {
-        background-color: #ffffff; color: #f26822; border-color: #f26822;
+        background-color: #ffffff !important; 
+        border-color: #f26822;
     }
 
-    h1, h2, h3, h4, p, label, .stMarkdown, span, .stSubheader {
+    .stButton>button:hover p {
+        color: #f26822 !important;
+    }
+
+    h1, h2, h3, h4, p, .stMarkdown, .stSubheader {
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        color: #ffffff !important;
+    }
+    
+    /* Etiquetas de los campos de entrada legibles */
+    .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label, .stFileUploader label, .stFileUploader div {
         color: #ffffff !important;
     }
     

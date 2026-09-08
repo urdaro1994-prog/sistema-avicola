@@ -1280,7 +1280,7 @@ else:
                     c_cond = str_app.text_input("Conductor", value="Ivan Herrera")
                     guardar_cli_auto = str_app.checkbox("Guardar cliente", value=True)
 
-                    df_base = pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 3000, "Precio Unitario ($)": 370.0, "Galpón Origen": "Galpón 1"}])
+                    df_base = pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0, "Galpón Origen": "Galpón 1"}])
                     df_editado = str_app.data_editor(
                         df_base, 
                         num_rows="dynamic", 

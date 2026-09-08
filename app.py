@@ -1139,6 +1139,8 @@ else:
                         f_sel = df_r.iloc[0]
                         with str_app.expander(f"Remisión #{int(num_sel):06d} — {f_sel.get('cliente','')}"):
                             columnas_deseadas = ['tipo_huevo', 'cantidad']  # Agrega aquí las demás columnas que estabas seleccionando
+                            columnas_deseadas = ['tipo_huevo', 'cantidad']
+columnas_validas = [col for col in columnas_deseadas if col in df_r.columns]
 columnas_validas = [col for col in columnas_deseadas if col in df_r.columns]
 
 if not df_r.empty and columnas_validas:

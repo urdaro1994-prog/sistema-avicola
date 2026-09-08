@@ -66,33 +66,44 @@ str_app.markdown(
         border: 1px solid #1a3e63;
     }
     
-    .stButton>button {
-        width: 100%; border-radius: 10px; height: 3.2em;
-        font-weight: 650; background-color: #f26822;
-        color: white !important; border: 2px solid #ffffff;
-        transition: all 0.2s ease-in-out;
+    /* Botones principales y de envío */
+    .stButton>button, div.stFormSubmitButton>button {
+        width: 100% !important; border-radius: 10px !important; height: 3.2em !important;
+        font-weight: 650 !important; background-color: #f26822 !important;
+        color: white !important; border: 2px solid #ffffff !important;
     }
     
-    .stButton>button p {
+    .stButton>button p, .stButton>button span, div.stFormSubmitButton>button p, div.stFormSubmitButton>button span {
         color: white !important;
     }
     
-    .stButton>button:hover {
+    .stButton>button:hover, div.stFormSubmitButton>button:hover {
         background-color: #ffffff !important; 
-        border-color: #f26822;
+        border-color: #f26822 !important;
     }
 
-    .stButton>button:hover p {
+    .stButton>button:hover p, .stButton>button:hover span, div.stFormSubmitButton>button:hover p, div.stFormSubmitButton>button:hover span {
         color: #f26822 !important;
     }
 
-    h1, h2, h3, h4, p, .stMarkdown, .stSubheader {
-        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-        color: #ffffff !important;
+    /* Textos generales del contenedor */
+    .block-container h1, .block-container h2, .block-container h3, .block-container h4, .block-container p {
+        color: #ffffff;
+    }
+
+    /* Corrección específica para Expander (Remisiones) */
+    [data-testid="stExpander"] {
+        background-color: #ffffff !important;
+        border-radius: 8px !important;
     }
     
-    /* Etiquetas de los campos de entrada legibles */
-    .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label, .stFileUploader label, .stFileUploader div {
+    [data-testid="stExpander"] summary p, [data-testid="stExpander"] summary span {
+        color: #0f2942 !important;
+        font-weight: bold !important;
+    }
+    
+    /* Etiquetas de los campos */
+    .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label, .stFileUploader label {
         color: #ffffff !important;
     }
     

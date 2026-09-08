@@ -109,6 +109,54 @@ def inicializar_tabla_clientes():
     cur.close()
     conn.close()
 
+def inicializar_tabla_inventario():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS inventario (
+            galpon TEXT PRIMARY KEY,
+            yumbo INT DEFAULT 0,
+            extra INT DEFAULT 0,
+            aa INT DEFAULT 0,
+            a INT DEFAULT 0,
+            b INT DEFAULT 0,
+            c INT DEFAULT 0,
+            sucio INT DEFAULT 0,
+            roto INT DEFAULT 0
+        );
+    """)
+    cur.execute("INSERT INTO inventario (galpon) VALUES ('Galpón 1') ON CONFLICT (galpon) DO NOTHING;")
+    cur.execute("INSERT INTO inventario (galpon) VALUES ('Galpón 2') ON CONFLICT (galpon) DO NOTHING;")
+    cur.execute("INSERT INTO inventario (galpon) VALUES ('Galpón 3') ON CONFLICT (galpon) DO NOTHING;")
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def inicializar_tabla_remisiones():
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS remisiones (
+            id SERIAL PRIMARY KEY,
+            num_remision INT,
+            fecha_emision DATE,
+            cliente TEXT,
+            cedula_nit TEXT,
+            telefono TEXT,
+            destino TEXT,
+            email TEXT,
+            conductor TEXT,
+            tipo_huevo TEXT,
+            cantidad INT,
+            precio_unitario NUMERIC,
+            total NUMERIC,
+            galpon TEXT
+        );
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
 def inicializar_tablas_cartera():
     conn = get_connection()
     cur = conn.cursor()
@@ -260,6 +308,8 @@ def eliminar_gasto_vario(gasto_id):
 
 def reiniciar_sistema_completo():
     inicializar_tabla_clientes()
+    inicializar_tabla_inventario()
+    inicializar_tabla_remisiones()
     inicializar_tablas_cartera()
     inicializar_tabla_gastos()
     inicializar_tabla_gastos_varios()
@@ -295,6 +345,7 @@ def cargar_clientes():
     return df
 
 def guardar_cliente(nombre, cedula, direccion, telefono, email):
+    inicializar_tabla_clientes()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -319,12 +370,14 @@ def eliminar_cliente(cliente_id):
     conn.close()
 
 def cargar_inventario():
+    inicializar_tabla_inventario()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM inventario ORDER BY galpon", conn)
     conn.close()
     return df.set_index('galpon')
 
 def registrar_entrada_inventario(galpon, items_entrada):
+    inicializar_tabla_inventario()
     conn = get_connection()
     cur = conn.cursor()
     for item in items_entrada:
@@ -336,6 +389,7 @@ def registrar_entrada_inventario(galpon, items_entrada):
     conn.close()
 
 def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
+    inicializar_tabla_inventario()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -358,6 +412,7 @@ def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
     conn.close()
 
 def cargar_remisiones():
+    inicializar_tabla_remisiones()
     conn = get_connection()
     df = pd.read_sql_query("SELECT * FROM remisiones ORDER BY id DESC", conn)
     conn.close()
@@ -369,6 +424,7 @@ def cargar_remisiones():
     return df
 
 def obtener_siguiente_num_remision():
+    inicializar_tabla_remisiones()
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -421,6 +477,8 @@ def registrar_abono(num_remision, monto_abono, comprobante_bytes=None, nombre_co
 
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, fecha_remision, items_venta):
     inicializar_tablas_cartera()
+    inicializar_tabla_remisiones()
+    inicializar_tabla_inventario()
     conn = get_connection()
     cur = conn.cursor()
 
@@ -1099,7 +1157,6 @@ else:
                             registrar_venta_multiple(c_nom, c_ced, c_dir, c_tel, c_em, c_cond, num_rem_act, fecha_rem, items_dict)
                             str_app.success("¡Remisión guardada con éxito!")
 
-                            # Generar y mostrar botón de descarga PDF de la remisión actual
                             cliente_datos = {"nombre": c_nom, "cedula": c_ced, "direccion": c_dir, "telefono": c_tel, "email": c_em}
                             pdf_buf = generar_pdf_remision(num_rem_act, str(fecha_rem), c_cond, cliente_datos, items_validos, tot_fac)
                             str_app.download_button(
@@ -1135,29 +1192,28 @@ else:
                 df_h = cargar_remisiones()
                 if not df_h.empty:
                     for num_sel in sorted(df_h['num_remision'].unique(), reverse=True):
-df_r = df_h[df_h['num_remision'] == num_sel]
-f_sel = df_r.iloc[0]
-with str_app.expander(f"Remisión #{int(num_sel):06d} – {f_sel.get('cliente','')}"):
-    columnas_deseadas = ['tipo_huevo', 'cantidad']
-    columnas_validas = [col for col in columnas_deseadas if col in df_r.columns]
-    columnas_deseadas = ['tipo_huevo', 'cantidad']
-    columnas_validas = [col for col in columnas_deseadas if col in df_r.columns]
+                        df_r = df_h[df_h['num_remision'] == num_sel]
+                        f_sel = df_r.iloc[0]
+                        with str_app.expander(f"Remisión #{int(num_sel):06d} – {f_sel.get('cliente','')}"):
+                            columnas_deseadas = ['tipo_huevo', 'cantidad', 'precio_unitario', 'total', 'galpon']
+                            columnas_validas = [col for col in columnas_deseadas if col in df_r.columns]
+                            if not df_r.empty and columnas_validas:
+                                str_app.dataframe(df_r[columnas_validas], use_container_width=True)
+                            else:
+                                str_app.warning("No se encontraron registros o columnas válidas para esta remisión.")
+                else:
+                    str_app.info("No hay remisiones registradas.")
 
-if not df_r.empty and columnas_validas:
-    st.dataframe(df_r[columnas_validas])
-else:
-    st.warning("No se encontraron registros o columnas válidas para esta remisión.")
+            elif str_app.session_state.seccion_activa == "📈 Utilidades":
+                str_app.subheader("📈 Utilidades por Galpón")
+                str_app.info("Módulo activo de utilidades basado en ventas y gastos.")
 
-if str_app.session_state.seccion_activa == "📊 Utilidades":
-    str_app.subheader("📊 Utilidades por Galpón")
-    str_app.info("Módulo activo de utilidades basado en ventas y gastos.")
-
-if str_app.session_state.sesion_principal == "📜 Registro Diario":
-    str_app.subheader("📜 Módulo de Registro Diario (Edades, Mortalidad y Concentrado)")
-    galpon_reg = str_app.selectbox("Seleccione el Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"], key="galp_reg_sel")
-    tab_config, tab_diario, tab_historial = str_app.tabs(["⚙️ Configuración Inicial", "✍️ Registrar Día", "📊 Historial y PDF"])
+    elif str_app.session_state.sesion_principal == "📝 Registro Diario":
+        str_app.subheader("📜 Módulo de Registro Diario (Edades, Mortalidad y Concentrado)")
+        galpon_reg = str_app.selectbox("Seleccione el Galpón", ["Galpón 1", "Galpón 2", "Galpón 3"], key="galp_reg_sel")
+        tab_config, tab_diario, tab_historial = str_app.tabs(["⚙️ Configuración Inicial", "✍️ Registrar Día", "📊 Historial y PDF"])
         
-    with tab_config:
+        with tab_config:
             str_app.markdown("#### Configuración Inicial del Lote (Se ingresa una sola vez)")
             config_actual = cargar_config_galpon(galpon_reg)
             
@@ -1175,7 +1231,7 @@ if str_app.session_state.sesion_principal == "📜 Registro Diario":
                     str_app.success(f"¡Configuración de {galpon_reg} guardada con éxito!")
                     str_app.rerun()
 
-    with tab_diario:
+        with tab_diario:
             if rol_actual == "Invitado":
                 str_app.warning("👀 Modo Invitado: No tienes permisos para registrar datos diarios.")
             else:
@@ -1196,7 +1252,7 @@ if str_app.session_state.sesion_principal == "📜 Registro Diario":
                             str_app.success(f"¡Registro diario guardado para {galpon_reg}! La edad y el stock de aves se han actualizado automáticamente.")
                             str_app.rerun()
 
-    with tab_historial:
+        with tab_historial:
             str_app.markdown(f"#### 📊 Resumen y Registros de {galpon_reg}")
             config = cargar_config_galpon(galpon_reg)
             df_reg = cargar_registros_diarios(galpon_reg)

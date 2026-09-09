@@ -1463,25 +1463,58 @@ else:
                     if df_rem.empty and df_gas.empty:
                         str_app.info("No hay datos suficientes de ventas o gastos para calcular utilidades.")
                     else:
+                        if not df_rem.empty and 'fecha_emision' in df_rem.columns:
+                            df_rem['dt_fecha'] = pd.to_datetime(df_rem['fecha_emision'])
+                        if not df_gas.empty and 'fecha' in df_gas.columns:
+                            df_gas['dt_fecha'] = pd.to_datetime(df_gas['fecha'])
+
+                        anios_disponibles = set()
+                        if not df_rem.empty and 'dt_fecha' in df_rem.columns:
+                            anios_disponibles.update(df_rem['dt_fecha'].dt.year.unique().tolist())
+                        if not df_gas.empty and 'dt_fecha' in df_gas.columns:
+                            anios_disponibles.update(df_gas['dt_fecha'].dt.year.unique().tolist())
+                        anios_disponibles = sorted(anios_disponibles, reverse=True) if anios_disponibles else [date.today().year]
+
+                        vista_util = str_app.radio("Vista", ["📅 Mes específico", "📊 Histórico completo"], horizontal=True, key="vista_utilidades")
+
+                        if vista_util == "📅 Mes específico":
+                            c_fu1, c_fu2 = str_app.columns(2)
+                            anio_sel_u = c_fu1.selectbox("📅 Año", anios_disponibles, key="anio_util")
+                            indice_mes_actual = date.today().month - 1
+                            mes_nombre_sel_u = c_fu2.selectbox("📅 Mes", list(MESES_NOMBRES.values()), index=indice_mes_actual, key="mes_util")
+                            mes_num_sel_u = [k for k, v in MESES_NOMBRES.items() if v == mes_nombre_sel_u][0]
+
+                            df_rem_periodo = df_rem[(df_rem['dt_fecha'].dt.year == anio_sel_u) & (df_rem['dt_fecha'].dt.month == mes_num_sel_u)] if not df_rem.empty and 'dt_fecha' in df_rem.columns else pd.DataFrame()
+                            df_gas_periodo = df_gas[(df_gas['dt_fecha'].dt.year == anio_sel_u) & (df_gas['dt_fecha'].dt.month == mes_num_sel_u)] if not df_gas.empty and 'dt_fecha' in df_gas.columns else pd.DataFrame()
+                            titulo_periodo = f"{mes_nombre_sel_u} {anio_sel_u}"
+                        else:
+                            df_rem_periodo = df_rem
+                            df_gas_periodo = df_gas
+                            titulo_periodo = "Histórico completo"
+
                         resumen_utilidades = []
                         for g in GALPONES:
-                            ingresos = float(df_rem[df_rem['galpon'] == g]['total'].sum()) if not df_rem.empty and 'galpon' in df_rem.columns and 'total' in df_rem.columns else 0.0
-                            gastos = float(df_gas[df_gas['galpon'] == g]['valor'].sum()) if not df_gas.empty and 'galpon' in df_gas.columns and 'valor' in df_gas.columns else 0.0
+                            ingresos = float(df_rem_periodo[df_rem_periodo['galpon'] == g]['total'].sum()) if not df_rem_periodo.empty and 'galpon' in df_rem_periodo.columns and 'total' in df_rem_periodo.columns else 0.0
+                            gastos = float(df_gas_periodo[df_gas_periodo['galpon'] == g]['valor'].sum()) if not df_gas_periodo.empty and 'galpon' in df_gas_periodo.columns and 'valor' in df_gas_periodo.columns else 0.0
                             resumen_utilidades.append({"Galpón": g, "Ingresos ($)": ingresos, "Gastos ($)": gastos, "Utilidad ($)": ingresos - gastos})
 
-                        gastos_generales = float(df_gas[df_gas['galpon'] == "General / Granja"]['valor'].sum()) if not df_gas.empty and 'galpon' in df_gas.columns and 'valor' in df_gas.columns else 0.0
+                        gastos_generales = float(df_gas_periodo[df_gas_periodo['galpon'] == "General / Granja"]['valor'].sum()) if not df_gas_periodo.empty and 'galpon' in df_gas_periodo.columns and 'valor' in df_gas_periodo.columns else 0.0
 
                         df_util = pd.DataFrame(resumen_utilidades)
                         total_ingresos = df_util["Ingresos ($)"].sum()
                         total_gastos_galpones = df_util["Gastos ($)"].sum()
                         utilidad_neta_total = total_ingresos - (total_gastos_galpones + gastos_generales)
 
+                        str_app.markdown(f"#### {titulo_periodo}")
                         col_u1, col_u2, col_u3 = str_app.columns(3)
                         col_u1.metric("Total Ingresos", f"${total_ingresos:,.0f}".replace(",", "."))
                         col_u2.metric("Total Gastos", f"${(total_gastos_galpones + gastos_generales):,.0f}".replace(",", "."))
                         col_u3.metric("Utilidad Neta", f"${utilidad_neta_total:,.0f}".replace(",", "."))
 
-                        str_app.bar_chart(df_util.set_index("Galpón")[["Ingresos ($)", "Gastos ($)"]])
+                        if total_ingresos > 0 or total_gastos_galpones > 0:
+                            str_app.bar_chart(df_util.set_index("Galpón")[["Ingresos ($)", "Gastos ($)"]])
+                        else:
+                            str_app.caption(f"Sin movimientos registrados en {titulo_periodo}.")
 
                         str_app.markdown("---")
                         str_app.markdown("#### 📋 Detalle Financiero por Galpón")
@@ -1490,10 +1523,37 @@ else:
                         for col in ["Ingresos ($)", "Gastos ($)", "Utilidad ($)"]:
                             df_mostrar[col] = df_mostrar[col].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
                         str_app.dataframe(df_mostrar, use_container_width=True, hide_index=True)
-                        boton_exportar_excel(df_util, "Utilidades_por_Galpon.xlsx")
+                        boton_exportar_excel(df_util, f"Utilidades_{titulo_periodo.replace(' ', '_')}.xlsx")
 
                         if gastos_generales > 0:
                             str_app.info(f"💡 Gastos Generales / Granja no asignados a un galpón específico: $ {gastos_generales:,.0f}".replace(",", "."))
+
+                        # --- Evolución mensual de la utilidad total (independiente del filtro de arriba) ---
+                        str_app.markdown("---")
+                        str_app.markdown("#### 📈 Evolución Mensual de la Utilidad (Todos los Galpones)")
+
+                        serie_ingresos_mes = pd.Series(dtype=float)
+                        serie_gastos_mes = pd.Series(dtype=float)
+                        if not df_rem.empty and 'dt_fecha' in df_rem.columns and 'total' in df_rem.columns:
+                            serie_ingresos_mes = df_rem.groupby(df_rem['dt_fecha'].dt.to_period('M'))['total'].sum().rename("Ingresos")
+                        if not df_gas.empty and 'dt_fecha' in df_gas.columns and 'valor' in df_gas.columns:
+                            serie_gastos_mes = df_gas.groupby(df_gas['dt_fecha'].dt.to_period('M'))['valor'].sum().rename("Gastos")
+
+                        df_evolucion = pd.concat([serie_ingresos_mes, serie_gastos_mes], axis=1).fillna(0.0)
+                        if not df_evolucion.empty:
+                            df_evolucion["Utilidad"] = df_evolucion["Ingresos"] - df_evolucion["Gastos"]
+                            df_evolucion = df_evolucion.sort_index()
+                            df_evolucion.index = df_evolucion.index.astype(str)
+                            str_app.bar_chart(df_evolucion[["Utilidad"]])
+
+                            with str_app.expander("Ver detalle mes a mes"):
+                                df_evolucion_mostrar = df_evolucion.reset_index().rename(columns={"index": "Mes"})
+                                for col in ["Ingresos", "Gastos", "Utilidad"]:
+                                    df_evolucion_mostrar[col] = df_evolucion_mostrar[col].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
+                                str_app.dataframe(df_evolucion_mostrar, use_container_width=True, hide_index=True)
+                                boton_exportar_excel(df_evolucion.reset_index().rename(columns={"index": "Mes"}), "Evolucion_Mensual_Utilidad.xlsx")
+                        else:
+                            str_app.caption("Aún no hay suficientes datos para mostrar la evolución mensual.")
 
         elif str_app.session_state.sesion_principal == "📝 Registro Diario":
             str_app.subheader("📝 Módulo de Registro Diario (Edades, Mortalidad y Concentrado)")

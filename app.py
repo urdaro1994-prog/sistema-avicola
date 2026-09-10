@@ -542,6 +542,15 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
                 # 3. Eliminar registros antiguos de la remisión
                 cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
 
+                # 3.1 Detectar qué columnas admiten inserción directa (algunas, como
+                # "total", pueden estar definidas como columna generada/calculada en
+                # la base de datos, y no se les puede insertar un valor a mano).
+                cur.execute("""
+                    SELECT column_name, is_generated, identity_generation
+                    FROM information_schema.columns WHERE table_name = 'remisiones';
+                """)
+                columnas_validas = {c for c, is_gen, id_gen in cur.fetchall() if is_gen != 'ALWAYS' and id_gen != 'ALWAYS'}
+
                 # 4. Insertar nuevos registros y descontar inventario
                 total_venta_acumulado = 0.0
                 for item in nuevos_items:
@@ -552,10 +561,19 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
                     galp_origen = item.get('Galpón', GALPONES[0])
                     total_venta_acumulado += subtotal
 
-                    cur.execute("""
-                        INSERT INTO remisiones (num_remision, fecha_emision, cliente, cedula_nit, telefono, destino, email, conductor, tipo_huevo, cantidad, precio_unitario, total, galpon)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """, (num_remision, fecha_remision, cliente.strip().upper(), cedula, telefono, direccion, email, conductor, clasificacion, cantidad, precio_u, subtotal, galp_origen))
+                    datos_insert = {
+                        "num_remision": num_remision, "fecha_emision": fecha_remision,
+                        "cliente": cliente.strip().upper(), "cedula_nit": cedula, "telefono": telefono,
+                        "destino": direccion, "email": email, "conductor": conductor,
+                        "tipo_huevo": clasificacion, "cantidad": cantidad,
+                        "precio_unitario": precio_u, "total": subtotal, "galpon": galp_origen
+                    }
+                    datos_reales = {k: v for k, v in datos_insert.items() if k in columnas_validas}
+                    if datos_reales:
+                        cols = ", ".join(datos_reales.keys())
+                        vals = tuple(datos_reales.values())
+                        placeholders = ", ".join(["%s"] * len(datos_reales))
+                        cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
 
                     cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galp_origen))
 

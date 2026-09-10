@@ -352,6 +352,34 @@ def registrar_entrada_inventario(galpon, items_entrada, fecha_entrada):
                     )
 
 
+@operacion_segura
+def actualizar_historial_entrada(id_entrada, nuevo_galpon, nueva_clasificacion, nueva_cantidad, nueva_fecha):
+    with get_conn() as conn:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT galpon, clasificacion, cantidad FROM historial_entradas WHERE id = %s", (id_entrada,))
+                res = cur.fetchone()
+                if not res:
+                    raise ValueError("La entrada de stock no existe.")
+                old_galpon, old_clasif, old_cant = res[0], res[1], res[2]
+                
+                # Revertir stock anterior
+                cur.execute(f"UPDATE inventario SET {old_clasif} = {old_clasif} - %s WHERE galpon = %s", (old_cant, old_galpon))
+                
+                # Aplicar nuevo stock
+                nueva_clasificacion = nueva_clasificacion.lower()
+                if nueva_clasificacion not in COLUMNAS_INVENTARIO:
+                    raise ValueError(f"Clasificación inválida: {nueva_clasificacion}")
+                cur.execute(f"UPDATE inventario SET {nueva_clasificacion} = {nueva_clasificacion} + %s WHERE galpon = %s", (nueva_cantidad, nuevo_galpon))
+                
+                # Actualizar registro en historial_entradas
+                cur.execute("""
+                    UPDATE historial_entradas 
+                    SET fecha = %s, galpon = %s, clasificacion = %s, cantidad = %s 
+                    WHERE id = %s
+                """, (nueva_fecha, nuevo_galpon, nueva_clasificacion, nueva_cantidad, id_entrada))
+
+
 @lectura_segura
 def cargar_historial_entradas(galpon=None):
     if galpon:
@@ -400,9 +428,6 @@ def obtener_siguiente_num_remision():
 
 @operacion_segura
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, fecha_remision, items_venta):
-    # Se acumula lo pedido por (galpón, clasificación) ANTES de validar contra el
-    # stock real, para no dejar pasar una remisión con dos filas del mismo huevo
-    # que individualmente caben pero juntas superan el stock disponible.
     requerido = {}
     for item in items_venta:
         clasificacion = item['Clasificación'].lower()
@@ -462,6 +487,71 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
                     ON CONFLICT (num_remision) DO UPDATE SET
                         cliente = EXCLUDED.cliente, total = EXCLUDED.total, saldo = EXCLUDED.saldo;
                 """, (num_remision, cliente.strip().upper(), total_venta_acumulado, total_venta_acumulado))
+
+
+@operacion_segura
+def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, email, conductor, fecha_remision, nuevos_items):
+    requerido = {}
+    for item in nuevos_items:
+        clasificacion = item['Clasificación'].lower()
+        if clasificacion not in COLUMNAS_INVENTARIO:
+            raise ValueError(f"Clasificación inválida: {clasificacion}")
+        galp_origen = item.get('Galpón', GALPONES[0])
+        clave = (galp_origen, clasificacion)
+        requerido[clave] = requerido.get(clave, 0) + int(item['Cantidad (Huevos)'])
+
+    with get_conn() as conn:
+        with conn:
+            with conn.cursor() as cur:
+                # 1. Revertir inventario de la remisión anterior
+                cur.execute("SELECT galpon, tipo_huevo, cantidad FROM remisiones WHERE num_remision = %s", (num_remision,))
+                old_rows = cur.fetchall()
+                for galp, clasif, cant in old_rows:
+                    cur.execute(f"UPDATE inventario SET {clasif} = {clasif} + %s WHERE galpon = %s", (cant, galp))
+
+                # 2. Validar stock para los nuevos ítems
+                for (galp_origen, clasificacion), cantidad_total in requerido.items():
+                    cur.execute(f"SELECT {clasificacion} FROM inventario WHERE galpon = %s", (galp_origen,))
+                    res = cur.fetchone()
+                    stock_actual = res[0] if res else 0
+                    if cantidad_total > stock_actual:
+                        raise ValueError(
+                            f"Stock insuficiente de '{clasificacion.upper()}' en {galp_origen}. "
+                            f"Stock actual: {stock_actual:,}, solicitado: {cantidad_total:,}".replace(",", ".")
+                        )
+
+                # 3. Eliminar registros antiguos de la remisión
+                cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
+
+                # 4. Insertar nuevos registros y descontar inventario
+                total_venta_acumulado = 0.0
+                for item in nuevos_items:
+                    clasificacion = item['Clasificación'].lower()
+                    cantidad = int(item['Cantidad (Huevos)'])
+                    subtotal = float(item['Subtotal ($)'])
+                    precio_u = float(item['Precio Unitario ($)'])
+                    galp_origen = item.get('Galpón', GALPONES[0])
+                    total_venta_acumulado += subtotal
+
+                    cur.execute("""
+                        INSERT INTO remisiones (num_remision, fecha_emision, cliente, cedula_nit, telefono, destino, email, conductor, tipo_huevo, cantidad, precio_unitario, total, galpon)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (num_remision, fecha_remision, cliente.strip().upper(), cedula, telefono, direccion, email, conductor, clasificacion, cantidad, precio_u, subtotal, galp_origen))
+
+                    cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galp_origen))
+
+                # 5. Actualizar cartera
+                cur.execute("SELECT COALESCE(SUM(monto), 0) FROM abonos_cartera WHERE num_remision = %s", (num_remision,))
+                total_abonos = float(cur.fetchone()[0])
+                nuevo_saldo = max(0.0, total_venta_acumulado - total_abonos)
+                nuevo_estado = 'PAGADA' if nuevo_saldo <= 0 else 'PENDIENTE'
+
+                cur.execute("""
+                    INSERT INTO cartera (num_remision, cliente, total, saldo, estado)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (num_remision) DO UPDATE SET
+                        cliente = EXCLUDED.cliente, total = EXCLUDED.total, saldo = EXCLUDED.saldo, estado = EXCLUDED.estado;
+                """, (num_remision, cliente.strip().upper(), total_venta_acumulado, nuevo_saldo, nuevo_estado))
 
 
 # --- CARTERA ---
@@ -979,9 +1069,6 @@ def generar_pdf_gastos(df_gastos, titulo_reporte):
 
 # =========================================================================
 # CONTROL DE SESIÓN Y AUTENTICACIÓN
-# (Se dejan las contraseñas tal como estaban, a petición explícita del
-# usuario. Sí se agregó un bloqueo temporal tras varios intentos fallidos
-# para dificultar ataques de fuerza bruta desde la pantalla de login.)
 # =========================================================================
 if "usuario_autenticado" not in str_app.session_state:
     str_app.session_state.usuario_autenticado = None
@@ -1057,10 +1144,6 @@ else:
 
     str_app.markdown("---")
 
-    # Todo el contenido autenticado queda protegido por un manejador de
-    # errores general: si la base de datos falla a mitad de una operación,
-    # el usuario ve un mensaje claro con un botón de reintentar, en vez de
-    # una pantalla rota.
     try:
         if "sesion_principal" not in str_app.session_state:
             str_app.session_state.sesion_principal = None
@@ -1206,6 +1289,24 @@ else:
                             str_app.dataframe(df_hist_mostrar, use_container_width=True, hide_index=True)
                             str_app.caption(f"Total en el rango: {int(df_hist_filtrado['cantidad'].sum()):,} huevos".replace(",", "."))
                             boton_exportar_excel(df_hist_mostrar, "Historial_Entradas_Stock.xlsx")
+                            
+                            str_app.markdown("---")
+                            str_app.markdown("#### ✏️ Editar una Entrada de Stock Registrada")
+                            for _, row_he in df_hist_filtrado.iterrows():
+                                with str_app.expander(f"📅 {row_he['fecha']} | {row_he['galpon']} | {row_he['clasificacion'].upper()} | Cantidad: {row_he['cantidad']:,}".replace(",", ".")):
+                                    if rol_actual == "Administrador":
+                                        with str_app.form(f"form_edit_he_{row_he['id']}"):
+                                            e_fecha = str_app.date_input("Fecha", value=row_he['fecha'], key=f"ef_{row_he['id']}")
+                                            e_galpon = str_app.selectbox("Galpón", GALPONES, index=GALPONES.index(row_he['galpon']) if row_he['galpon'] in GALPONES else 0, key=f"eg_{row_he['id']}")
+                                            e_clasif = str_app.selectbox("Clasificación", CLASIFICACIONES, index=CLASIFICACIONES.index(row_he['clasificacion'].lower()) if row_he['clasificacion'].lower() in CLASIFICACIONES else 0, key=f"ec_{row_he['id']}")
+                                            e_cant = str_app.number_input("Cantidad", min_value=1, value=int(row_he['cantidad']), step=1, key=f"ecan_{row_he['id']}")
+                                            if str_app.form_submit_button("💾 Guardar Cambios de Entrada"):
+                                                if actualizar_historial_entrada(int(row_he['id']), e_galpon, e_clasif, int(e_cant), e_fecha):
+                                                    str_app.toast("¡Entrada actualizada con éxito! 🎉", icon="✅")
+                                                    str_app.success("¡Modificación guardada y stock ajustado correctamente!")
+                                                    str_app.rerun()
+                                    else:
+                                        str_app.warning("👀 Modo Invitado: No tienes permisos para editar.")
                         else:
                             str_app.info("No hay entradas registradas en el rango seleccionado.")
                     else:
@@ -1553,6 +1654,59 @@ else:
 
                                     pdf_buf = generar_pdf_remision(int(num_sel), fecha_str, conductor_val, cliente_datos, items_pdf, total_factura)
                                     str_app.download_button(f"📄 Descargar PDF Remisión #{int(num_sel):06d}", data=pdf_buf, file_name=f"Remision_{int(num_sel):06d}.pdf", mime="application/pdf", key=f"dl_hist_{num_sel}")
+                                    
+                                    # Opción de edición para administradores
+                                    if rol_actual == "Administrador":
+                                        str_app.markdown("---")
+                                        if str_app.checkbox(f"✏️ Habilitar edición para Remisión #{int(num_sel):06d}", key=f"chk_edit_rem_{num_sel}"):
+                                            with str_app.form(f"form_edit_rem_{num_sel}"):
+                                                str_app.markdown(f"#### Editando Remisión #{int(num_sel):06d}")
+                                                ed_fecha = str_app.date_input("Fecha Emisión", value=f_sel.get('fecha_emision', date.today()), key=f"ed_f_{num_sel}")
+                                                ed_nom = str_app.text_input("Cliente", value=cliente_nombre, key=f"ed_nom_{num_sel}")
+                                                ed_ced = str_app.text_input("Cédula/NIT", value=str(f_sel.get('cedula_nit', '')), key=f"ed_ced_{num_sel}")
+                                                ed_dir = str_app.text_input("Dirección", value=str(f_sel.get('destino', 'CHOACHI')), key=f"ed_dir_{num_sel}")
+                                                ed_tel = str_app.text_input("Teléfono", value=str(f_sel.get('telefono', '')), key=f"ed_tel_{num_sel}")
+                                                ed_em = str_app.text_input("Email", value=str(f_sel.get('email', '')), key=f"ed_em_{num_sel}")
+                                                ed_cond = str_app.text_input("Conductor", value=str(f_sel.get('conductor', 'Ivan Herrera')), key=f"ed_cond_{num_sel}")
+
+                                                df_items_actuales = df_r[['tipo_huevo', 'cantidad', 'precio_unitario', 'galpon']].copy()
+                                                df_items_actuales.columns = ['Clasificación', 'Cantidad (Huevos)', 'Precio Unitario ($)', 'Galpón Origen']
+                                                
+                                                df_items_editados = str_app.data_editor(
+                                                    df_items_actuales, num_rows="dynamic",
+                                                    column_config={
+                                                        "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=CLASIFICACIONES, required=True),
+                                                        "Cantidad (Huevos)": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True),
+                                                        "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio Unitario ($)", min_value=0, format="$%d", required=True),
+                                                        "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=GALPONES, required=True)
+                                                    },
+                                                    use_container_width=True, key=f"editor_rem_{num_sel}"
+                                                )
+
+                                                if str_app.form_submit_button("💾 Guardar Cambios de Remisión"):
+                                                    items_val = df_items_editados[df_items_editados["Cantidad (Huevos)"] > 0].copy()
+                                                    if items_val.empty:
+                                                        str_app.error("Debe tener al menos un ítem válido con cantidad mayor a 0.")
+                                                    elif not ed_nom.strip():
+                                                        str_app.error("El nombre del cliente es obligatorio.")
+                                                    else:
+                                                        items_val["Subtotal ($)"] = items_val["Cantidad (Huevos)"] * items_val["Precio Unitario ($)"]
+                                                        nuevos_items_dict = [
+                                                            {
+                                                                'Clasificación': r['Clasificación'], 
+                                                                'Cantidad (Huevos)': r['Cantidad (Huevos)'], 
+                                                                'Precio Unitario ($)': r['Precio Unitario ($)'], 
+                                                                'Subtotal ($)': r['Subtotal ($)'], 
+                                                                'Galpón': r['Galpón Origen']
+                                                            } for _, r in items_val.iterrows()
+                                                        ]
+                                                        try:
+                                                            if actualizar_remision(int(num_sel), ed_nom, ed_ced, ed_dir, ed_tel, ed_em, ed_cond, ed_fecha, nuevos_items_dict):
+                                                                str_app.toast("¡Remisión actualizada con éxito! 🎉", icon="✅")
+                                                                str_app.success("¡Remisión modificada y stock ajustado correctamente!")
+                                                                str_app.rerun()
+                                                        except ValueError as ve:
+                                                            str_app.error(str(ve))
                                 else:
                                     str_app.warning("No se encontraron registros o columnas válidas para esta remisión.")
 
@@ -1636,7 +1790,6 @@ else:
                         if gastos_generales > 0:
                             str_app.info(f"💡 Gastos Generales / Granja no asignados a un galpón específico: $ {gastos_generales:,.0f}".replace(",", "."))
 
-                        # --- Evolución mensual de la utilidad total (independiente del filtro de arriba) ---
                         str_app.markdown("---")
                         str_app.markdown("#### 📈 Evolución Mensual de la Utilidad (Todos los Galpones)")
 
@@ -1736,9 +1889,6 @@ else:
                     saldo_concentrado = total_conc_ing - total_conc_cons
                     total_huevos_lote = int(df_reg['huevos_recolectados'].sum()) if not df_reg.empty else 0
 
-                    # Conversión alimenticia aproximada: bultos de concentrado consumidos
-                    # por cada 100 huevos producidos en la vida del lote (métrica típica
-                    # de seguimiento avícola para vigilar eficiencia del alimento).
                     conversion_bultos_100h = (total_conc_cons / (total_huevos_lote / 100)) if total_huevos_lote > 0 else None
 
                     porc_prod_semana = 0.0

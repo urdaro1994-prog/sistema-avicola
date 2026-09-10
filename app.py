@@ -291,6 +291,11 @@ def inicializar_todas_las_tablas():
             huevos_recolectados INT DEFAULT 0, observaciones TEXT
         );
     """)
+    ejecutar("""
+        CREATE TABLE IF NOT EXISTS historial_entradas (
+            id SERIAL PRIMARY KEY, fecha DATE, galpon TEXT, clasificacion TEXT, cantidad INT
+        );
+    """)
 
 
 def asegurar_tablas():
@@ -331,7 +336,7 @@ def cargar_inventario():
 
 
 @operacion_segura
-def registrar_entrada_inventario(galpon, items_entrada):
+def registrar_entrada_inventario(galpon, items_entrada, fecha_entrada):
     with get_conn() as conn:
         with conn:
             with conn.cursor() as cur:
@@ -341,6 +346,21 @@ def registrar_entrada_inventario(galpon, items_entrada):
                         raise ValueError(f"Clasificación inválida: {clasificacion}")
                     cantidad = int(item['Cantidad'])
                     cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} + %s WHERE galpon = %s", (cantidad, galpon))
+                    cur.execute(
+                        "INSERT INTO historial_entradas (fecha, galpon, clasificacion, cantidad) VALUES (%s, %s, %s, %s)",
+                        (fecha_entrada, galpon, clasificacion, cantidad)
+                    )
+
+
+@lectura_segura
+def cargar_historial_entradas(galpon=None):
+    if galpon:
+        df = leer_df("SELECT * FROM historial_entradas WHERE galpon = %s ORDER BY fecha DESC, id DESC", (galpon,))
+    else:
+        df = leer_df("SELECT * FROM historial_entradas ORDER BY fecha DESC, id DESC")
+    if not df.empty:
+        df['fecha'] = pd.to_datetime(df['fecha']).dt.date
+    return df
 
 
 @operacion_segura
@@ -568,7 +588,7 @@ def eliminar_registro_diario(reg_id):
 @operacion_segura
 def reiniciar_sistema_completo():
     tablas_a_limpiar = ["abonos_cartera", "cartera", "remisiones", "clientes", "gastos",
-                         "gastos_varios", "registros_diarios", "galpon_config"]
+                         "gastos_varios", "registros_diarios", "galpon_config", "historial_entradas"]
     for tabla in tablas_a_limpiar:
         try:
             ejecutar(f"TRUNCATE TABLE {tabla} RESTART IDENTITY CASCADE;")
@@ -583,7 +603,10 @@ def reiniciar_sistema_completo():
 def calcular_resumen_general():
     resumen = {
         "stock_total": 0, "cartera_pendiente": 0.0, "produccion_hoy": 0,
-        "mortalidad_mes": 0, "gastos_mes": 0.0, "ventas_mes": 0.0
+        "mortalidad_mes": 0, "gastos_mes": 0.0, "ventas_mes": 0.0,
+        "stock_por_galpon": {g: 0 for g in GALPONES},
+        "produccion_por_galpon": {g: 0 for g in GALPONES},
+        "mortalidad_por_galpon": {g: 0 for g in GALPONES},
     }
     hoy = date.today()
     inicio_mes = pd.Timestamp(hoy.replace(day=1))
@@ -592,6 +615,9 @@ def calcular_resumen_general():
     if not df_inv.empty:
         cols_presentes = [c for c in COLUMNAS_INVENTARIO if c in df_inv.columns]
         resumen["stock_total"] = int(df_inv[cols_presentes].sum().sum())
+        for g in GALPONES:
+            if g in df_inv.index:
+                resumen["stock_por_galpon"][g] = int(df_inv.loc[g, cols_presentes].sum())
 
     df_cartera = cargar_cartera()
     if not df_cartera.empty and "estado" in df_cartera.columns:
@@ -599,9 +625,17 @@ def calcular_resumen_general():
 
     df_reg = cargar_registros_diarios()
     if not df_reg.empty:
-        resumen["produccion_hoy"] = int(df_reg[df_reg["fecha"] == hoy]["huevos_recolectados"].sum())
+        df_hoy = df_reg[df_reg["fecha"] == hoy]
+        resumen["produccion_hoy"] = int(df_hoy["huevos_recolectados"].sum())
+        if "galpon" in df_hoy.columns:
+            for g in GALPONES:
+                resumen["produccion_por_galpon"][g] = int(df_hoy[df_hoy["galpon"] == g]["huevos_recolectados"].sum())
+
         df_mes = df_reg[pd.to_datetime(df_reg["fecha"]) >= inicio_mes]
         resumen["mortalidad_mes"] = int(df_mes["mortalidad"].sum())
+        if "galpon" in df_mes.columns:
+            for g in GALPONES:
+                resumen["mortalidad_por_galpon"][g] = int(df_mes[df_mes["galpon"] == g]["mortalidad"].sum())
 
     total_gastos_mes = 0.0
     df_gastos = cargar_gastos()
@@ -620,19 +654,42 @@ def calcular_resumen_general():
     return resumen
 
 
+def _fila_metrica_con_desglose(icono, titulo, valor_total, valores_por_galpon, es_moneda=False):
+    """Muestra una métrica grande (ej. Stock Total) y, justo debajo, una fila
+    con el mismo dato desglosado por cada uno de los galpones."""
+    if es_moneda:
+        texto_total = f"${valor_total:,.0f}".replace(",", ".")
+    else:
+        texto_total = f"{valor_total:,}".replace(",", ".")
+    str_app.metric(f"{icono} {titulo}", texto_total)
+
+    cols = str_app.columns(len(GALPONES))
+    for col, g in zip(cols, GALPONES):
+        valor_g = valores_por_galpon.get(g, 0)
+        texto_g = f"${valor_g:,.0f}".replace(",", ".") if es_moneda else f"{valor_g:,}".replace(",", ".")
+        col.markdown(
+            f"<div style='text-align:center; background-color:#163559; border:1px solid #244c7c; "
+            f"border-radius:8px; padding:6px 2px; margin-top:-8px;'>"
+            f"<p style='margin:0; font-size:11px; color:#cbd5e1;'>{g}</p>"
+            f"<p style='margin:0; font-size:14px; color:#ffffff; font-weight:bold;'>{texto_g}</p>"
+            f"</div>", unsafe_allow_html=True
+        )
+    str_app.markdown("<div style='margin-bottom:12px;'></div>", unsafe_allow_html=True)
+
+
 def mostrar_resumen_general():
     str_app.subheader("🏠 Resumen General")
     resumen = calcular_resumen_general()
 
-    c1, c2, c3 = str_app.columns(3)
-    c1.metric("📦 Stock Total", f"{resumen['stock_total']:,}".replace(",", "."))
-    c2.metric("🥚 Producción Hoy", f"{resumen['produccion_hoy']:,}".replace(",", "."))
-    c3.metric("💰 Cartera Pendiente", f"${resumen['cartera_pendiente']:,.0f}".replace(",", "."))
+    _fila_metrica_con_desglose("📦", "Stock Total", resumen["stock_total"], resumen["stock_por_galpon"])
+    _fila_metrica_con_desglose("🥚", "Producción Hoy", resumen["produccion_hoy"], resumen["produccion_por_galpon"])
+    _fila_metrica_con_desglose("💀", "Mortalidad del Mes", resumen["mortalidad_mes"], resumen["mortalidad_por_galpon"])
 
-    c4, c5, c6 = str_app.columns(3)
-    c4.metric("💀 Mortalidad del Mes", f"{resumen['mortalidad_mes']:,}".replace(",", "."))
-    c5.metric("💸 Gastos del Mes", f"${resumen['gastos_mes']:,.0f}".replace(",", "."))
-    c6.metric("📈 Ventas del Mes", f"${resumen['ventas_mes']:,.0f}".replace(",", "."))
+    str_app.markdown("---")
+    c1, c2, c3 = str_app.columns(3)
+    c1.metric("💰 Cartera Pendiente", f"${resumen['cartera_pendiente']:,.0f}".replace(",", "."))
+    c2.metric("💸 Gastos del Mes", f"${resumen['gastos_mes']:,.0f}".replace(",", "."))
+    c3.metric("📈 Ventas del Mes", f"${resumen['ventas_mes']:,.0f}".replace(",", "."))
 
     df_reg_all = cargar_registros_diarios()
     if not df_reg_all.empty:
@@ -1081,6 +1138,7 @@ else:
                     else:
                         str_app.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
                         galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", GALPONES)
+                        fecha_entrada = str_app.date_input("Fecha de la Entrada", value=date.today(), key="fecha_entrada_stock")
 
                         df_base_entrada = pd.DataFrame([{"Clasificación": "a", "Cantidad": 0}])
                         df_entrada_editado = str_app.data_editor(
@@ -1098,10 +1156,35 @@ else:
                                 str_app.warning("Debe ingresar al menos un ítem con cantidad mayor a 0.")
                             else:
                                 lista_items_entrada = [{"Clasificación": r["Clasificación"], "Cantidad": int(r["Cantidad"])} for _, r in entradas_validas.iterrows()]
-                                if registrar_entrada_inventario(galpon_destino, lista_items_entrada):
+                                if registrar_entrada_inventario(galpon_destino, lista_items_entrada, fecha_entrada):
                                     str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
-                                    str_app.success(f"¡Entrada de inventario registrada correctamente en {galpon_destino}!")
+                                    str_app.success(f"¡Entrada de inventario registrada correctamente en {galpon_destino} el {fecha_entrada}!")
                                     str_app.rerun()
+
+                    str_app.markdown("---")
+                    str_app.markdown("#### 📜 Historial de Entradas")
+                    df_hist_entradas = cargar_historial_entradas()
+                    if not df_hist_entradas.empty:
+                        c_gf, c_fi, c_ff = str_app.columns(3)
+                        galpon_filtro_hist = c_gf.selectbox("Galpón", ["Todos"] + GALPONES, key="filtro_galpon_hist_entradas")
+                        fecha_ini_hist = c_fi.date_input("Desde", value=df_hist_entradas["fecha"].min(), key="hist_entradas_desde")
+                        fecha_fin_hist = c_ff.date_input("Hasta", value=df_hist_entradas["fecha"].max(), key="hist_entradas_hasta")
+
+                        df_hist_filtrado = df_hist_entradas[(df_hist_entradas["fecha"] >= fecha_ini_hist) & (df_hist_entradas["fecha"] <= fecha_fin_hist)]
+                        if galpon_filtro_hist != "Todos":
+                            df_hist_filtrado = df_hist_filtrado[df_hist_filtrado["galpon"] == galpon_filtro_hist]
+
+                        if not df_hist_filtrado.empty:
+                            df_hist_mostrar = df_hist_filtrado[["fecha", "galpon", "clasificacion", "cantidad"]].copy()
+                            df_hist_mostrar.columns = ["Fecha", "Galpón", "Clasificación", "Cantidad"]
+                            df_hist_mostrar["Clasificación"] = df_hist_mostrar["Clasificación"].str.upper()
+                            str_app.dataframe(df_hist_mostrar, use_container_width=True, hide_index=True)
+                            str_app.caption(f"Total en el rango: {int(df_hist_filtrado['cantidad'].sum()):,} huevos".replace(",", "."))
+                            boton_exportar_excel(df_hist_mostrar, "Historial_Entradas_Stock.xlsx")
+                        else:
+                            str_app.info("No hay entradas registradas en el rango seleccionado.")
+                    else:
+                        str_app.info("Aún no hay entradas de stock registradas.")
 
                 # ---------------- INVENTARIO FÍSICO ----------------
                 elif str_app.session_state.seccion_activa == "⚖️ Inventario Fisico":

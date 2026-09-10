@@ -841,10 +841,11 @@ def mostrar_resumen_general():
     _fila_metrica_con_desglose("💀", "Mortalidad del Mes", resumen["mortalidad_mes"], resumen["mortalidad_por_galpon"])
 
     str_app.markdown("---")
-    c1, c2, c3 = str_app.columns(3)
-    c1.metric("💰 Cartera Pendiente", f"${resumen['cartera_pendiente']:,.0f}".replace(",", "."))
-    c2.metric("💸 Gastos del Mes", f"${resumen['gastos_mes']:,.0f}".replace(",", "."))
-    c3.metric("📈 Ventas del Mes", f"${resumen['ventas_mes']:,.0f}".replace(",", "."))
+    str_app.metric("💰 Cartera Pendiente", f"${resumen['cartera_pendiente']:,.0f}".replace(",", "."))
+    str_app.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+    str_app.metric("💸 Gastos del Mes", f"${resumen['gastos_mes']:,.0f}".replace(",", "."))
+    str_app.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
+    str_app.metric("📈 Ventas del Mes", f"${resumen['ventas_mes']:,.0f}".replace(",", "."))
 
     df_reg_all = cargar_registros_diarios()
     if not df_reg_all.empty:

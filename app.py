@@ -607,6 +607,8 @@ def calcular_resumen_general():
         "stock_por_galpon": {g: 0 for g in GALPONES},
         "produccion_por_galpon": {g: 0 for g in GALPONES},
         "mortalidad_por_galpon": {g: 0 for g in GALPONES},
+        "aves_actuales_por_galpon": {g: 0 for g in GALPONES},
+        "porcentaje_produccion_hoy_por_galpon": {g: 0.0 for g in GALPONES},
     }
     hoy = date.today()
     inicio_mes = pd.Timestamp(hoy.replace(day=1))
@@ -624,12 +626,30 @@ def calcular_resumen_general():
         resumen["cartera_pendiente"] = float(df_cartera[df_cartera["estado"] == "PENDIENTE"]["saldo"].sum())
 
     df_reg = cargar_registros_diarios()
+    
+    for g in GALPONES:
+        config_g = cargar_config_galpon(g)
+        aves_ini = config_g['aves_iniciales'] if config_g else 0
+        if not df_reg.empty and "galpon" in df_reg.columns:
+            df_g_reg = df_reg[df_reg["galpon"] == g]
+            mort_total = int(df_g_reg["mortalidad"].sum()) if not df_g_reg.empty else 0
+            aves_vivas = max(0, aves_ini - mort_total)
+        else:
+            aves_vivas = aves_ini
+        resumen["aves_actuales_por_galpon"][g] = aves_vivas
+
     if not df_reg.empty:
         df_hoy = df_reg[df_reg["fecha"] == hoy]
         resumen["produccion_hoy"] = int(df_hoy["huevos_recolectados"].sum())
         if "galpon" in df_hoy.columns:
             for g in GALPONES:
-                resumen["produccion_por_galpon"][g] = int(df_hoy[df_hoy["galpon"] == g]["huevos_recolectados"].sum())
+                huevos_hoy_g = int(df_hoy[df_hoy["galpon"] == g]["huevos_recolectados"].sum())
+                resumen["produccion_por_galpon"][g] = huevos_hoy_g
+                aves_g = resumen["aves_actuales_por_galpon"][g]
+                if aves_g > 0:
+                    resumen["porcentaje_produccion_hoy_por_galpon"][g] = (huevos_hoy_g / aves_g) * 100
+                else:
+                    resumen["porcentaje_produccion_hoy_por_galpon"][g] = 0.0
 
         df_mes = df_reg[pd.to_datetime(df_reg["fecha"]) >= inicio_mes]
         resumen["mortalidad_mes"] = int(df_mes["mortalidad"].sum())
@@ -654,7 +674,7 @@ def calcular_resumen_general():
     return resumen
 
 
-def _fila_metrica_con_desglose(icono, titulo, valor_total, valores_por_galpon, es_moneda=False):
+def _fila_metrica_con_desglose(icono, titulo, valor_total, valores_por_galpon, es_moneda=False, porcentajes_por_galpon=None):
     """Muestra una métrica grande (ej. Stock Total) y, justo debajo, una fila
     con el mismo dato desglosado por cada uno de los galpones."""
     if es_moneda:
@@ -667,6 +687,9 @@ def _fila_metrica_con_desglose(icono, titulo, valor_total, valores_por_galpon, e
     for col, g in zip(cols, GALPONES):
         valor_g = valores_por_galpon.get(g, 0)
         texto_g = f"${valor_g:,.0f}".replace(",", ".") if es_moneda else f"{valor_g:,}".replace(",", ".")
+        if porcentajes_por_galpon is not None and g in porcentajes_por_galpon:
+            porc_g = porcentajes_por_galpon[g]
+            texto_g += f" <span style='font-size:11px; color:#f26822;'>({porc_g:.1f}%)</span>"
         col.markdown(
             f"<div style='text-align:center; background-color:#163559; border:1px solid #244c7c; "
             f"border-radius:8px; padding:6px 2px; margin-top:-8px;'>"
@@ -680,9 +703,11 @@ def _fila_metrica_con_desglose(icono, titulo, valor_total, valores_por_galpon, e
 def mostrar_resumen_general():
     str_app.subheader("🏠 Resumen General")
     resumen = calcular_resumen_general()
+    total_aves_vivas = sum(resumen["aves_actuales_por_galpon"].values())
 
     _fila_metrica_con_desglose("📦", "Stock Total", resumen["stock_total"], resumen["stock_por_galpon"])
-    _fila_metrica_con_desglose("🥚", "Producción Hoy", resumen["produccion_hoy"], resumen["produccion_por_galpon"])
+    _fila_metrica_con_desglose("🐔", "Aves Actuales", total_aves_vivas, resumen["aves_actuales_por_galpon"])
+    _fila_metrica_con_desglose("🥚", "Producción Hoy", resumen["produccion_hoy"], resumen["produccion_por_galpon"], porcentajes_por_galpon=resumen["porcentaje_produccion_hoy_por_galpon"])
     _fila_metrica_con_desglose("💀", "Mortalidad del Mes", resumen["mortalidad_mes"], resumen["mortalidad_por_galpon"])
 
     str_app.markdown("---")

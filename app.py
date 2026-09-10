@@ -139,7 +139,7 @@ str_app.markdown(
 # =========================================================================
 GALPONES = ["Galpón 1", "Galpón 2", "Galpón 3"]
 GALPONES_GASTOS = GALPONES + ["General / Granja"]
-CLASIFICACIONES = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto"]
+CLASIFICACIONES = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto", "palido"]
 COLUMNAS_INVENTARIO = set(CLASIFICACIONES)
 MESES_NOMBRES = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
                   7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
@@ -242,7 +242,7 @@ def inicializar_todas_las_tablas():
         CREATE TABLE IF NOT EXISTS inventario (
             galpon TEXT PRIMARY KEY,
             yumbo INT DEFAULT 0, extra INT DEFAULT 0, aa INT DEFAULT 0, a INT DEFAULT 0,
-            b INT DEFAULT 0, c INT DEFAULT 0, sucio INT DEFAULT 0, roto INT DEFAULT 0
+            b INT DEFAULT 0, c INT DEFAULT 0, sucio INT DEFAULT 0, roto INT DEFAULT 0, palido INT DEFAULT 0
         );
     """)
     for g in GALPONES:
@@ -367,12 +367,12 @@ def cargar_historial_entradas(galpon=None):
 def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
     ejecutar("""
         UPDATE inventario SET
-            yumbo = %s, extra = %s, aa = %s, a = %s, b = %s, c = %s, sucio = %s, roto = %s
+            yumbo = %s, extra = %s, aa = %s, a = %s, b = %s, c = %s, sucio = %s, roto = %s, palido = %s
         WHERE galpon = %s
     """, (
         nuevo_stock_dict.get('yumbo', 0), nuevo_stock_dict.get('extra', 0), nuevo_stock_dict.get('aa', 0),
         nuevo_stock_dict.get('a', 0), nuevo_stock_dict.get('b', 0), nuevo_stock_dict.get('c', 0),
-        nuevo_stock_dict.get('sucio', 0), nuevo_stock_dict.get('roto', 0), galpon
+        nuevo_stock_dict.get('sucio', 0), nuevo_stock_dict.get('roto', 0), nuevo_stock_dict.get('palido', 0), galpon
     ))
 
 
@@ -594,7 +594,7 @@ def reiniciar_sistema_completo():
             ejecutar(f"TRUNCATE TABLE {tabla} RESTART IDENTITY CASCADE;")
         except psycopg2.Error:
             ejecutar(f"DELETE FROM {tabla};")
-    ejecutar("UPDATE inventario SET yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0;")
+    ejecutar("UPDATE inventario SET yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0, palido = 0;")
 
 
 # =========================================================================

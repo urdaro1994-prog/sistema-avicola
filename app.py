@@ -240,11 +240,15 @@ def inicializar_todas_las_tablas():
     """)
     ejecutar("""
         CREATE TABLE IF NOT EXISTS inventario (
-            galpon TEXT PRIMARY KEY,
-            yumbo INT DEFAULT 0, extra INT DEFAULT 0, aa INT DEFAULT 0, a INT DEFAULT 0,
-            b INT DEFAULT 0, c INT DEFAULT 0, sucio INT DEFAULT 0, roto INT DEFAULT 0, palido INT DEFAULT 0
+            galpon TEXT PRIMARY KEY
         );
     """)
+    # Si la tabla ya existía de una versión anterior (por ejemplo, antes de
+    # agregar la clasificación "palido"), CREATE TABLE IF NOT EXISTS no la
+    # modifica. Este bucle agrega cualquier columna de clasificación que
+    # falte, para que nunca vuelva a pasar el error de "columna no existe".
+    for col_clasif in CLASIFICACIONES:
+        ejecutar(f"ALTER TABLE inventario ADD COLUMN IF NOT EXISTS {col_clasif} INT DEFAULT 0;")
     for g in GALPONES:
         ejecutar("INSERT INTO inventario (galpon) VALUES (%s) ON CONFLICT (galpon) DO NOTHING;", (g,))
     ejecutar("""
@@ -361,17 +365,33 @@ def actualizar_historial_entrada(id_entrada, nuevo_galpon, nueva_clasificacion, 
                 res = cur.fetchone()
                 if not res:
                     raise ValueError("La entrada de stock no existe.")
-                old_galpon, old_clasif, old_cant = res[0], res[1], res[2]
-                
+                old_galpon, old_clasif, old_cant = res[0], res[1].lower(), res[2]
+                if old_clasif not in COLUMNAS_INVENTARIO:
+                    raise ValueError(f"La entrada tiene una clasificación inválida guardada: {old_clasif}")
+
+                # Antes de revertir el stock de la entrada original, verificamos que
+                # esa cantidad siga disponible: si ya se vendió parte de ese stock,
+                # restarlo dejaría el inventario en negativo. En ese caso se bloquea
+                # la edición con un mensaje claro en vez de corromper el inventario.
+                cur.execute(f"SELECT {old_clasif} FROM inventario WHERE galpon = %s", (old_galpon,))
+                res_stock = cur.fetchone()
+                stock_actual = res_stock[0] if res_stock else 0
+                if stock_actual < old_cant:
+                    raise ValueError(
+                        f"No se puede editar esta entrada: parte de ese stock de '{old_clasif.upper()}' en {old_galpon} "
+                        f"ya fue vendido o movido (stock actual: {stock_actual:,}, cantidad original: {old_cant:,}). "
+                        f"Ajusta primero las remisiones o el inventario físico antes de editar esta entrada.".replace(",", ".")
+                    )
+
                 # Revertir stock anterior
                 cur.execute(f"UPDATE inventario SET {old_clasif} = {old_clasif} - %s WHERE galpon = %s", (old_cant, old_galpon))
-                
+
                 # Aplicar nuevo stock
                 nueva_clasificacion = nueva_clasificacion.lower()
                 if nueva_clasificacion not in COLUMNAS_INVENTARIO:
                     raise ValueError(f"Clasificación inválida: {nueva_clasificacion}")
                 cur.execute(f"UPDATE inventario SET {nueva_clasificacion} = {nueva_clasificacion} + %s WHERE galpon = %s", (nueva_cantidad, nuevo_galpon))
-                
+
                 # Actualizar registro en historial_entradas
                 cur.execute("""
                     UPDATE historial_entradas 
@@ -393,15 +413,11 @@ def cargar_historial_entradas(galpon=None):
 
 @operacion_segura
 def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
-    ejecutar("""
-        UPDATE inventario SET
-            yumbo = %s, extra = %s, aa = %s, a = %s, b = %s, c = %s, sucio = %s, roto = %s, palido = %s
-        WHERE galpon = %s
-    """, (
-        nuevo_stock_dict.get('yumbo', 0), nuevo_stock_dict.get('extra', 0), nuevo_stock_dict.get('aa', 0),
-        nuevo_stock_dict.get('a', 0), nuevo_stock_dict.get('b', 0), nuevo_stock_dict.get('c', 0),
-        nuevo_stock_dict.get('sucio', 0), nuevo_stock_dict.get('roto', 0), nuevo_stock_dict.get('palido', 0), galpon
-    ))
+    # Generado dinámicamente a partir de CLASIFICACIONES, para que agregar o quitar
+    # una clasificación en el futuro no requiera recordar actualizar esta consulta.
+    set_columnas = ", ".join([f"{c} = %s" for c in CLASIFICACIONES])
+    valores = [nuevo_stock_dict.get(c, 0) for c in CLASIFICACIONES] + [galpon]
+    ejecutar(f"UPDATE inventario SET {set_columnas} WHERE galpon = %s", tuple(valores))
 
 
 # --- REMISIONES / VENTAS ---
@@ -507,6 +523,9 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
                 cur.execute("SELECT galpon, tipo_huevo, cantidad FROM remisiones WHERE num_remision = %s", (num_remision,))
                 old_rows = cur.fetchall()
                 for galp, clasif, cant in old_rows:
+                    clasif = clasif.lower()
+                    if clasif not in COLUMNAS_INVENTARIO:
+                        raise ValueError(f"La remisión original contiene una clasificación inválida: {clasif}")
                     cur.execute(f"UPDATE inventario SET {clasif} = {clasif} + %s WHERE galpon = %s", (cant, galp))
 
                 # 2. Validar stock para los nuevos ítems
@@ -684,7 +703,10 @@ def reiniciar_sistema_completo():
             ejecutar(f"TRUNCATE TABLE {tabla} RESTART IDENTITY CASCADE;")
         except psycopg2.Error:
             ejecutar(f"DELETE FROM {tabla};")
-    ejecutar("UPDATE inventario SET yumbo = 0, extra = 0, aa = 0, a = 0, b = 0, c = 0, sucio = 0, roto = 0, palido = 0;")
+    # Se genera dinámicamente a partir de CLASIFICACIONES para que, si en el futuro
+    # se agrega o quita una clasificación, el reinicio no quede desactualizado.
+    set_columnas = ", ".join([f"{c} = 0" for c in CLASIFICACIONES])
+    ejecutar(f"UPDATE inventario SET {set_columnas};")
 
 
 # =========================================================================
@@ -1301,10 +1323,13 @@ else:
                                             e_clasif = str_app.selectbox("Clasificación", CLASIFICACIONES, index=CLASIFICACIONES.index(row_he['clasificacion'].lower()) if row_he['clasificacion'].lower() in CLASIFICACIONES else 0, key=f"ec_{row_he['id']}")
                                             e_cant = str_app.number_input("Cantidad", min_value=1, value=int(row_he['cantidad']), step=1, key=f"ecan_{row_he['id']}")
                                             if str_app.form_submit_button("💾 Guardar Cambios de Entrada"):
-                                                if actualizar_historial_entrada(int(row_he['id']), e_galpon, e_clasif, int(e_cant), e_fecha):
-                                                    str_app.toast("¡Entrada actualizada con éxito! 🎉", icon="✅")
-                                                    str_app.success("¡Modificación guardada y stock ajustado correctamente!")
-                                                    str_app.rerun()
+                                                try:
+                                                    if actualizar_historial_entrada(int(row_he['id']), e_galpon, e_clasif, int(e_cant), e_fecha):
+                                                        str_app.toast("¡Entrada actualizada con éxito! 🎉", icon="✅")
+                                                        str_app.success("¡Modificación guardada y stock ajustado correctamente!")
+                                                        str_app.rerun()
+                                                except ValueError as ve:
+                                                    str_app.error(str(ve))
                                     else:
                                         str_app.warning("👀 Modo Invitado: No tienes permisos para editar.")
                         else:
@@ -1704,7 +1729,9 @@ else:
                                                             if actualizar_remision(int(num_sel), ed_nom, ed_ced, ed_dir, ed_tel, ed_em, ed_cond, ed_fecha, nuevos_items_dict):
                                                                 str_app.toast("¡Remisión actualizada con éxito! 🎉", icon="✅")
                                                                 str_app.success("¡Remisión modificada y stock ajustado correctamente!")
-                                                                str_app.rerun()
+                                                                cliente_datos_ed = {"nombre": ed_nom, "cedula": ed_ced, "direccion": ed_dir, "telefono": ed_tel, "email": ed_em}
+                                                                pdf_buf_ed = generar_pdf_remision(int(num_sel), str(ed_fecha), ed_cond, cliente_datos_ed, items_val, items_val["Subtotal ($)"].sum())
+                                                                str_app.download_button("📄 Descargar Remisión Corregida en PDF", data=pdf_buf_ed, file_name=f"Remision_{int(num_sel):06d}_corregida.pdf", mime="application/pdf", key=f"dl_ed_{num_sel}")
                                                         except ValueError as ve:
                                                             str_app.error(str(ve))
                                 else:

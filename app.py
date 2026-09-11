@@ -1286,8 +1286,16 @@ else:
                         str_app.warning("👀 Modo Invitado: Solo puedes visualizar la sección.")
                     else:
                         str_app.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
-                        galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", GALPONES)
-                        fecha_entrada = str_app.date_input("Fecha de la Entrada", value=date.today(), key="fecha_entrada_stock")
+
+                        # Contador usado para "reiniciar" los campos tras guardar: al cambiar,
+                        # Streamlit crea widgets nuevos (con sus valores por defecto) en vez de
+                        # reutilizar lo que había quedado escrito.
+                        if "reset_ctr_entrada_stock" not in str_app.session_state:
+                            str_app.session_state["reset_ctr_entrada_stock"] = 0
+                        ctr_es = str_app.session_state["reset_ctr_entrada_stock"]
+
+                        galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", GALPONES, key=f"galpon_destino_entrada_{ctr_es}")
+                        fecha_entrada = str_app.date_input("Fecha de la Entrada", value=date.today(), key=f"fecha_entrada_stock_{ctr_es}")
 
                         df_base_entrada = pd.DataFrame([{"Clasificación": "a", "Cantidad": 0}])
                         df_entrada_editado = str_app.data_editor(
@@ -1296,10 +1304,10 @@ else:
                                 "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=CLASIFICACIONES, required=True),
                                 "Cantidad": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True)
                             },
-                            use_container_width=True, key="editor_entradas_stock"
+                            use_container_width=True, key=f"editor_entradas_stock_{ctr_es}"
                         )
 
-                        if str_app.button("➕ Registrar Entrada al Inventario"):
+                        if str_app.button("➕ Registrar Entrada al Inventario", key=f"btn_registrar_entrada_{ctr_es}"):
                             entradas_validas = df_entrada_editado[df_entrada_editado["Cantidad"] > 0].copy()
                             if entradas_validas.empty:
                                 str_app.warning("Debe ingresar al menos un ítem con cantidad mayor a 0.")
@@ -1308,6 +1316,7 @@ else:
                                 if registrar_entrada_inventario(galpon_destino, lista_items_entrada, fecha_entrada):
                                     str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                                     str_app.success(f"¡Entrada de inventario registrada correctamente en {galpon_destino} el {fecha_entrada}!")
+                                    str_app.session_state["reset_ctr_entrada_stock"] += 1
                                     str_app.rerun()
 
                     str_app.markdown("---")
@@ -1336,7 +1345,7 @@ else:
                             for _, row_he in df_hist_filtrado.iterrows():
                                 with str_app.expander(f"📅 {row_he['fecha']} | {row_he['galpon']} | {row_he['clasificacion'].upper()} | Cantidad: {row_he['cantidad']:,}".replace(",", ".")):
                                     if rol_actual == "Administrador":
-                                        with str_app.form(f"form_edit_he_{row_he['id']}"):
+                                        with str_app.form(f"form_edit_he_{row_he['id']}", clear_on_submit=True):
                                             e_fecha = str_app.date_input("Fecha", value=row_he['fecha'], key=f"ef_{row_he['id']}")
                                             e_galpon = str_app.selectbox("Galpón", GALPONES, index=GALPONES.index(row_he['galpon']) if row_he['galpon'] in GALPONES else 0, key=f"eg_{row_he['id']}")
                                             e_clasif = str_app.selectbox("Clasificación", CLASIFICACIONES, index=CLASIFICACIONES.index(row_he['clasificacion'].lower()) if row_he['clasificacion'].lower() in CLASIFICACIONES else 0, key=f"ec_{row_he['id']}")
@@ -1401,7 +1410,7 @@ else:
                     if rol_actual == "Invitado":
                         str_app.warning("👀 Modo Invitado: Solo lectura.")
                     else:
-                        with str_app.form(key="form_registrar_gasto"):
+                        with str_app.form(key="form_registrar_gasto", clear_on_submit=True):
                             c_fecha_g = str_app.date_input("Fecha del Gasto", value=date.today())
                             c_galpon_g = str_app.selectbox("Galpón Asociado", GALPONES_GASTOS)
                             c_categoria_g = str_app.selectbox("Categoría de Gasto", CATEGORIAS_GASTO_GALPON)
@@ -1457,7 +1466,7 @@ else:
                     if rol_actual == "Invitado":
                         str_app.warning("👀 Modo Invitado: Solo lectura.")
                     else:
-                        with str_app.form(key="form_registrar_gv"):
+                        with str_app.form(key="form_registrar_gv", clear_on_submit=True):
                             c_fecha_gv = str_app.date_input("Fecha", value=date.today())
                             c_cat_gv = str_app.selectbox("Categoría", CATEGORIAS_GASTO_VARIO)
                             c_desc_gv = str_app.text_input("Descripción")
@@ -1498,7 +1507,7 @@ else:
                         tab_n, tab_e, tab_l = str_app.tabs(["➕ Agregar", "✏️ Editar", "📋 Lista"])
 
                         with tab_n:
-                            with str_app.form("form_cli_nuevo"):
+                            with str_app.form("form_cli_nuevo", clear_on_submit=True):
                                 nom = str_app.text_input("Nombre *")
                                 ced = str_app.text_input("Cédula/NIT")
                                 dir_ = str_app.text_input("Dirección")
@@ -1519,7 +1528,7 @@ else:
                             else:
                                 cliente_editar = str_app.selectbox("Selecciona el cliente a editar", df_cli["nombre"].tolist(), key="sel_editar_cliente")
                                 d_cli = df_cli[df_cli["nombre"] == cliente_editar].iloc[0]
-                                with str_app.form("form_cli_editar"):
+                                with str_app.form("form_cli_editar", clear_on_submit=True):
                                     ced_e = str_app.text_input("Cédula/NIT", value=str(d_cli.get("cedula_nit", "") or ""))
                                     dir_e = str_app.text_input("Dirección", value=str(d_cli.get("direccion", "") or ""))
                                     tel_e = str_app.text_input("Teléfono", value=str(d_cli.get("telefono", "") or ""))
@@ -1638,7 +1647,7 @@ else:
 
                                 str_app.markdown("---")
                                 if rol_actual == "Administrador" and float(row['saldo']) > 0:
-                                    with str_app.form(key=f"ab_{row['num_remision']}"):
+                                    with str_app.form(key=f"ab_{row['num_remision']}", clear_on_submit=True):
                                         str_app.markdown("#### ➕ Registrar Nuevo Abono")
                                         monto = str_app.number_input("Abono ($)", min_value=0.0, max_value=float(row['saldo']), step=1000.0, format="%.0f")
                                         arch = str_app.file_uploader("Comprobante (Opcional)", type=["png", "jpg", "jpeg", "pdf"], key=f"f_{row['num_remision']}")
@@ -1703,7 +1712,7 @@ else:
                                     if rol_actual == "Administrador":
                                         str_app.markdown("---")
                                         if str_app.checkbox(f"✏️ Habilitar edición para Remisión #{int(num_sel):06d}", key=f"chk_edit_rem_{num_sel}"):
-                                            with str_app.form(f"form_edit_rem_{num_sel}"):
+                                            with str_app.form(f"form_edit_rem_{num_sel}", clear_on_submit=True):
                                                 str_app.markdown(f"#### Editando Remisión #{int(num_sel):06d}")
                                                 ed_fecha = str_app.date_input("Fecha Emisión", value=f_sel.get('fecha_emision', date.today()), key=f"ed_f_{num_sel}")
                                                 ed_nom = str_app.text_input("Cliente", value=cliente_nombre, key=f"ed_nom_{num_sel}")
@@ -1875,7 +1884,7 @@ else:
                 ini_dias = config_actual['edad_dias'] if config_actual else 0
                 ini_aves = config_actual['aves_iniciales'] if config_actual else 0
 
-                with str_app.form(f"form_config_{galpon_reg}"):
+                with str_app.form(f"form_config_{galpon_reg}", clear_on_submit=True):
                     c_sem = str_app.number_input("Edad Inicial (Semanas)", min_value=0, value=int(ini_sem), step=1)
                     c_dias = str_app.number_input("Edad Inicial (Días adicionales 0-6)", min_value=0, max_value=6, value=int(ini_dias), step=1)
                     c_aves = str_app.number_input("Número de Aves Iniciales del Lote", min_value=0, value=int(ini_aves), step=10)
@@ -1897,7 +1906,7 @@ else:
                     if not config:
                         str_app.warning("⚠️ Primero debes configurar la Edad y Aves Iniciales en la pestaña 'Configuración Inicial'.")
                     else:
-                        with str_app.form(f"form_reg_diario_{galpon_reg}"):
+                        with str_app.form(f"form_reg_diario_{galpon_reg}", clear_on_submit=True):
                             fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
                             mortalidad = str_app.number_input("Mortalidad del Día (Aves muertas)", min_value=0, value=0, step=1)
                             conc_ing = str_app.number_input("Concentrado Ingresado (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%g")

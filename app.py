@@ -1447,9 +1447,24 @@ else:
                             c_pdf, c_xls = str_app.columns(2)
                             with c_pdf:
                                 pdf_gastos_buf = generar_pdf_gastos(df_gf, f"Reporte de Gastos - {mes_nombre_sel} {anio_sel_g}")
-                                str_app.download_button("📄 Descargar en PDF", data=pdf_gastos_buf, file_name=f"Gastos_{mes_nombre_sel}_{anio_sel_g}.pdf", mime="application/pdf")
+                                str_app.download_button("📄 PDF de todos los galpones", data=pdf_gastos_buf, file_name=f"Gastos_{mes_nombre_sel}_{anio_sel_g}.pdf", mime="application/pdf")
                             with c_xls:
                                 boton_exportar_excel(df_gf[["fecha", "galpon", "categoria", "descripcion", "valor"]], f"Gastos_{mes_nombre_sel}_{anio_sel_g}.xlsx")
+
+                            # --- PDF SEPARADO POR GALPÓN ---
+                            str_app.markdown("##### 📄 PDF separado por galpón")
+                            galpones_con_gastos = [g for g in GALPONES_GASTOS if g in df_gf["galpon"].values]
+                            cols_pdf_galpon = str_app.columns(2)
+                            for i, g in enumerate(galpones_con_gastos):
+                                df_g = df_gf[df_gf["galpon"] == g]
+                                pdf_g_buf = generar_pdf_gastos(df_g, f"Gastos {g} - {mes_nombre_sel} {anio_sel_g}")
+                                nombre_g = g.replace(" / ", "_").replace(" ", "_")
+                                cols_pdf_galpon[i % 2].download_button(
+                                    f"📄 {g}", data=pdf_g_buf,
+                                    file_name=f"Gastos_{nombre_g}_{mes_nombre_sel}_{anio_sel_g}.pdf",
+                                    mime="application/pdf",
+                                    key=f"dl_gastos_{nombre_g}_{anio_sel_g}_{mes_num_sel}"
+                                )
                             str_app.markdown("---")
 
                         for _, row_g in df_gf.iterrows():

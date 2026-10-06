@@ -1767,101 +1767,19 @@ else:
                     if not df_gv.empty:
                         c_pdf, c_xls = str_app.columns(2)
                         with c_pdf:
-                            pdf_gv_buf = with c_pdf:
-                            pdf_gv_buf = generar_pdf_gastos(df_gv, "Reporte de Gastos Varios")
-                            str_app.download_button("📄 PDF Gastos Varios", data=pdf_gv_buf, file_name="Gastos_Varios.pdf", mime="application/pdf")
+                            pdf_gv_buf = generar_pdf_gastos(df_gv, "Reporte de Gastos Varios y Personales")
+                            str_app.download_button("📄 Descargar en PDF", data=pdf_gv_buf, file_name="Gastos_Varios.pdf", mime="application/pdf")
                         with c_xls:
                             boton_exportar_excel(df_gv[["fecha", "categoria", "descripcion", "valor"]], "Gastos_Varios.xlsx")
-
                         str_app.markdown("---")
-                        for _, row_gv in df_gv.iterrows():
-                            with str_app.expander(f"📅 {row_gv['fecha']} — [{row_gv['categoria']}] ${float(row_gv['valor']):,.0f}".replace(",", ".")):
-                                str_app.write(f"**Desc:** {row_gv['descripcion']}")
+
+                        for _, r in df_gv.iterrows():
+                            with str_app.expander(f"📅 {r['fecha']} — [{r['categoria']}] ${float(r['valor']):,.0f}".replace(",", ".")):
+                                str_app.write(f"**Desc:** {r['descripcion']}")
                                 if rol_actual == "Administrador":
-                                    if confirmar_eliminacion(f"gasto_vario_{row_gv['id']}", etiqueta="🗑️ Eliminar Gasto Vario"):
-                                        eliminar_gasto_vario(row_gv['id'])
+                                    if confirmar_eliminacion(f"gv_{r['id']}", etiqueta="🗑️ Eliminar"):
+                                        eliminar_gasto_vario(r['id'])
                                         str_app.rerun()
-
-                # ---------------- HISTORIAL DE REMISIONES POR MES ----------------
-                elif str_app.session_state.seccion_activa == "📜 Historial":
-                    str_app.subheader("📜 Historial de Remisiones y Descargas por Mes")
-                    
-                    df_rem_hist = cargar_remisiones()
-                    if not df_rem_hist.empty:
-                        df_rem_hist['dt_fecha'] = pd.to_datetime(df_rem_hist['fecha_emision'])
-                        df_rem_hist['Año'] = df_rem_hist['dt_fecha'].dt.year
-                        df_rem_hist['Mes_Num'] = df_rem_hist['dt_fecha'].dt.month
-
-                        col_an, col_ms = str_app.columns(2)
-                        anios_disp = sorted(df_rem_hist['Año'].unique().tolist(), reverse=True)
-                        anio_sel_rem = col_an.selectbox("📅 Seleccione Año", anios_disp, key="anio_remisiones_hist")
-                        
-                        meses_disp_num = sorted(df_rem_hist[df_rem_hist['Año'] == anio_sel_rem]['Mes_Num'].unique().tolist())
-                        meses_disp_nom = [MESES_NOMBRES[m] for m in meses_disp_num]
-                        
-                        if meses_disp_nom:
-                            mes_nom_sel_rem = col_ms.selectbox("📅 Seleccione Mes", meses_disp_nom, key="mes_remisiones_hist")
-                            mes_num_sel_rem = [k for k, v in MESES_NOMBRES.items() if v == mes_nom_sel_rem][0]
-
-                            df_rem_mes = df_rem_hist[(df_rem_hist['Año'] == anio_sel_rem) & (df_rem_hist['Mes_Num'] == mes_num_sel_rem)].copy()
-
-                            str_app.markdown(f"### 📊 Remisiones de {mes_nom_sel_rem} {anio_sel_rem}")
-                            str_app.metric("Total Ventas del Mes", f"${df_rem_mes['total'].sum():,.0f}".replace(",", "."))
-
-                            # Botón de descarga masiva en Excel para las remisiones del mes seleccionado
-                            cols_exp = ["num_remision", "fecha_emision", "cliente", "cedula_nit", "telefono", "destino", "conductor", "tipo_huevo", "cantidad", "precio_unitario", "total", "galpon"]
-                            cols_exp_existentes = [c for c in cols_exp if c in df_rem_mes.columns]
-                            boton_exportar_excel(df_rem_mes[cols_exp_existentes], f"Remisiones_{mes_nom_sel_rem}_{anio_sel_rem}.xlsx", etiqueta="📊 Descargar Excel del Mes")
-
-                            str_app.markdown("---")
-                            
-                            # Agrupar por número de remisión para ver el detalle por factura/remisión individual
-                            nums_remisiones_mes = df_rem_mes['num_remision'].unique()
-
-                            for num_r in sorted(nums_remisiones_mes, reverse=True):
-                                sub_df_rem = df_rem_mes[df_rem_mes['num_remision'] == num_r]
-                                cliente_rem = sub_df_rem['cliente'].iloc[0] if 'cliente' in sub_df_rem.columns else "N/A"
-                                fecha_rem = sub_df_rem['fecha_emision'].iloc[0]
-                                total_rem = sub_df_rem['total'].sum()
-
-                                with str_app.expander(f"📄 Remisión N° {num_r:06d} — {cliente_rem} (${total_rem:,.0f})".replace(",", ".")):
-                                    str_app.write(f"**Fecha:** {fecha_rem}")
-                                    if 'conductor' in sub_df_rem.columns:
-                                        str_app.write(f"**Conductor:** {sub_df_rem['conductor'].iloc[0]}")
-                                    
-                                    # Mostrar tabla de items contenidos en la remisión
-                                    df_items_rem = sub_df_rem[['tipo_huevo', 'cantidad', 'precio_unitario', 'total']].copy()
-                                    df_items_rem.columns = ['Clasificación', 'Cantidad (Huevos)', 'Precio Unitario ($)', 'Subtotal ($)']
-                                    df_items_rem['Clasificación'] = df_items_rem['Clasificación'].str.upper()
-                                    str_app.dataframe(df_items_rem, use_container_width=True, hide_index=True)
-
-                                    # Generación y descarga individual del PDF de la remisión
-                                    cliente_info = {
-                                        "nombre": cliente_rem,
-                                        "cedula": sub_df_rem['cedula_nit'].iloc[0] if 'cedula_nit' in sub_df_rem.columns else "",
-                                        "direccion": sub_df_rem['destino'].iloc[0] if 'destino' in sub_df_rem.columns else "",
-                                        "telefono": sub_df_rem['telefono'].iloc[0] if 'telefono' in sub_df_rem.columns else "",
-                                        "email": sub_df_rem['email'].iloc[0] if 'email' in sub_df_rem.columns else ""
-                                    }
-                                    pdf_bytes = generar_pdf_remision(
-                                        num_remision=num_r,
-                                        fecha_str=str(fecha_rem),
-                                        conductor=sub_df_rem['conductor'].iloc[0] if 'conductor' in sub_df_rem.columns else "",
-                                        cliente_datos=cliente_info,
-                                        items_df=df_items_rem,
-                                        total_factura=total_rem
-                                    )
-                                    str_app.download_button(
-                                        label=f"📥 Descargar PDF Remisión N° {num_r:06d}",
-                                        data=pdf_bytes,
-                                        file_name=f"Remision_{num_r:06d}.pdf",
-                                        mime="application/pdf",
-                                        key=f"dl_pdf_rem_{num_r}"
-                                    )
-                        else:
-                            str_app.info("No hay remisiones registradas para el año seleccionado.")
-                    else:
-                        str_app.info("Aún no hay remisiones registradas en el sistema.")
 
                 # ---------------- CLIENTES ----------------
                 elif str_app.session_state.seccion_activa == "👥 Clientes":

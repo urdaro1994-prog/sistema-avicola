@@ -820,6 +820,9 @@ def calcular_resumen_general():
     df_gastos_v = cargar_gastos_varios()
     if not df_gastos_v.empty:
         total_gastos_mes += float(df_gastos_v[pd.to_datetime(df_gastos_v["fecha"]) >= inicio_mes]["valor"].sum())
+    df_gastos_c = cargar_gastos_camion()
+    if not df_gastos_c.empty:
+        total_gastos_mes += float(df_gastos_c[pd.to_datetime(df_gastos_c["fecha"]) >= inicio_mes]["valor"].sum())
     resumen["gastos_mes"] = total_gastos_mes
 
     df_rem = cargar_remisiones()
@@ -1882,20 +1885,25 @@ else:
 
                     df_rem = cargar_remisiones()
                     df_gas = cargar_gastos()
+                    df_cam = cargar_gastos_camion()
 
-                    if df_rem.empty and df_gas.empty:
+                    if df_rem.empty and df_gas.empty and df_cam.empty:
                         str_app.info("No hay datos suficientes de ventas o gastos para calcular utilidades.")
                     else:
                         if not df_rem.empty and 'fecha_emision' in df_rem.columns:
                             df_rem['dt_fecha'] = pd.to_datetime(df_rem['fecha_emision'])
                         if not df_gas.empty and 'fecha' in df_gas.columns:
                             df_gas['dt_fecha'] = pd.to_datetime(df_gas['fecha'])
+                        if not df_cam.empty and 'fecha' in df_cam.columns:
+                            df_cam['dt_fecha'] = pd.to_datetime(df_cam['fecha'])
 
                         anios_disponibles = set()
                         if not df_rem.empty and 'dt_fecha' in df_rem.columns:
                             anios_disponibles.update(df_rem['dt_fecha'].dt.year.unique().tolist())
                         if not df_gas.empty and 'dt_fecha' in df_gas.columns:
                             anios_disponibles.update(df_gas['dt_fecha'].dt.year.unique().tolist())
+                        if not df_cam.empty and 'dt_fecha' in df_cam.columns:
+                            anios_disponibles.update(df_cam['dt_fecha'].dt.year.unique().tolist())
                         anios_disponibles = sorted(anios_disponibles, reverse=True) if anios_disponibles else [date.today().year]
 
                         vista_util = str_app.radio("Vista", ["📅 Mes específico", "📊 Histórico completo"], horizontal=True, key="vista_utilidades")
@@ -1909,10 +1917,12 @@ else:
 
                             df_rem_periodo = df_rem[(df_rem['dt_fecha'].dt.year == anio_sel_u) & (df_rem['dt_fecha'].dt.month == mes_num_sel_u)] if not df_rem.empty and 'dt_fecha' in df_rem.columns else pd.DataFrame()
                             df_gas_periodo = df_gas[(df_gas['dt_fecha'].dt.year == anio_sel_u) & (df_gas['dt_fecha'].dt.month == mes_num_sel_u)] if not df_gas.empty and 'dt_fecha' in df_gas.columns else pd.DataFrame()
+                            df_cam_periodo = df_cam[(df_cam['dt_fecha'].dt.year == anio_sel_u) & (df_cam['dt_fecha'].dt.month == mes_num_sel_u)] if not df_cam.empty and 'dt_fecha' in df_cam.columns else pd.DataFrame()
                             titulo_periodo = f"{mes_nombre_sel_u} {anio_sel_u}"
                         else:
                             df_rem_periodo = df_rem
                             df_gas_periodo = df_gas
+                            df_cam_periodo = df_cam
                             titulo_periodo = "Histórico completo"
 
                         resumen_utilidades = []
@@ -1923,15 +1933,17 @@ else:
 
                         gastos_generales = float(df_gas_periodo[df_gas_periodo['galpon'] == "General / Granja"]['valor'].sum()) if not df_gas_periodo.empty and 'galpon' in df_gas_periodo.columns and 'valor' in df_gas_periodo.columns else 0.0
 
+                        gastos_camion = float(df_cam_periodo['valor'].sum()) if not df_cam_periodo.empty and 'valor' in df_cam_periodo.columns else 0.0
+
                         df_util = pd.DataFrame(resumen_utilidades)
                         total_ingresos = df_util["Ingresos ($)"].sum()
                         total_gastos_galpones = df_util["Gastos ($)"].sum()
-                        utilidad_neta_total = total_ingresos - (total_gastos_galpones + gastos_generales)
+                        utilidad_neta_total = total_ingresos - (total_gastos_galpones + gastos_generales + gastos_camion)
 
                         str_app.markdown(f"#### {titulo_periodo}")
                         col_u1, col_u2, col_u3 = str_app.columns(3)
                         col_u1.metric("Total Ingresos", f"${total_ingresos:,.0f}".replace(",", "."))
-                        col_u2.metric("Total Gastos", f"${(total_gastos_galpones + gastos_generales):,.0f}".replace(",", "."))
+                        col_u2.metric("Total Gastos", f"${(total_gastos_galpones + gastos_generales + gastos_camion):,.0f}".replace(",", "."))
                         col_u3.metric("Utilidad Neta", f"${utilidad_neta_total:,.0f}".replace(",", "."))
 
                         if total_ingresos > 0 or total_gastos_galpones > 0:
@@ -1951,6 +1963,9 @@ else:
                         if gastos_generales > 0:
                             str_app.info(f"💡 Gastos Generales / Granja no asignados a un galpón específico: $ {gastos_generales:,.0f}".replace(",", "."))
 
+                        if gastos_camion > 0:
+                            str_app.info(f"🚚 Gastos del Camión (incluidos en el Total de Gastos y en la Utilidad Neta): $ {gastos_camion:,.0f}".replace(",", "."))
+
                         str_app.markdown("---")
                         str_app.markdown("#### 📈 Evolución Mensual de la Utilidad (Todos los Galpones)")
 
@@ -1960,6 +1975,9 @@ else:
                             serie_ingresos_mes = df_rem.groupby(df_rem['dt_fecha'].dt.to_period('M'))['total'].sum().rename("Ingresos")
                         if not df_gas.empty and 'dt_fecha' in df_gas.columns and 'valor' in df_gas.columns:
                             serie_gastos_mes = df_gas.groupby(df_gas['dt_fecha'].dt.to_period('M'))['valor'].sum().rename("Gastos")
+                        if not df_cam.empty and 'dt_fecha' in df_cam.columns and 'valor' in df_cam.columns:
+                            serie_camion_mes = df_cam.groupby(df_cam['dt_fecha'].dt.to_period('M'))['valor'].sum()
+                            serie_gastos_mes = serie_gastos_mes.add(serie_camion_mes, fill_value=0.0).rename("Gastos")
 
                         df_evolucion = pd.concat([serie_ingresos_mes, serie_gastos_mes], axis=1).fillna(0.0)
                         if not df_evolucion.empty:

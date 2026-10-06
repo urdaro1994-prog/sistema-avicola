@@ -146,6 +146,8 @@ MESES_NOMBRES = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6:
 CATEGORIAS_GASTO_GALPON = ["Alimento", "Medicamentos / Sanidad", "Personal / Mano de Obra",
                             "Mantenimiento / Reparaciones", "Servicios Públicos", "Otros"]
 CATEGORIAS_GASTO_VARIO = ["Personal", "Hogar", "Vehículo", "Impuestos", "Varios"]
+CATEGORIAS_GASTO_CAMION = ["Combustible", "Mantenimiento / Repuestos", "Llantas", "Peajes",
+                           "Seguro / SOAT / Tecnomecánica", "Lavado / Parqueadero", "Viáticos", "Otros"]
 
 NOMBRE_EMPRESA = "AGROAVICOLA SANTA ISABEL"
 NIT_EMPRESA = "NIT. 901.786.799-7"
@@ -279,6 +281,11 @@ def inicializar_todas_las_tablas():
     """)
     ejecutar("""
         CREATE TABLE IF NOT EXISTS gastos_varios (
+            id SERIAL PRIMARY KEY, fecha DATE, categoria TEXT, descripcion TEXT, valor NUMERIC
+        );
+    """)
+    ejecutar("""
+        CREATE TABLE IF NOT EXISTS gastos_camion (
             id SERIAL PRIMARY KEY, fecha DATE, categoria TEXT, descripcion TEXT, valor NUMERIC
         );
     """)
@@ -664,6 +671,25 @@ def eliminar_gasto_vario(gasto_id):
     ejecutar("DELETE FROM gastos_varios WHERE id = %s", (gasto_id,))
 
 
+@operacion_segura
+def registrar_gasto_camion(fecha, categoria, descripcion, valor):
+    ejecutar("INSERT INTO gastos_camion (fecha, categoria, descripcion, valor) VALUES (%s, %s, %s, %s)",
+              (fecha, categoria, descripcion, valor))
+
+
+@lectura_segura
+def cargar_gastos_camion():
+    df = leer_df("SELECT * FROM gastos_camion ORDER BY fecha DESC, id DESC")
+    if not df.empty:
+        df['fecha'] = pd.to_datetime(df['fecha']).dt.date
+    return df
+
+
+@operacion_segura
+def eliminar_gasto_camion(gasto_id):
+    ejecutar("DELETE FROM gastos_camion WHERE id = %s", (gasto_id,))
+
+
 # --- REGISTRO DIARIO ---
 @operacion_segura
 def guardar_config_galpon(galpon, semanas, dias, aves):
@@ -715,7 +741,7 @@ def eliminar_registro_diario(reg_id):
 @operacion_segura
 def reiniciar_sistema_completo():
     tablas_a_limpiar = ["abonos_cartera", "cartera", "remisiones", "clientes", "gastos",
-                         "gastos_varios", "registros_diarios", "galpon_config", "historial_entradas"]
+                         "gastos_varios", "gastos_camion", "registros_diarios", "galpon_config", "historial_entradas"]
     for tabla in tablas_a_limpiar:
         try:
             ejecutar(f"TRUNCATE TABLE {tabla} RESTART IDENTITY CASCADE;")
@@ -1406,74 +1432,139 @@ else:
 
                 # ---------------- GASTOS POR GALPÓN ----------------
                 elif str_app.session_state.seccion_activa == "💸 Gastos":
-                    str_app.subheader("💸 Control de Gastos por Galpón")
-                    if rol_actual == "Invitado":
-                        str_app.warning("👀 Modo Invitado: Solo lectura.")
-                    else:
-                        with str_app.form(key="form_registrar_gasto", clear_on_submit=True):
-                            c_fecha_g = str_app.date_input("Fecha del Gasto", value=date.today())
-                            c_galpon_g = str_app.selectbox("Galpón Asociado", GALPONES_GASTOS)
-                            c_categoria_g = str_app.selectbox("Categoría de Gasto", CATEGORIAS_GASTO_GALPON)
-                            c_desc_g = str_app.text_input("Descripción del Gasto", placeholder="Ej. Compra de concentrado fase 1")
-                            c_valor_g = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
+                    str_app.subheader("💸 Control de Gastos")
+                    tab_g_galpones, tab_g_camion = str_app.tabs(["🐔 Gastos de Galpones", "🚚 Gastos del Camión"])
 
-                            if str_app.form_submit_button("💾 Guardar Gasto"):
-                                if c_valor_g <= 0:
-                                    str_app.error("El valor del gasto debe ser mayor a 0.")
-                                elif not c_desc_g.strip():
-                                    str_app.error("Debes escribir una descripción del gasto.")
-                                else:
-                                    if registrar_gasto(c_fecha_g, c_galpon_g, c_categoria_g, c_desc_g, c_valor_g):
-                                        str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
-                                        str_app.success("¡Gasto registrado con éxito!")
-                                        str_app.rerun()
+                    with tab_g_galpones:
+                        if rol_actual == "Invitado":
+                            str_app.warning("👀 Modo Invitado: Solo lectura.")
+                        else:
+                            with str_app.form(key="form_registrar_gasto", clear_on_submit=True):
+                                c_fecha_g = str_app.date_input("Fecha del Gasto", value=date.today())
+                                c_galpon_g = str_app.selectbox("Galpón Asociado", GALPONES_GASTOS)
+                                c_categoria_g = str_app.selectbox("Categoría de Gasto", CATEGORIAS_GASTO_GALPON)
+                                c_desc_g = str_app.text_input("Descripción del Gasto", placeholder="Ej. Compra de concentrado fase 1")
+                                c_valor_g = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
 
-                    str_app.markdown("---")
-                    df_gastos = cargar_gastos()
-                    if not df_gastos.empty:
-                        df_gastos['dt_fecha'] = pd.to_datetime(df_gastos['fecha'])
-                        df_gastos['Año'] = df_gastos['dt_fecha'].dt.year
-                        df_gastos['Mes_Num'] = df_gastos['dt_fecha'].dt.month
+                                if str_app.form_submit_button("💾 Guardar Gasto"):
+                                    if c_valor_g <= 0:
+                                        str_app.error("El valor del gasto debe ser mayor a 0.")
+                                    elif not c_desc_g.strip():
+                                        str_app.error("Debes escribir una descripción del gasto.")
+                                    else:
+                                        if registrar_gasto(c_fecha_g, c_galpon_g, c_categoria_g, c_desc_g, c_valor_g):
+                                            str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
+                                            str_app.success("¡Gasto registrado con éxito!")
+                                            str_app.rerun()
 
-                        c_f1, c_f2 = str_app.columns(2)
-                        anio_sel_g = c_f1.selectbox("📅 Año (Gastos)", sorted(df_gastos['Año'].unique().tolist(), reverse=True), key="anio_gasto")
-                        mes_nombre_sel = c_f2.selectbox("📅 Mes (Gastos)", list(MESES_NOMBRES.values()), key="mes_gasto")
-                        mes_num_sel = [k for k, v in MESES_NOMBRES.items() if v == mes_nombre_sel][0]
+                        str_app.markdown("---")
+                        df_gastos = cargar_gastos()
+                        if not df_gastos.empty:
+                            df_gastos['dt_fecha'] = pd.to_datetime(df_gastos['fecha'])
+                            df_gastos['Año'] = df_gastos['dt_fecha'].dt.year
+                            df_gastos['Mes_Num'] = df_gastos['dt_fecha'].dt.month
 
-                        df_gf = df_gastos[(df_gastos['Año'] == anio_sel_g) & (df_gastos['Mes_Num'] == mes_num_sel)]
-                        str_app.markdown(f"**Total Gastos Mes:** ${df_gf['valor'].sum():,.0f}".replace(",", "."))
+                            c_f1, c_f2 = str_app.columns(2)
+                            anio_sel_g = c_f1.selectbox("📅 Año (Gastos)", sorted(df_gastos['Año'].unique().tolist(), reverse=True), key="anio_gasto")
+                            mes_nombre_sel = c_f2.selectbox("📅 Mes (Gastos)", list(MESES_NOMBRES.values()), key="mes_gasto")
+                            mes_num_sel = [k for k, v in MESES_NOMBRES.items() if v == mes_nombre_sel][0]
 
-                        if not df_gf.empty:
-                            c_pdf, c_xls = str_app.columns(2)
-                            with c_pdf:
-                                pdf_gastos_buf = generar_pdf_gastos(df_gf, f"Reporte de Gastos - {mes_nombre_sel} {anio_sel_g}")
-                                str_app.download_button("📄 PDF de todos los galpones", data=pdf_gastos_buf, file_name=f"Gastos_{mes_nombre_sel}_{anio_sel_g}.pdf", mime="application/pdf")
-                            with c_xls:
-                                boton_exportar_excel(df_gf[["fecha", "galpon", "categoria", "descripcion", "valor"]], f"Gastos_{mes_nombre_sel}_{anio_sel_g}.xlsx")
+                            df_gf = df_gastos[(df_gastos['Año'] == anio_sel_g) & (df_gastos['Mes_Num'] == mes_num_sel)]
+                            str_app.markdown(f"**Total Gastos Mes:** ${df_gf['valor'].sum():,.0f}".replace(",", "."))
 
-                            # --- PDF SEPARADO POR GALPÓN ---
-                            str_app.markdown("##### 📄 PDF separado por galpón")
-                            galpones_con_gastos = [g for g in GALPONES_GASTOS if g in df_gf["galpon"].values]
-                            cols_pdf_galpon = str_app.columns(2)
-                            for i, g in enumerate(galpones_con_gastos):
-                                df_g = df_gf[df_gf["galpon"] == g]
-                                pdf_g_buf = generar_pdf_gastos(df_g, f"Gastos {g} - {mes_nombre_sel} {anio_sel_g}")
-                                nombre_g = g.replace(" / ", "_").replace(" ", "_")
-                                cols_pdf_galpon[i % 2].download_button(
-                                    f"📄 {g}", data=pdf_g_buf,
-                                    file_name=f"Gastos_{nombre_g}_{mes_nombre_sel}_{anio_sel_g}.pdf",
-                                    mime="application/pdf",
-                                    key=f"dl_gastos_{nombre_g}_{anio_sel_g}_{mes_num_sel}"
-                                )
-                            str_app.markdown("---")
+                            if not df_gf.empty:
+                                c_pdf, c_xls = str_app.columns(2)
+                                with c_pdf:
+                                    pdf_gastos_buf = generar_pdf_gastos(df_gf, f"Reporte de Gastos - {mes_nombre_sel} {anio_sel_g}")
+                                    str_app.download_button("📄 PDF de todos los galpones", data=pdf_gastos_buf, file_name=f"Gastos_{mes_nombre_sel}_{anio_sel_g}.pdf", mime="application/pdf")
+                                with c_xls:
+                                    boton_exportar_excel(df_gf[["fecha", "galpon", "categoria", "descripcion", "valor"]], f"Gastos_{mes_nombre_sel}_{anio_sel_g}.xlsx")
 
-                        for _, row_g in df_gf.iterrows():
-                            with str_app.expander(f"📅 {row_g['fecha']} — [{row_g['galpon']}] {row_g['categoria']}: ${float(row_g['valor']):,.0f}".replace(",", ".")):
-                                str_app.write(f"**Desc:** {row_g['descripcion']}")
-                                if rol_actual == "Administrador":
-                                    if confirmar_eliminacion(f"gasto_{row_g['id']}", etiqueta="🗑️ Eliminar Gasto"):
-                                        eliminar_gasto(row_g['id'])
-                                        str_app.rerun()
+                                # --- PDF SEPARADO POR GALPÓN ---
+                                str_app.markdown("##### 📄 PDF separado por galpón")
+                                galpones_con_gastos = [g for g in GALPONES_GASTOS if g in df_gf["galpon"].values]
+                                cols_pdf_galpon = str_app.columns(2)
+                                for i, g in enumerate(galpones_con_gastos):
+                                    df_g = df_gf[df_gf["galpon"] == g]
+                                    pdf_g_buf = generar_pdf_gastos(df_g, f"Gastos {g} - {mes_nombre_sel} {anio_sel_g}")
+                                    nombre_g = g.replace(" / ", "_").replace(" ", "_")
+                                    cols_pdf_galpon[i % 2].download_button(
+                                        f"📄 {g}", data=pdf_g_buf,
+                                        file_name=f"Gastos_{nombre_g}_{mes_nombre_sel}_{anio_sel_g}.pdf",
+                                        mime="application/pdf",
+                                        key=f"dl_gastos_{nombre_g}_{anio_sel_g}_{mes_num_sel}"
+                                    )
+                                str_app.markdown("---")
+
+                            for _, row_g in df_gf.iterrows():
+                                with str_app.expander(f"📅 {row_g['fecha']} — [{row_g['galpon']}] {row_g['categoria']}: ${float(row_g['valor']):,.0f}".replace(",", ".")):
+                                    str_app.write(f"**Desc:** {row_g['descripcion']}")
+                                    if rol_actual == "Administrador":
+                                        if confirmar_eliminacion(f"gasto_{row_g['id']}", etiqueta="🗑️ Eliminar Gasto"):
+                                            eliminar_gasto(row_g['id'])
+                                            str_app.rerun()
+
+                    with tab_g_camion:
+                        str_app.markdown("#### 🚚 Gastos del Camión")
+                        if rol_actual == "Invitado":
+                            str_app.warning("👀 Modo Invitado: Solo lectura.")
+                        else:
+                            with str_app.form(key="form_registrar_gasto_camion", clear_on_submit=True):
+                                c_fecha_gc = str_app.date_input("Fecha del Gasto", value=date.today(), key="fecha_gasto_camion")
+                                c_cat_gc = str_app.selectbox("Categoría de Gasto", CATEGORIAS_GASTO_CAMION, key="cat_gasto_camion")
+                                c_desc_gc = str_app.text_input("Descripción del Gasto", placeholder="Ej. Tanqueada ACPM, cambio de aceite, peaje Chiquinquirá", key="desc_gasto_camion")
+                                c_valor_gc = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f", key="valor_gasto_camion")
+
+                                if str_app.form_submit_button("💾 Guardar Gasto del Camión"):
+                                    if c_valor_gc <= 0:
+                                        str_app.error("El valor del gasto debe ser mayor a 0.")
+                                    elif not c_desc_gc.strip():
+                                        str_app.error("Debes escribir una descripción del gasto.")
+                                    else:
+                                        if registrar_gasto_camion(c_fecha_gc, c_cat_gc, c_desc_gc, c_valor_gc):
+                                            str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
+                                            str_app.success("¡Gasto del camión registrado con éxito!")
+                                            str_app.rerun()
+
+                        str_app.markdown("---")
+                        df_gastos_camion = cargar_gastos_camion()
+                        if not df_gastos_camion.empty:
+                            df_gastos_camion['dt_fecha'] = pd.to_datetime(df_gastos_camion['fecha'])
+                            df_gastos_camion['Año'] = df_gastos_camion['dt_fecha'].dt.year
+                            df_gastos_camion['Mes_Num'] = df_gastos_camion['dt_fecha'].dt.month
+
+                            c_fc1, c_fc2 = str_app.columns(2)
+                            anio_sel_gc = c_fc1.selectbox("📅 Año (Camión)", sorted(df_gastos_camion['Año'].unique().tolist(), reverse=True), key="anio_gasto_camion")
+                            mes_nombre_sel_gc = c_fc2.selectbox("📅 Mes (Camión)", list(MESES_NOMBRES.values()), index=date.today().month - 1, key="mes_gasto_camion")
+                            mes_num_sel_gc = [k for k, v in MESES_NOMBRES.items() if v == mes_nombre_sel_gc][0]
+
+                            df_gcf = df_gastos_camion[(df_gastos_camion['Año'] == anio_sel_gc) & (df_gastos_camion['Mes_Num'] == mes_num_sel_gc)]
+                            str_app.markdown(f"**Total Gastos Camión del Mes:** ${df_gcf['valor'].sum():,.0f}".replace(",", "."))
+
+                            if not df_gcf.empty:
+                                c_pdf_gc, c_xls_gc = str_app.columns(2)
+                                with c_pdf_gc:
+                                    pdf_gc_buf = generar_pdf_gastos(df_gcf, f"Gastos del Camión - {mes_nombre_sel_gc} {anio_sel_gc}")
+                                    str_app.download_button("📄 Descargar en PDF", data=pdf_gc_buf, file_name=f"Gastos_Camion_{mes_nombre_sel_gc}_{anio_sel_gc}.pdf", mime="application/pdf", key="dl_pdf_gastos_camion")
+                                with c_xls_gc:
+                                    boton_exportar_excel(df_gcf[["fecha", "categoria", "descripcion", "valor"]], f"Gastos_Camion_{mes_nombre_sel_gc}_{anio_sel_gc}.xlsx", key="dl_xls_gastos_camion")
+
+                                str_app.markdown("##### 📋 Resumen por categoría")
+                                df_resumen_gc = df_gcf.groupby("categoria", as_index=False)["valor"].sum().sort_values("valor", ascending=False)
+                                df_resumen_gc["valor"] = df_resumen_gc["valor"].apply(lambda x: f"$ {float(x):,.0f}".replace(",", "."))
+                                df_resumen_gc.columns = ["Categoría", "Total ($)"]
+                                str_app.dataframe(df_resumen_gc, use_container_width=True, hide_index=True)
+                                str_app.markdown("---")
+
+                            for _, row_gc in df_gcf.iterrows():
+                                with str_app.expander(f"📅 {row_gc['fecha']} — {row_gc['categoria']}: ${float(row_gc['valor']):,.0f}".replace(",", ".")):
+                                    str_app.write(f"**Desc:** {row_gc['descripcion']}")
+                                    if rol_actual == "Administrador":
+                                        if confirmar_eliminacion(f"gasto_camion_{row_gc['id']}", etiqueta="🗑️ Eliminar Gasto del Camión"):
+                                            eliminar_gasto_camion(row_gc['id'])
+                                            str_app.rerun()
+                        else:
+                            str_app.info("Aún no hay gastos del camión registrados.")
 
                 # ---------------- GASTOS VARIOS ----------------
                 elif str_app.session_state.seccion_activa == "🏷️ Gastos Varios":

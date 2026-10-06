@@ -1137,6 +1137,180 @@ def generar_pdf_gastos(df_gastos, titulo_reporte):
     return buffer
 
 
+def _gastos_por_categoria(df_gas_periodo, df_cam_periodo):
+    """Une los gastos de galpones/granja y los del camión en una sola tabla
+    Concepto / Valor, ordenada de mayor a menor."""
+    filas = []
+    if df_gas_periodo is not None and not df_gas_periodo.empty and {"categoria", "valor"}.issubset(df_gas_periodo.columns):
+        for cat, val in df_gas_periodo.groupby("categoria")["valor"].sum().items():
+            filas.append((str(cat), float(val)))
+    if df_cam_periodo is not None and not df_cam_periodo.empty and {"categoria", "valor"}.issubset(df_cam_periodo.columns):
+        for cat, val in df_cam_periodo.groupby("categoria")["valor"].sum().items():
+            filas.append((f"Camión - {cat}", float(val)))
+    df = pd.DataFrame(filas, columns=["Concepto", "Valor"])
+    return df.sort_values("Valor", ascending=False) if not df.empty else df
+
+
+def calcular_evolucion_mensual(df_rem, df_gas, df_cam):
+    """Ingresos, gastos (galpones + camión) y utilidad mes a mes."""
+    serie_ingresos = pd.Series(dtype=float)
+    serie_gastos = pd.Series(dtype=float)
+    if df_rem is not None and not df_rem.empty and "dt_fecha" in df_rem.columns and "total" in df_rem.columns:
+        serie_ingresos = df_rem.groupby(df_rem["dt_fecha"].dt.to_period("M"))["total"].sum().rename("Ingresos")
+    if df_gas is not None and not df_gas.empty and "dt_fecha" in df_gas.columns and "valor" in df_gas.columns:
+        serie_gastos = df_gas.groupby(df_gas["dt_fecha"].dt.to_period("M"))["valor"].sum().rename("Gastos")
+    if df_cam is not None and not df_cam.empty and "dt_fecha" in df_cam.columns and "valor" in df_cam.columns:
+        serie_camion = df_cam.groupby(df_cam["dt_fecha"].dt.to_period("M"))["valor"].sum()
+        serie_gastos = serie_gastos.add(serie_camion, fill_value=0.0).rename("Gastos")
+    df_evol = pd.concat([serie_ingresos, serie_gastos], axis=1).fillna(0.0)
+    if df_evol.empty:
+        return df_evol
+    df_evol["Utilidad"] = df_evol["Ingresos"] - df_evol["Gastos"]
+    df_evol = df_evol.sort_index()
+    df_evol.index = df_evol.index.astype(str)
+    return df_evol.reset_index().rename(columns={"index": "Mes"})
+
+
+def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, gastos_camion, df_categorias=None, df_evolucion=None):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    e = _estilos_pdf()
+    styles = getSampleStyleSheet()
+    estilo_seccion = ParagraphStyle('SeccionInforme', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11,
+                                    textColor=colors.HexColor("#0f2942"), spaceAfter=6)
+    estilo_nota = ParagraphStyle('NotaInforme', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8,
+                                 textColor=colors.HexColor("#64748b"))
+
+    total_ingresos = float(df_util["Ingresos ($)"].sum())
+    gastos_galpones = float(df_util["Gastos ($)"].sum())
+    total_gastos = gastos_galpones + float(gastos_generales) + float(gastos_camion)
+    utilidad_neta = total_ingresos - total_gastos
+    margen_txt = f"{(utilidad_neta / total_ingresos * 100):.1f} %" if total_ingresos > 0 else "N/A"
+    color_neta = "#15803d" if utilidad_neta >= 0 else "#b91c1c"
+
+    def _color_valor(valor, negrilla=False):
+        color = "#15803d" if valor >= 0 else "#b91c1c"
+        texto = _moneda(valor)
+        return f"<font color='{color}'><b>{texto}</b></font>" if negrilla else f"<font color='{color}'>{texto}</font>"
+
+    story.append(_encabezado_pdf(e, "Informe de Utilidades",
+                                  f"<b>Periodo:</b><br/><font size=10 color='#f26822'><b>{titulo_periodo}</b></font><br/>"
+                                  f"<font size=8>Generado: {datetime.now().strftime('%Y-%m-%d')}</font>"))
+    story.append(Spacer(1, 10))
+
+    # --- Resumen financiero ---
+    story.append(Paragraph("Resumen financiero", estilo_seccion))
+    resumen_data = [
+        [Paragraph("Ingresos por ventas", e["normal"]), Paragraph(_moneda(total_ingresos), e["right"])],
+        [Paragraph("(-) Gastos directos de galpones", e["normal"]), Paragraph(_moneda(gastos_galpones), e["right"])],
+        [Paragraph("(-) Gastos generales / granja", e["normal"]), Paragraph(_moneda(gastos_generales), e["right"])],
+        [Paragraph("(-) Gastos del camión", e["normal"]), Paragraph(_moneda(gastos_camion), e["right"])],
+        [Paragraph("<b>Total gastos</b>", e["normal"]), Paragraph(f"<b>{_moneda(total_gastos)}</b>", e["right_bold"])],
+        [Paragraph("<font size=11><b>UTILIDAD NETA</b></font>", e["normal"]),
+         Paragraph(f"<font size=11 color='{color_neta}'><b>{_moneda(utilidad_neta)}</b></font>", e["right"])],
+        [Paragraph("Margen neto sobre ventas", e["normal"]), Paragraph(margen_txt, e["right"])],
+    ]
+    t_resumen = Table(resumen_data, colWidths=[374, 160])
+    t_resumen.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 0), (-1, 3), [colors.HexColor("#f8fafc"), colors.white]),
+        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor("#f1f5f9")),
+        ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor("#fff3eb")),
+        ('LINEABOVE', (0, 4), (-1, 4), 1, colors.HexColor("#0f2942")),
+        ('LINEABOVE', (0, 5), (-1, 5), 1, colors.HexColor("#0f2942")),
+    ]))
+    story.append(t_resumen)
+    story.append(Spacer(1, 16))
+
+    # --- Resultado por galpón ---
+    story.append(Paragraph("Resultado por galpón", estilo_seccion))
+    galpon_data = [[Paragraph("Galpón", e["th_left"]), Paragraph("Ingresos", e["th_right"]),
+                    Paragraph("Gastos", e["th_right"]), Paragraph("Utilidad", e["th_right"])]]
+    for _, fila in df_util.iterrows():
+        galpon_data.append([
+            Paragraph(str(fila["Galpón"]), e["normal"]),
+            Paragraph(_moneda(float(fila["Ingresos ($)"])), e["right"]),
+            Paragraph(_moneda(float(fila["Gastos ($)"])), e["right"]),
+            Paragraph(_color_valor(float(fila["Utilidad ($)"])), e["right"]),
+        ])
+    t_galpon = Table(galpon_data, colWidths=[150, 128, 128, 128])
+    t_galpon.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#f8fafc"), colors.white]),
+    ]))
+    story.append(t_galpon)
+    story.append(Spacer(1, 4))
+    story.append(Paragraph("La utilidad neta del resumen descuenta además los gastos generales / granja y los del camión, "
+                           "que no se asignan a un galpón en particular.", estilo_nota))
+    story.append(Spacer(1, 16))
+
+    # --- Gastos por categoría ---
+    if df_categorias is not None and not df_categorias.empty:
+        story.append(Paragraph("Gastos por categoría", estilo_seccion))
+        cat_data = [[Paragraph("Concepto", e["th_left"]), Paragraph("Valor", e["th_right"])]]
+        for _, fila in df_categorias.iterrows():
+            cat_data.append([Paragraph(str(fila["Concepto"]), e["normal"]), Paragraph(_moneda(float(fila["Valor"])), e["right"])])
+        cat_data.append([Paragraph("<b>Total</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_categorias['Valor'].sum()))}</b>", e["right_bold"])])
+        t_cat = Table(cat_data, colWidths=[374, 160])
+        t_cat.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#f1f5f9")),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+        ]))
+        story.append(t_cat)
+        story.append(Spacer(1, 16))
+
+    # --- Evolución mes a mes (solo en el informe histórico) ---
+    if df_evolucion is not None and not df_evolucion.empty:
+        story.append(Paragraph("Evolución mes a mes", estilo_seccion))
+        evol_data = [[Paragraph("Mes", e["th_left"]), Paragraph("Ingresos", e["th_right"]),
+                      Paragraph("Gastos", e["th_right"]), Paragraph("Utilidad", e["th_right"])]]
+        for _, fila in df_evolucion.iterrows():
+            evol_data.append([
+                Paragraph(str(fila["Mes"]), e["normal"]),
+                Paragraph(_moneda(float(fila["Ingresos"])), e["right"]),
+                Paragraph(_moneda(float(fila["Gastos"])), e["right"]),
+                Paragraph(_color_valor(float(fila["Utilidad"])), e["right"]),
+            ])
+        ev_ing = float(df_evolucion["Ingresos"].sum())
+        ev_gas = float(df_evolucion["Gastos"].sum())
+        evol_data.append([
+            Paragraph("<b>Total</b>", e["normal"]),
+            Paragraph(f"<b>{_moneda(ev_ing)}</b>", e["right_bold"]),
+            Paragraph(f"<b>{_moneda(ev_gas)}</b>", e["right_bold"]),
+            Paragraph(_color_valor(ev_ing - ev_gas, negrilla=True), e["right"]),
+        ])
+        t_evol = Table(evol_data, colWidths=[150, 128, 128, 128], repeatRows=1)
+        t_evol.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#f1f5f9")),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+        ]))
+        story.append(t_evol)
+        story.append(Spacer(1, 16))
+
+    story.append(Paragraph("Este informe incluye las ventas (remisiones), los gastos de galpones, los gastos generales / granja "
+                           "y los gastos del camión. No incluye los Gastos Varios y Personales.", estilo_nota))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
 # =========================================================================
 # CONTROL DE SESIÓN Y AUTENTICACIÓN
 # =========================================================================
@@ -1959,6 +2133,19 @@ else:
                             df_mostrar[col] = df_mostrar[col].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
                         str_app.dataframe(df_mostrar, use_container_width=True, hide_index=True)
                         boton_exportar_excel(df_util, f"Utilidades_{titulo_periodo.replace(' ', '_')}.xlsx")
+
+                        # --- Informe PDF de utilidades ---
+                        df_categorias_informe = _gastos_por_categoria(df_gas_periodo, df_cam_periodo)
+                        df_evolucion_informe = calcular_evolucion_mensual(df_rem, df_gas, df_cam) if vista_util == "📊 Histórico completo" else None
+                        pdf_informe_util = generar_pdf_informe_utilidades(
+                            titulo_periodo, df_util, gastos_generales, gastos_camion,
+                            df_categorias_informe, df_evolucion_informe
+                        )
+                        str_app.download_button(
+                            "📄 Descargar Informe de Utilidades en PDF", data=pdf_informe_util,
+                            file_name=f"Informe_Utilidades_{titulo_periodo.replace(' ', '_')}.pdf",
+                            mime="application/pdf", key="dl_pdf_informe_utilidades"
+                        )
 
                         if gastos_generales > 0:
                             str_app.info(f"💡 Gastos Generales / Granja no asignados a un galpón específico: $ {gastos_generales:,.0f}".replace(",", "."))

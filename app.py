@@ -270,10 +270,9 @@ def inicializar_todas_las_tablas():
     ejecutar("""
         CREATE TABLE IF NOT EXISTS abonos_cartera (
             id SERIAL PRIMARY KEY, num_remision INT, fecha_abono TIMESTAMP, monto NUMERIC,
-            comprobante BYTEA, nombre_comprobante TEXT, observacion TEXT
+            comprobante BYTEA, nombre_comprobante TEXT
         );
     """)
-    ejecutar("ALTER TABLE abonos_cartera ADD COLUMN IF NOT EXISTS observacion TEXT;")
     ejecutar("""
         CREATE TABLE IF NOT EXISTS gastos (
             id SERIAL PRIMARY KEY, fecha DATE, galpon TEXT, categoria TEXT,
@@ -611,16 +610,16 @@ def cargar_abonos_remision(num_remision):
 
 
 @operacion_segura
-def registrar_abono(num_remision, monto_abono, comprobante_bytes=None, nombre_comprobante=None, observacion=None):
+def registrar_abono(num_remision, monto_abono, comprobante_bytes=None, nombre_comprobante=None):
     with get_conn() as conn:
         with conn:
             with conn.cursor() as cur:
                 fecha_actual = datetime.now()
                 comp_binary = psycopg2.Binary(comprobante_bytes) if comprobante_bytes else None
                 cur.execute("""
-                    INSERT INTO abonos_cartera (num_remision, fecha_abono, monto, comprobante, nombre_comprobante, observacion)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (num_remision, fecha_actual, monto_abono, comp_binary, nombre_comprobante, observacion))
+                    INSERT INTO abonos_cartera (num_remision, fecha_abono, monto, comprobante, nombre_comprobante)
+                    VALUES (%s, %s, %s, %s, %s)
+                """, (num_remision, fecha_actual, monto_abono, comp_binary, nombre_comprobante))
 
                 cur.execute("SELECT total FROM cartera WHERE num_remision = %s", (num_remision,))
                 res = cur.fetchone()
@@ -1748,14 +1747,8 @@ else:
                                 str_app.markdown("#### 📜 Historial de Abonos")
                                 df_abonos = cargar_abonos_remision(int(row['num_remision']))
                                 if not df_abonos.empty:
-                                    cols_abono = ['fecha_abono', 'monto', 'nombre_comprobante']
-                                    nombres_cols = ['Fecha y Hora', 'Monto ($)', 'Comprobante']
-                                    if 'observacion' in df_abonos.columns:
-                                        cols_abono.append('observacion')
-                                        nombres_cols.append('Observación')
-
-                                    df_abonos_mostrar = df_abonos[cols_abono].copy()
-                                    df_abonos_mostrar.columns = nombres_cols
+                                    df_abonos_mostrar = df_abonos[['fecha_abono', 'monto', 'nombre_comprobante']].copy()
+                                    df_abonos_mostrar.columns = ['Fecha y Hora', 'Monto ($)', 'Comprobante']
                                     df_abonos_mostrar['Monto ($)'] = df_abonos_mostrar['Monto ($)'].apply(lambda x: f"${float(x):,.0f}".replace(",", "."))
                                     str_app.dataframe(df_abonos_mostrar, use_container_width=True, hide_index=True)
                                 else:
@@ -1766,13 +1759,12 @@ else:
                                     with str_app.form(key=f"ab_{row['num_remision']}", clear_on_submit=True):
                                         str_app.markdown("#### ➕ Registrar Nuevo Abono")
                                         monto = str_app.number_input("Abono ($)", min_value=0.0, max_value=float(row['saldo']), step=1000.0, format="%.0f")
-                                        obs_abono = str_app.text_input("Observación / Nota (Opcional)", key=f"obs_{row['num_remision']}")
                                         arch = str_app.file_uploader("Comprobante (Opcional)", type=["png", "jpg", "jpeg", "pdf"], key=f"f_{row['num_remision']}")
                                         if str_app.form_submit_button("Registrar Abono"):
                                             if monto <= 0:
                                                 str_app.error("El monto del abono debe ser mayor a 0.")
                                             else:
-                                                if registrar_abono(int(row['num_remision']), monto, arch.read() if arch else None, arch.name if arch else None, obs_abono):
+                                                if registrar_abono(int(row['num_remision']), monto, arch.read() if arch else None, arch.name if arch else None):
                                                     str_app.toast("¡Abono registrado con éxito! 🎉", icon="✅")
                                                     str_app.success("¡Abono registrado correctamente!")
                                                     str_app.rerun()
@@ -1820,189 +1812,334 @@ else:
                                     items_pdf = df_r.rename(columns={'tipo_huevo': 'Clasificación', 'cantidad': 'Cantidad (Huevos)', 'precio_unitario': 'Precio Unitario ($)', 'total': 'Subtotal ($)'})
                                     total_factura = df_r['total'].sum()
                                     fecha_str = str(f_sel.get('fecha_emision', date.today()))
-                                    conductor = str(f_sel.get('conductor', 'Ivan Herrera'))
+                                    conductor_val = f_sel.get('conductor', 'Ivan Herrera')
 
-                                    pdf_buf = generar_pdf_remision(int(num_sel), fecha_str, conductor, cliente_datos, items_pdf, total_factura)
-                                    str_app.download_button(f"📄 Descargar Remisión #{int(num_sel):06d}", data=pdf_buf, file_name=f"Remision_{int(num_sel):06d}.pdf", mime="application/pdf", key=f"dl_rem_{int(num_sel)}")
-
+                                    pdf_buf = generar_pdf_remision(int(num_sel), fecha_str, conductor_val, cliente_datos, items_pdf, total_factura)
+                                    str_app.download_button(f"📄 Descargar PDF Remisión #{int(num_sel):06d}", data=pdf_buf, file_name=f"Remision_{int(num_sel):06d}.pdf", mime="application/pdf", key=f"dl_hist_{num_sel}")
+                                    
+                                    # Opción de edición para administradores
                                     if rol_actual == "Administrador":
                                         str_app.markdown("---")
-                                        with str_app.expander("✏️ Editar esta Remisión"):
-                                            with str_app.form(key=f"form_edit_rem_{int(num_sel)}"):
-                                                e_fecha_rem = str_app.date_input("Fecha", value=pd.to_datetime(f_sel.get('fecha_emision', date.today())).date(), key=f"ef_rem_{int(num_sel)}")
-                                                e_cliente = str_app.text_input("Cliente", value=cliente_nombre, key=f"ec_rem_{int(num_sel)}")
-                                                e_cedula = str_app.text_input("Cédula/NIT", value=str(f_sel.get('cedula_nit', '')), key=f"eced_rem_{int(num_sel)}")
-                                                e_direccion = str_app.text_input("Dirección", value=str(f_sel.get('destino', 'CHOACHI')), key=f"edir_rem_{int(num_sel)}")
-                                                e_telefono = str_app.text_input("Teléfono", value=str(f_sel.get('telefono', '')), key=f"etel_rem_{int(num_sel)}")
-                                                e_email = str_app.text_input("Email", value=str(f_sel.get('email', '')), key=f"eem_rem_{int(num_sel)}")
-                                                e_conductor = str_app.text_input("Conductor", value=conductor, key=f"econd_rem_{int(num_sel)}")
+                                        if str_app.checkbox(f"✏️ Habilitar edición para Remisión #{int(num_sel):06d}", key=f"chk_edit_rem_{num_sel}"):
+                                            with str_app.form(f"form_edit_rem_{num_sel}", clear_on_submit=True):
+                                                str_app.markdown(f"#### Editando Remisión #{int(num_sel):06d}")
+                                                ed_fecha = str_app.date_input("Fecha Emisión", value=f_sel.get('fecha_emision', date.today()), key=f"ed_f_{num_sel}")
+                                                ed_nom = str_app.text_input("Cliente", value=cliente_nombre, key=f"ed_nom_{num_sel}")
+                                                ed_ced = str_app.text_input("Cédula/NIT", value=str(f_sel.get('cedula_nit', '')), key=f"ed_ced_{num_sel}")
+                                                ed_dir = str_app.text_input("Dirección", value=str(f_sel.get('destino', 'CHOACHI')), key=f"ed_dir_{num_sel}")
+                                                ed_tel = str_app.text_input("Teléfono", value=str(f_sel.get('telefono', '')), key=f"ed_tel_{num_sel}")
+                                                ed_em = str_app.text_input("Email", value=str(f_sel.get('email', '')), key=f"ed_em_{num_sel}")
+                                                ed_cond = str_app.text_input("Conductor", value=str(f_sel.get('conductor', 'Ivan Herrera')), key=f"ed_cond_{num_sel}")
 
-                                                items_existentes = []
-                                                for _, row_item in df_r.iterrows():
-                                                    items_existentes.append({
-                                                        "Clasificación": str(row_item.get('tipo_huevo', 'a')).lower(),
-                                                        "Cantidad (Huevos)": int(row_item.get('cantidad', 0)),
-                                                        "Precio Unitario ($)": float(row_item.get('precio_unitario', 0)),
-                                                        "Galpón Origen": str(row_item.get('galpon', GALPONES[0]))
-                                                    })
-
-                                                df_edit_base = pd.DataFrame(items_existentes)
-                                                df_edit_rem = str_app.data_editor(
-                                                    df_edit_base, num_rows="dynamic",
+                                                df_items_actuales = df_r[['tipo_huevo', 'cantidad', 'precio_unitario', 'galpon']].copy()
+                                                df_items_actuales.columns = ['Clasificación', 'Cantidad (Huevos)', 'Precio Unitario ($)', 'Galpón Origen']
+                                                
+                                                df_items_editados = str_app.data_editor(
+                                                    df_items_actuales, num_rows="dynamic",
                                                     column_config={
                                                         "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=CLASIFICACIONES, required=True),
                                                         "Cantidad (Huevos)": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True),
                                                         "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio Unitario ($)", min_value=0, format="$%d", required=True),
                                                         "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=GALPONES, required=True)
                                                     },
-                                                    use_container_width=True, key=f"editor_edit_rem_{int(num_sel)}"
+                                                    use_container_width=True, key=f"editor_rem_{num_sel}"
                                                 )
 
                                                 if str_app.form_submit_button("💾 Guardar Cambios de Remisión"):
-                                                    nuevos_items_validos = df_edit_rem[df_edit_rem["Cantidad (Huevos)"] > 0].copy()
-                                                    if nuevos_items_validos.empty:
-                                                        str_app.error("La remisión debe incluir al menos un ítem con cantidad mayor a 0.")
-                                                    elif not e_cliente.strip():
+                                                    items_val = df_items_editados[df_items_editados["Cantidad (Huevos)"] > 0].copy()
+                                                    if items_val.empty:
+                                                        str_app.error("Debe tener al menos un ítem válido con cantidad mayor a 0.")
+                                                    elif not ed_nom.strip():
                                                         str_app.error("El nombre del cliente es obligatorio.")
                                                     else:
-                                                        nuevos_items_validos["Subtotal ($)"] = nuevos_items_validos["Cantidad (Huevos)"] * nuevos_items_validos["Precio Unitario ($)"]
-                                                        lista_nuevos_items = [{
-                                                            'Clasificación': r['Clasificación'],
-                                                            'Cantidad (Huevos)': int(r['Cantidad (Huevos)']),
-                                                            'Precio Unitario ($)': float(r['Precio Unitario ($)']),
-                                                            'Subtotal ($)': float(r['Subtotal ($)']),
-                                                            'Galpón': r['Galpón Origen']
-                                                        } for _, r in nuevos_items_validos.iterrows()]
-
+                                                        items_val["Subtotal ($)"] = items_val["Cantidad (Huevos)"] * items_val["Precio Unitario ($)"]
+                                                        nuevos_items_dict = [
+                                                            {
+                                                                'Clasificación': r['Clasificación'], 
+                                                                'Cantidad (Huevos)': r['Cantidad (Huevos)'], 
+                                                                'Precio Unitario ($)': r['Precio Unitario ($)'], 
+                                                                'Subtotal ($)': r['Subtotal ($)'], 
+                                                                'Galpón': r['Galpón Origen']
+                                                            } for _, r in items_val.iterrows()
+                                                        ]
                                                         try:
-                                                            if actualizar_remision(
-                                                                int(num_sel), e_cliente, e_cedula, e_direccion,
-                                                                e_telefono, e_email, e_conductor, e_fecha_rem, lista_nuevos_items
-                                                            ):
+                                                            if actualizar_remision(int(num_sel), ed_nom, ed_ced, ed_dir, ed_tel, ed_em, ed_cond, ed_fecha, nuevos_items_dict):
                                                                 str_app.toast("¡Remisión actualizada con éxito! 🎉", icon="✅")
-                                                                str_app.success("¡Remisión y cartera actualizadas correctamente!")
-                                                                str_app.rerun()
+                                                                str_app.success("¡Remisión modificada y stock ajustado correctamente!")
+                                                                cliente_datos_ed = {"nombre": ed_nom, "cedula": ed_ced, "direccion": ed_dir, "telefono": ed_tel, "email": ed_em}
+                                                                pdf_buf_ed = generar_pdf_remision(int(num_sel), str(ed_fecha), ed_cond, cliente_datos_ed, items_val, items_val["Subtotal ($)"].sum())
+                                                                str_app.download_button("📄 Descargar Remisión Corregida en PDF", data=pdf_buf_ed, file_name=f"Remision_{int(num_sel):06d}_corregida.pdf", mime="application/pdf", key=f"dl_ed_{num_sel}")
                                                         except ValueError as ve:
                                                             str_app.error(str(ve))
+                                else:
+                                    str_app.warning("No se encontraron registros o columnas válidas para esta remisión.")
 
+                        boton_exportar_excel(df_h, "Historial_Remisiones.xlsx", key="xls_historial")
                     else:
-                        str_app.info("No hay remisiones registradas.")
+                        str_app.info("No hay remisiones registradas en el rango seleccionado.")
 
-                # ---------------- UTILIDADES ----------------
+                # ---------------- UTILIDADES POR GALPÓN ----------------
                 elif str_app.session_state.seccion_activa == "📈 Utilidades":
                     str_app.subheader("📈 Utilidades por Galpón")
-                    df_rem_u = cargar_remisiones()
-                    df_gas_u = cargar_gastos()
+                    str_app.caption("Análisis financiero de ingresos por ventas, gastos directos y utilidad neta por galpón.")
 
-                    if df_rem_u.empty and df_gas_u.empty:
-                        str_app.info("Aún no hay suficientes datos de ventas o gastos registrados.")
+                    df_rem = cargar_remisiones()
+                    df_gas = cargar_gastos()
+                    df_cam = cargar_gastos_camion()
+
+                    if df_rem.empty and df_gas.empty and df_cam.empty:
+                        str_app.info("No hay datos suficientes de ventas o gastos para calcular utilidades.")
                     else:
-                        datos_utilidad = []
+                        if not df_rem.empty and 'fecha_emision' in df_rem.columns:
+                            df_rem['dt_fecha'] = pd.to_datetime(df_rem['fecha_emision'])
+                        if not df_gas.empty and 'fecha' in df_gas.columns:
+                            df_gas['dt_fecha'] = pd.to_datetime(df_gas['fecha'])
+                        if not df_cam.empty and 'fecha' in df_cam.columns:
+                            df_cam['dt_fecha'] = pd.to_datetime(df_cam['fecha'])
+
+                        anios_disponibles = set()
+                        if not df_rem.empty and 'dt_fecha' in df_rem.columns:
+                            anios_disponibles.update(df_rem['dt_fecha'].dt.year.unique().tolist())
+                        if not df_gas.empty and 'dt_fecha' in df_gas.columns:
+                            anios_disponibles.update(df_gas['dt_fecha'].dt.year.unique().tolist())
+                        if not df_cam.empty and 'dt_fecha' in df_cam.columns:
+                            anios_disponibles.update(df_cam['dt_fecha'].dt.year.unique().tolist())
+                        anios_disponibles = sorted(anios_disponibles, reverse=True) if anios_disponibles else [date.today().year]
+
+                        vista_util = str_app.radio("Vista", ["📅 Mes específico", "📊 Histórico completo"], horizontal=True, key="vista_utilidades")
+
+                        if vista_util == "📅 Mes específico":
+                            c_fu1, c_fu2 = str_app.columns(2)
+                            anio_sel_u = c_fu1.selectbox("📅 Año", anios_disponibles, key="anio_util")
+                            indice_mes_actual = date.today().month - 1
+                            mes_nombre_sel_u = c_fu2.selectbox("📅 Mes", list(MESES_NOMBRES.values()), index=indice_mes_actual, key="mes_util")
+                            mes_num_sel_u = [k for k, v in MESES_NOMBRES.items() if v == mes_nombre_sel_u][0]
+
+                            df_rem_periodo = df_rem[(df_rem['dt_fecha'].dt.year == anio_sel_u) & (df_rem['dt_fecha'].dt.month == mes_num_sel_u)] if not df_rem.empty and 'dt_fecha' in df_rem.columns else pd.DataFrame()
+                            df_gas_periodo = df_gas[(df_gas['dt_fecha'].dt.year == anio_sel_u) & (df_gas['dt_fecha'].dt.month == mes_num_sel_u)] if not df_gas.empty and 'dt_fecha' in df_gas.columns else pd.DataFrame()
+                            df_cam_periodo = df_cam[(df_cam['dt_fecha'].dt.year == anio_sel_u) & (df_cam['dt_fecha'].dt.month == mes_num_sel_u)] if not df_cam.empty and 'dt_fecha' in df_cam.columns else pd.DataFrame()
+                            titulo_periodo = f"{mes_nombre_sel_u} {anio_sel_u}"
+                        else:
+                            df_rem_periodo = df_rem
+                            df_gas_periodo = df_gas
+                            df_cam_periodo = df_cam
+                            titulo_periodo = "Histórico completo"
+
+                        resumen_utilidades = []
                         for g in GALPONES:
-                            ventas_g = float(df_rem_u[df_rem_u["galpon"] == g]["total"].sum()) if not df_rem_u.empty and "galpon" in df_rem_u.columns else 0.0
-                            gastos_g = float(df_gas_u[df_gas_u["galpon"] == g]["valor"].sum()) if not df_gas_u.empty and "galpon" in df_gas_u.columns else 0.0
-                            utilidad_g = ventas_g - gastos_g
-                            datos_utilidad.append({
-                                "Galpón": g,
-                                "Ventas ($)": ventas_g,
-                                "Gastos ($)": gastos_g,
-                                "Utilidad ($)": utilidad_g
-                            })
+                            ingresos = float(df_rem_periodo[df_rem_periodo['galpon'] == g]['total'].sum()) if not df_rem_periodo.empty and 'galpon' in df_rem_periodo.columns and 'total' in df_rem_periodo.columns else 0.0
+                            gastos = float(df_gas_periodo[df_gas_periodo['galpon'] == g]['valor'].sum()) if not df_gas_periodo.empty and 'galpon' in df_gas_periodo.columns and 'valor' in df_gas_periodo.columns else 0.0
+                            resumen_utilidades.append({"Galpón": g, "Ingresos ($)": ingresos, "Gastos ($)": gastos, "Utilidad ($)": ingresos - gastos})
 
-                        df_utilidad = pd.DataFrame(datos_utilidad)
-                        
-                        df_utilidad_mostrar = df_utilidad.copy()
-                        for col_m in ["Ventas ($)", "Gastos ($)", "Utilidad ($)"]:
-                            df_utilidad_mostrar[col_m] = df_utilidad_mostrar[col_m].apply(lambda x: f"${x:,.0f}".replace(",", "."))
+                        gastos_generales = float(df_gas_periodo[df_gas_periodo['galpon'] == "General / Granja"]['valor'].sum()) if not df_gas_periodo.empty and 'galpon' in df_gas_periodo.columns and 'valor' in df_gas_periodo.columns else 0.0
 
-                        str_app.dataframe(df_utilidad_mostrar, use_container_width=True, hide_index=True)
-                        boton_exportar_excel(df_utilidad, "Utilidades_por_Galpon.xlsx")
+                        gastos_camion = float(df_cam_periodo['valor'].sum()) if not df_cam_periodo.empty and 'valor' in df_cam_periodo.columns else 0.0
 
-        # ---------------- REGISTRO DIARIO ----------------
+                        df_util = pd.DataFrame(resumen_utilidades)
+                        total_ingresos = df_util["Ingresos ($)"].sum()
+                        total_gastos_galpones = df_util["Gastos ($)"].sum()
+                        utilidad_neta_total = total_ingresos - (total_gastos_galpones + gastos_generales + gastos_camion)
+
+                        str_app.markdown(f"#### {titulo_periodo}")
+                        col_u1, col_u2, col_u3 = str_app.columns(3)
+                        col_u1.metric("Total Ingresos", f"${total_ingresos:,.0f}".replace(",", "."))
+                        col_u2.metric("Total Gastos", f"${(total_gastos_galpones + gastos_generales + gastos_camion):,.0f}".replace(",", "."))
+                        col_u3.metric("Utilidad Neta", f"${utilidad_neta_total:,.0f}".replace(",", "."))
+
+                        if total_ingresos > 0 or total_gastos_galpones > 0:
+                            str_app.bar_chart(df_util.set_index("Galpón")[["Ingresos ($)", "Gastos ($)"]])
+                        else:
+                            str_app.caption(f"Sin movimientos registrados en {titulo_periodo}.")
+
+                        str_app.markdown("---")
+                        str_app.markdown("#### 📋 Detalle Financiero por Galpón")
+
+                        df_mostrar = df_util.copy()
+                        for col in ["Ingresos ($)", "Gastos ($)", "Utilidad ($)"]:
+                            df_mostrar[col] = df_mostrar[col].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
+                        str_app.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+                        boton_exportar_excel(df_util, f"Utilidades_{titulo_periodo.replace(' ', '_')}.xlsx")
+
+                        if gastos_generales > 0:
+                            str_app.info(f"💡 Gastos Generales / Granja no asignados a un galpón específico: $ {gastos_generales:,.0f}".replace(",", "."))
+
+                        if gastos_camion > 0:
+                            str_app.info(f"🚚 Gastos del Camión (incluidos en el Total de Gastos y en la Utilidad Neta): $ {gastos_camion:,.0f}".replace(",", "."))
+
+                        str_app.markdown("---")
+                        str_app.markdown("#### 📈 Evolución Mensual de la Utilidad (Todos los Galpones)")
+
+                        serie_ingresos_mes = pd.Series(dtype=float)
+                        serie_gastos_mes = pd.Series(dtype=float)
+                        if not df_rem.empty and 'dt_fecha' in df_rem.columns and 'total' in df_rem.columns:
+                            serie_ingresos_mes = df_rem.groupby(df_rem['dt_fecha'].dt.to_period('M'))['total'].sum().rename("Ingresos")
+                        if not df_gas.empty and 'dt_fecha' in df_gas.columns and 'valor' in df_gas.columns:
+                            serie_gastos_mes = df_gas.groupby(df_gas['dt_fecha'].dt.to_period('M'))['valor'].sum().rename("Gastos")
+                        if not df_cam.empty and 'dt_fecha' in df_cam.columns and 'valor' in df_cam.columns:
+                            serie_camion_mes = df_cam.groupby(df_cam['dt_fecha'].dt.to_period('M'))['valor'].sum()
+                            serie_gastos_mes = serie_gastos_mes.add(serie_camion_mes, fill_value=0.0).rename("Gastos")
+
+                        df_evolucion = pd.concat([serie_ingresos_mes, serie_gastos_mes], axis=1).fillna(0.0)
+                        if not df_evolucion.empty:
+                            df_evolucion["Utilidad"] = df_evolucion["Ingresos"] - df_evolucion["Gastos"]
+                            df_evolucion = df_evolucion.sort_index()
+                            df_evolucion.index = df_evolucion.index.astype(str)
+                            str_app.bar_chart(df_evolucion[["Utilidad"]])
+
+                            with str_app.expander("Ver detalle mes a mes"):
+                                df_evolucion_mostrar = df_evolucion.reset_index().rename(columns={"index": "Mes"})
+                                for col in ["Ingresos", "Gastos", "Utilidad"]:
+                                    df_evolucion_mostrar[col] = df_evolucion_mostrar[col].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
+                                str_app.dataframe(df_evolucion_mostrar, use_container_width=True, hide_index=True)
+                                boton_exportar_excel(df_evolucion.reset_index().rename(columns={"index": "Mes"}), "Evolucion_Mensual_Utilidad.xlsx")
+                        else:
+                            str_app.caption("Aún no hay suficientes datos para mostrar la evolución mensual.")
+
         elif str_app.session_state.sesion_principal == "📝 Registro Diario":
-            str_app.subheader("📝 Registro Diario de Galpones")
+            str_app.subheader("📝 Módulo de Registro Diario (Edades, Mortalidad y Concentrado)")
+            galpon_reg = str_app.selectbox("Seleccione el Galpón", GALPONES, key="galp_reg_sel")
+            tab_config, tab_diario, tab_historial = str_app.tabs(["⚙️ Configuración Inicial", "✍️ Registrar Día", "📊 Historial y PDF"])
 
-            galpon_reg_sel = str_app.selectbox("Seleccione el Galpón", GALPONES)
-            config_actual = cargar_config_galpon(galpon_reg_sel)
+            with tab_config:
+                str_app.markdown("#### Configuración Inicial del Lote (Se ingresa una sola vez)")
+                config_actual = cargar_config_galpon(galpon_reg)
 
-            if rol_actual == "Administrador":
-                with str_app.expander("⚙️ Configuración Inicial del Galpón"):
-                    with str_app.form("form_config_galpon"):
-                        sem_ini = str_app.number_input("Edad Inicial (Semanas)", min_value=0, value=config_actual['edad_semanas'] if config_actual else 0)
-                        dias_ini = str_app.number_input("Edad Inicial (Días extra)", min_value=0, max_value=6, value=config_actual['edad_dias'] if config_actual else 0)
-                        aves_ini = str_app.number_input("Aves Iniciales", min_value=0, value=config_actual['aves_iniciales'] if config_actual else 0)
-                        if str_app.form_submit_button("💾 Guardar Configuración"):
-                            if guardar_config_galpon(galpon_reg_sel, sem_ini, dias_ini, aves_ini):
-                                str_app.toast("¡Configuración guardada! 🎉", icon="✅")
-                                str_app.success("Configuración actualizada.")
+                ini_sem = config_actual['edad_semanas'] if config_actual else 0
+                ini_dias = config_actual['edad_dias'] if config_actual else 0
+                ini_aves = config_actual['aves_iniciales'] if config_actual else 0
+
+                with str_app.form(f"form_config_{galpon_reg}", clear_on_submit=True):
+                    c_sem = str_app.number_input("Edad Inicial (Semanas)", min_value=0, value=int(ini_sem), step=1)
+                    c_dias = str_app.number_input("Edad Inicial (Días adicionales 0-6)", min_value=0, max_value=6, value=int(ini_dias), step=1)
+                    c_aves = str_app.number_input("Número de Aves Iniciales del Lote", min_value=0, value=int(ini_aves), step=10)
+
+                    if str_app.form_submit_button("💾 Guardar Configuración del Galpón"):
+                        if c_aves <= 0:
+                            str_app.error("El número de aves iniciales debe ser mayor a 0.")
+                        else:
+                            if guardar_config_galpon(galpon_reg, c_sem, c_dias, c_aves):
+                                str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
+                                str_app.success(f"¡Configuración de {galpon_reg} guardada con éxito!")
                                 str_app.rerun()
 
-            df_reg_galpon = cargar_registros_diarios(galpon_reg_sel)
+            with tab_diario:
+                if rol_actual == "Invitado":
+                    str_app.warning("👀 Modo Invitado: No tienes permisos para registrar datos diarios.")
+                else:
+                    config = cargar_config_galpon(galpon_reg)
+                    if not config:
+                        str_app.warning("⚠️ Primero debes configurar la Edad y Aves Iniciales en la pestaña 'Configuración Inicial'.")
+                    else:
+                        with str_app.form(f"form_reg_diario_{galpon_reg}", clear_on_submit=True):
+                            fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
+                            mortalidad = str_app.number_input("Mortalidad del Día (Aves muertas)", min_value=0, value=0, step=1)
+                            conc_ing = str_app.number_input("Concentrado Ingresado (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%g")
+                            conc_cons = str_app.number_input("Concentrado Consumido (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%g")
+                            huevos = str_app.number_input("Huevos Recolectados (Opcional)", min_value=0, value=0, step=1)
+                            obs = str_app.text_input("Observaciones / Novedades")
 
-            mortalidad_acumulada = df_reg_galpon["mortalidad"].sum() if not df_reg_galpon.empty else 0
-            aves_iniciales_val = config_actual['aves_iniciales'] if config_actual else 0
-            aves_actuales = max(0, aves_iniciales_val - mortalidad_acumulada)
+                            if str_app.form_submit_button("📥 Guardar Registro Diario"):
+                                if registrar_dia_galpon(fecha_reg, galpon_reg, int(mortalidad), float(conc_ing), float(conc_cons), int(huevos), obs):
+                                    str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
+                                    str_app.success(f"¡Registro diario guardado para {galpon_reg}! La edad y el stock de aves se han actualizado automáticamente.")
+                                    str_app.rerun()
 
-            conc_ingresado_tot = df_reg_galpon["concentrado_ingresado"].sum() if not df_reg_galpon.empty else 0.0
-            conc_consumido_tot = df_reg_galpon["concentrado_consumido"].sum() if not df_reg_galpon.empty else 0.0
-            saldo_concentrado = conc_ingresado_tot - conc_consumido_tot
+            with tab_historial:
+                str_app.markdown(f"#### 📊 Resumen y Registros de {galpon_reg}")
+                config = cargar_config_galpon(galpon_reg)
+                df_reg = cargar_registros_diarios(galpon_reg)
 
-            if not df_reg_galpon.empty and config_actual:
-                dias_transcurridos = len(df_reg_galpon['fecha'].unique())
-                dias_totales = (config_actual['edad_semanas'] * 7) + config_actual['edad_dias'] + dias_transcurridos
-                semanas_act = dias_totales // 7
-                dias_act = dias_totales % 7
-                edad_str = f"{semanas_act} semanas y {dias_act} días"
-            elif config_actual:
-                edad_str = f"{config_actual['edad_semanas']} semanas y {config_actual['edad_dias']} días"
-            else:
-                edad_str = "Sin configurar"
+                if not config:
+                    str_app.info("Galpón sin configuración inicial.")
+                else:
+                    dias_acumulados = len(df_reg)
+                    total_dias_calc = config['edad_dias'] + dias_acumulados
+                    semanas_extra = total_dias_calc // 7
+                    dias_finales = total_dias_calc % 7
+                    edad_actual_sem = config['edad_semanas'] + semanas_extra
+                    edad_actual_str = f"{edad_actual_sem} semanas y {dias_finales} días"
 
-            c_met1, c_met2 = str_app.columns(2)
-            c_met1.metric("🐔 Aves Actuales", f"{aves_actuales:,}".replace(",", "."))
-            c_met2.metric("📦 Saldo Concentrado", f"{saldo_concentrado:,.1f} bultos".replace(",", "."))
-            str_app.caption(f"<b>Edad Actual Estimada:</b> {edad_str}", unsafe_allow_html=True)
+                    total_mortalidad = int(df_reg['mortalidad'].sum()) if not df_reg.empty else 0
+                    aves_actuales = config['aves_iniciales'] - total_mortalidad
+                    porc_mortalidad_acum = (total_mortalidad / config['aves_iniciales'] * 100) if config['aves_iniciales'] > 0 else 0.0
 
-            str_app.markdown("---")
-            if rol_actual == "Invitado":
-                str_app.warning("👀 Modo Invitado: Solo lectura.")
-            else:
-                str_app.markdown("#### ➕ Registrar Día")
-                with str_app.form("form_reg_diario", clear_on_submit=True):
-                    f_diario = str_app.date_input("Fecha", value=date.today())
-                    mort_d = str_app.number_input("Mortalidad (Aves)", min_value=0, step=1)
-                    c_ing_d = str_app.number_input("Ingreso Concentrado (Bultos)", min_value=0.0, step=0.5)
-                    c_con_d = str_app.number_input("Consumo Concentrado (Bultos)", min_value=0.0, step=0.5)
-                    huev_d = str_app.number_input("Huevos Recolectados", min_value=0, step=1)
-                    obs_d = str_app.text_input("Observaciones (Opcional)")
+                    total_conc_ing = float(df_reg['concentrado_ingresado'].sum()) if not df_reg.empty else 0.0
+                    total_conc_cons = float(df_reg['concentrado_consumido'].sum()) if not df_reg.empty else 0.0
+                    saldo_concentrado = total_conc_ing - total_conc_cons
+                    total_huevos_lote = int(df_reg['huevos_recolectados'].sum()) if not df_reg.empty else 0
 
-                    if str_app.form_submit_button("💾 Guardar Registro Diario"):
-                        if registrar_dia_galpon(f_diario, galpon_reg_sel, mort_d, c_ing_d, c_con_d, huev_d, obs_d):
-                            str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
-                            str_app.success("Día registrado con éxito!")
-                            str_app.rerun()
+                    conversion_bultos_100h = (total_conc_cons / (total_huevos_lote / 100)) if total_huevos_lote > 0 else None
 
-            str_app.markdown("---")
-            str_app.markdown("#### 📜 Historial del Galpón")
-            if not df_reg_galpon.empty:
-                c_pdf_r, c_xls_r = str_app.columns(2)
-                with c_pdf_r:
-                    pdf_reg_buf = generar_pdf_registro_diario(galpon_reg_sel, config_actual, df_reg_galpon, edad_str, aves_actuales, saldo_concentrado)
-                    str_app.download_button("📄 Descargar Reporte PDF", data=pdf_reg_buf, file_name=f"Registro_{galpon_reg_sel}.pdf", mime="application/pdf")
-                with c_xls_r:
-                    boton_exportar_excel(df_reg_galpon[["fecha", "mortalidad", "concentrado_ingresado", "concentrado_consumido", "huevos_recolectados", "observaciones"]], f"Registro_{galpon_reg_sel}.xlsx")
+                    porc_prod_semana = 0.0
+                    if not df_reg.empty and 'huevos_recolectados' in df_reg.columns:
+                        df_ultimos_7 = df_reg.head(7)
+                        total_huevos_7d = df_ultimos_7['huevos_recolectados'].sum()
+                        dias_conteo = len(df_ultimos_7)
+                        if dias_conteo > 0 and aves_actuales > 0:
+                            promedio_diario_huevos = total_huevos_7d / dias_conteo
+                            porc_prod_semana = (promedio_diario_huevos / aves_actuales) * 100
 
-                for _, r_d in df_reg_galpon.iterrows():
-                    with str_app.expander(f"📅 {r_d['fecha']} — Huevos: {int(r_d['huevos_recolectados']):,} | Mort: {int(r_d['mortalidad'])}".replace(",", ".")):
-                        str_app.write(f"Ingreso Conc: {r_d['concentrado_ingresado']} bultos | Consumo Conc: {r_d['concentrado_consumido']} bultos")
-                        if r_d.get('observaciones'):
-                            str_app.write(f"**Obs:** {r_d['observaciones']}")
-                        if rol_actual == "Administrador":
-                            if confirmar_eliminacion(f"reg_d_{r_d['id']}", etiqueta="🗑️ Eliminar Registro"):
-                                eliminar_registro_diario(r_d['id'])
-                                str_app.rerun()
-            else:
-                str_app.info("No hay registros diarios para este galpón.")
+                    conversion_str = f"{conversion_bultos_100h:.2f} bultos / 100 huevos" if conversion_bultos_100h is not None else "Sin datos de huevos aún"
 
+                    str_app.markdown(f"""
+                        <div style="background-color: #1a3e63; color: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 5px solid #f26822;">
+                            <p style="margin: 0; font-size: 16px; color: #f26822 !important;"><b>Edad Actual del Lote:</b> {edad_actual_str}</p>
+                            <p style="margin: 0; font-size: 14px;">Aves Iniciales: {config['aves_iniciales']:,} | Mortalidad Acumulada: {total_mortalidad} ({porc_mortalidad_acum:.2f}%)</p>
+                            <p style="margin: 0; font-size: 15px; color: #f26822 !important;"><b>Aves Vivas Actuales:</b> {aves_actuales:,}</p>
+                            <p style="margin: 0; font-size: 15px; color: #f26822 !important;"><b>% Producción Acumulado (Últimos 7 días):</b> {porc_prod_semana:.2f}%</p>
+                            <hr style="border-color: #2c5282; margin: 8px 0;">
+                            <p style="margin: 0; font-size: 14px;">Concentrado Ingresado: {total_conc_ing:.1f} bultos | Consumido: {total_conc_cons:.1f} bultos</p>
+                            <p style="margin: 0; font-size: 15px; color: #2c5282 !important;"><b>Saldo Concentrado Bodega:</b> {saldo_concentrado:.1f} bultos</p>
+                            <p style="margin: 0; font-size: 14px;"><b>Conversión Alimenticia:</b> {conversion_str}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    if porc_mortalidad_acum >= 5:
+                        str_app.warning(f"⚠️ La mortalidad acumulada de {galpon_reg} ({porc_mortalidad_acum:.1f}%) está en un nivel que conviene revisar.")
+
+                    if not df_reg.empty:
+                        df_tendencia_galpon = df_reg[["fecha", "huevos_recolectados", "mortalidad"]].sort_values("fecha").set_index("fecha")
+                        str_app.line_chart(df_tendencia_galpon)
+
+                        c_pdf, c_xls = str_app.columns(2)
+                        with c_pdf:
+                            pdf_buf = generar_pdf_registro_diario(galpon_reg, config, df_reg, edad_actual_str, aves_actuales, saldo_concentrado)
+                            str_app.download_button(f"📄 Descargar Reporte PDF de {galpon_reg}", data=pdf_buf, file_name=f"Registro_Diario_{galpon_reg.replace(' ', '_')}.pdf", mime="application/pdf")
+                        with c_xls:
+                            boton_exportar_excel(df_reg, f"Registro_Diario_{galpon_reg.replace(' ', '_')}.xlsx")
+
+                        str_app.markdown("---")
+                        str_app.markdown("#### 📑 Detalle Histórico de Registros")
+                        for _, row in df_reg.iterrows():
+                            r_id = row['id']
+                            r_fecha = str(row['fecha'])
+                            r_mort = int(row['mortalidad'])
+                            r_ing = float(row['concentrado_ingresado'])
+                            r_cons = float(row['concentrado_consumido'])
+                            r_hue = int(row['huevos_recolectados'])
+                            r_obs = row['observaciones']
+
+                            with str_app.expander(f"📅 {r_fecha} | Mortalidad: {r_mort} | Conc. Consumido: {r_cons} bultos"):
+                                str_app.write(f"**Concentrado Ingresado:** {r_ing} bultos")
+                                str_app.write(f"**Huevos Recolectados:** {r_hue}")
+                                str_app.write(f"**Observaciones:** {r_obs}")
+                                if rol_actual == "Administrador":
+                                    if confirmar_eliminacion(f"reg_{r_id}", etiqueta="🗑️ Eliminar Registro"):
+                                        eliminar_registro_diario(r_id)
+                                        str_app.warning("Registro diario eliminado y cálculos actualizados.")
+                                        str_app.rerun()
+                    else:
+                        str_app.info("No hay registros diarios ingresados todavía para este galpón.")
+
+    except psycopg2.Error as e:
+        str_app.error("⚠️ Ocurrió un problema de conexión con la base de datos. Intenta de nuevo en unos segundos.")
+        with str_app.expander("Detalle técnico"):
+            str_app.code(str(e))
+        if str_app.button("🔄 Reintentar"):
+            str_app.rerun()
     except Exception as e:
-        str_app.error(f"⚠️ Ha ocurrido un error inesperado en la aplicación.\n\nDetalle: {e}")
+        str_app.error("⚠️ Ocurrió un error inesperado al procesar esta sección.")
+        with str_app.expander("Detalle técnico"):
+            str_app.code(str(e))
+        if str_app.button("🔄 Reintentar", key="reintentar_general"):
+            str_app.rerun()

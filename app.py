@@ -13,6 +13,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from xml.sax.saxutils import escape as _xml_escape
 
 # =========================================================================
 # CONFIGURACIÓN DE PÁGINA
@@ -128,6 +129,19 @@ str_app.markdown(
     [data-testid="stMetricValue"] { color: #ffffff !important; }
 
     .stSubheader { color: #f26822 !important; font-weight: bold !important; }
+
+    /* Etiquetas de todos los campos (radio, checkbox, selectores...) */
+    [data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] label { color: #ffffff !important; }
+    [data-testid="stCaptionContainer"] p { color: #cbd5e1 !important; }
+
+    /* Pestañas legibles sobre el fondo azul */
+    .stTabs [data-baseweb="tab-list"] { gap: 6px; }
+    .stTabs [data-baseweb="tab"] p { color: #cbd5e1 !important; font-weight: 600 !important; }
+    .stTabs [aria-selected="true"] p { color: #f26822 !important; }
+    .stTabs [data-baseweb="tab-highlight"] { background-color: #f26822 !important; }
+
+    /* Tablas con esquinas redondeadas */
+    [data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
     </style>
     """,
     unsafe_allow_html=True
@@ -490,7 +504,7 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
 
                     datos_insert = {
                         "num_remision": num_remision, "fecha_emision": fecha_remision,
-                        "cliente": cliente, "cedula_nit": cedula, "telefono": telefono,
+                        "cliente": cliente.strip().upper(), "cedula_nit": cedula, "telefono": telefono,
                         "destino": direccion, "email": email, "conductor": conductor,
                         "tipo_huevo": clasificacion, "cantidad": cantidad,
                         "precio_unitario": precio_u, "total": subtotal, "galpon": galp_origen
@@ -945,11 +959,25 @@ def _estilos_pdf():
 def _logo_pdf(estilos):
     if os.path.exists("LOGOASI.png"):
         return Image("LOGOASI.png", width=70, height=70)
-    return Paragraph("<b>🥚</b>", estilos["bold"])
+    return Paragraph("", estilos["bold"])
 
 
 def _moneda(valor):
-    return f"$ {valor:,.0f}".replace(",", ".")
+    texto = f"$ {abs(valor):,.0f}".replace(",", ".")
+    return f"-{texto}" if valor < 0 else texto
+
+
+def _esc(valor):
+    """Texto seguro para reportlab: vacío si es None/NaN y con &, < y > escapados
+    (un nombre como 'A&B' o una descripción con '<' ya no rompe el PDF)."""
+    if valor is None:
+        return ""
+    try:
+        if pd.isna(valor):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return _xml_escape(str(valor))
 
 
 def _encabezado_pdf(estilos, subtitulo, texto_derecha):
@@ -978,11 +1006,11 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 
     info_data = [
         [Paragraph("<b>Fecha</b>", e["bold"]), Paragraph(f": {fecha_str}", e["normal"]), Paragraph("<b>Datos del cliente</b>", e["bold"]), ""],
-        [Paragraph("<b>Conductor</b>", e["bold"]), Paragraph(f": {conductor}", e["normal"]), Paragraph("<b>Nombre / Razón Social</b>", e["bold"]), Paragraph(f": {cliente_datos['nombre']}", e["normal"])],
-        [Paragraph("", e["normal"]), Paragraph("", e["normal"]), Paragraph("<b>Cédula / NIT</b>", e["bold"]), Paragraph(f": {cliente_datos['cedula']}", e["normal"])],
-        [Paragraph("", e["normal"]), Paragraph("", e["normal"]), Paragraph("<b>Dirección</b>", e["bold"]), Paragraph(f": {cliente_datos['direccion']}", e["normal"])],
-        [Paragraph("", e["normal"]), Paragraph("", e["normal"]), Paragraph("<b>Teléfono</b>", e["bold"]), Paragraph(f": {cliente_datos['telefono']}", e["normal"])],
-        [Paragraph("", e["normal"]), Paragraph("", e["normal"]), Paragraph("<b>Email</b>", e["bold"]), Paragraph(f": {cliente_datos['email']}", e["normal"])],
+        [Paragraph("<b>Conductor</b>", e["bold"]), Paragraph(f": {_esc(conductor)}", e["normal"]), Paragraph("<b>Nombre / Razón Social</b>", e["bold"]), Paragraph(f": {_esc(cliente_datos['nombre'])}", e["normal"])],
+        [Paragraph("", e["normal"]), Paragraph("", e["normal"]), Paragraph("<b>Cédula / NIT</b>", e["bold"]), Paragraph(f": {_esc(cliente_datos['cedula'])}", e["normal"])],
+        [Paragraph("", e["normal"]), Paragraph("", e["normal"]), Paragraph("<b>Dirección</b>", e["bold"]), Paragraph(f": {_esc(cliente_datos['direccion'])}", e["normal"])],
+        [Paragraph("", e["normal"]), Paragraph("", e["normal"]), Paragraph("<b>Teléfono</b>", e["bold"]), Paragraph(f": {_esc(cliente_datos['telefono'])}", e["normal"])],
+        [Paragraph("", e["normal"]), Paragraph("", e["normal"]), Paragraph("<b>Email</b>", e["bold"]), Paragraph(f": {_esc(cliente_datos['email'])}", e["normal"])],
     ]
     t_info = Table(info_data, colWidths=[70, 160, 110, 194])
     t_info.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('BOTTOMPADDING', (0, 0), (-1, -1), 3), ('TOPPADDING', (0, 0), (-1, -1), 3)]))
@@ -1026,6 +1054,74 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
         ('LINEABOVE', (0, 2), (-1, 2), 1, colors.HexColor("#0f2942")),
     ]))
     story.append(t_totales)
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+def generar_pdf_remisiones_mes(titulo_periodo, df_resumen):
+    """df_resumen: columnas num_remision, Fecha, Cliente, Valor (una fila por remisión)."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    e = _estilos_pdf()
+    styles = getSampleStyleSheet()
+    estilo_nota = ParagraphStyle('NotaRemisiones', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8,
+                                 textColor=colors.HexColor("#64748b"))
+
+    total_ventas = float(df_resumen["Valor"].sum()) if not df_resumen.empty else 0.0
+    cantidad = len(df_resumen)
+
+    story.append(_encabezado_pdf(e, "Reporte de Remisiones",
+                                  f"<b>Periodo:</b><br/><font size=10 color='#f26822'><b>{_esc(titulo_periodo)}</b></font><br/>"
+                                  f"<font size=8>Generado: {datetime.now().strftime('%Y-%m-%d')}</font>"))
+    story.append(Spacer(1, 10))
+
+    resumen_data = [[
+        Paragraph(f"<b>Remisiones emitidas:</b> {cantidad}", e["normal"]),
+        Paragraph(f"<b>Total ventas del periodo:</b> <font color='#f26822'><b>{_moneda(total_ventas)}</b></font>", e["normal"]),
+    ]]
+    t_resumen = Table(resumen_data, colWidths=[200, 334])
+    t_resumen.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('PADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(t_resumen)
+    story.append(Spacer(1, 14))
+
+    table_data = [[
+        Paragraph("Remisión", e["th_left"]), Paragraph("Fecha", e["th_left"]),
+        Paragraph("Cliente", e["th_left"]), Paragraph("Valor", e["th_right"])
+    ]]
+    for _, fila in df_resumen.iterrows():
+        fecha_txt = pd.to_datetime(fila["Fecha"]).strftime("%d/%m/%Y") if pd.notna(fila["Fecha"]) else ""
+        table_data.append([
+            Paragraph(f"{int(fila['num_remision']):06d}", e["normal"]),
+            Paragraph(fecha_txt, e["normal"]),
+            Paragraph(_esc(fila["Cliente"]), e["normal"]),
+            Paragraph(_moneda(float(fila["Valor"])), e["right"]),
+        ])
+    table_data.append([
+        Paragraph("<b>TOTAL VENTAS</b>", e["normal"]), "", "",
+        Paragraph(f"<b>{_moneda(total_ventas)}</b>", e["right_bold"]),
+    ])
+
+    t_items = Table(table_data, colWidths=[70, 80, 254, 130], repeatRows=1)
+    t_items.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+        ('SPAN', (0, -1), (2, -1)),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
+        ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+    ]))
+    story.append(t_items)
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Cada remisión corresponde a una venta: el total de ventas es la suma del valor de todas las remisiones del periodo.", estilo_nota))
 
     doc.build(story)
     buffer.seek(0)
@@ -1103,8 +1199,12 @@ def generar_pdf_gastos(df_gastos, titulo_reporte):
     for _, fila in df_gastos.iterrows():
         val = float(fila.get("valor", 0))
         total_gasto += val
-        col2_val = str(fila.get("galpon", fila.get("categoria", "")))
-        col3_val = str(fila.get("categoria", "")) if "galpon" in fila else str(fila.get("descripcion", ""))
+        col2_val = _esc(fila.get("galpon", fila.get("categoria", "")))
+        if "galpon" in fila:
+            desc_val = _esc(fila.get("descripcion", ""))
+            col3_val = f"<b>{_esc(fila.get('categoria', ''))}</b>" + (f"<br/>{desc_val}" if desc_val else "")
+        else:
+            col3_val = _esc(fila.get("descripcion", ""))
         table_data.append([
             Paragraph(str(fila.get("fecha", "")), e["normal"]),
             Paragraph(col2_val, e["normal"]),
@@ -1168,7 +1268,8 @@ def calcular_evolucion_mensual(df_rem, df_gas, df_cam):
     df_evol["Utilidad"] = df_evol["Ingresos"] - df_evol["Gastos"]
     df_evol = df_evol.sort_index()
     df_evol.index = df_evol.index.astype(str)
-    return df_evol.reset_index().rename(columns={"index": "Mes"})
+    df_evol.index.name = "Mes"
+    return df_evol.reset_index()
 
 
 def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, gastos_camion, df_categorias=None, df_evolucion=None):
@@ -1255,7 +1356,7 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
         story.append(Paragraph("Gastos por categoría", estilo_seccion))
         cat_data = [[Paragraph("Concepto", e["th_left"]), Paragraph("Valor", e["th_right"])]]
         for _, fila in df_categorias.iterrows():
-            cat_data.append([Paragraph(str(fila["Concepto"]), e["normal"]), Paragraph(_moneda(float(fila["Valor"])), e["right"])])
+            cat_data.append([Paragraph(_esc(fila["Concepto"]), e["normal"]), Paragraph(_moneda(float(fila["Valor"])), e["right"])])
         cat_data.append([Paragraph("<b>Total</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_categorias['Valor'].sum()))}</b>", e["right_bold"])])
         t_cat = Table(cat_data, colWidths=[374, 160])
         t_cat.setStyle(TableStyle([
@@ -1317,8 +1418,17 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
 if "usuario_autenticado" not in str_app.session_state:
     str_app.session_state.usuario_autenticado = None
 
-PASS_ADMIN = "admin123"
-PASS_INVITADO = "invitado123"
+def _clave_desde_secrets(nombre, valor_por_defecto):
+    """Lee la contraseña desde .streamlit/secrets.toml ([auth] admin / invitado).
+    Si no está configurada, usa la clave de siempre para no dejar a nadie fuera."""
+    try:
+        return str(str_app.secrets["auth"][nombre])
+    except Exception:
+        return valor_por_defecto
+
+
+PASS_ADMIN = _clave_desde_secrets("admin", "admin123")
+PASS_INVITADO = _clave_desde_secrets("invitado", "invitado123")
 
 MAX_INTENTOS_LOGIN = 5
 BLOQUEO_SEGUNDOS = 60
@@ -1643,11 +1753,11 @@ else:
 
                             c_f1, c_f2 = str_app.columns(2)
                             anio_sel_g = c_f1.selectbox("📅 Año (Gastos)", sorted(df_gastos['Año'].unique().tolist(), reverse=True), key="anio_gasto")
-                            mes_nombre_sel = c_f2.selectbox("📅 Mes (Gastos)", list(MESES_NOMBRES.values()), key="mes_gasto")
+                            mes_nombre_sel = c_f2.selectbox("📅 Mes (Gastos)", list(MESES_NOMBRES.values()), index=date.today().month - 1, key="mes_gasto")
                             mes_num_sel = [k for k, v in MESES_NOMBRES.items() if v == mes_nombre_sel][0]
 
                             df_gf = df_gastos[(df_gastos['Año'] == anio_sel_g) & (df_gastos['Mes_Num'] == mes_num_sel)]
-                            str_app.markdown(f"**Total Gastos Mes:** ${df_gf['valor'].sum():,.0f}".replace(",", "."))
+                            str_app.metric("💸 Total Gastos del Mes", f"${df_gf['valor'].sum():,.0f}".replace(",", "."))
 
                             if not df_gf.empty:
                                 c_pdf, c_xls = str_app.columns(2)
@@ -1716,7 +1826,7 @@ else:
                             mes_num_sel_gc = [k for k, v in MESES_NOMBRES.items() if v == mes_nombre_sel_gc][0]
 
                             df_gcf = df_gastos_camion[(df_gastos_camion['Año'] == anio_sel_gc) & (df_gastos_camion['Mes_Num'] == mes_num_sel_gc)]
-                            str_app.markdown(f"**Total Gastos Camión del Mes:** ${df_gcf['valor'].sum():,.0f}".replace(",", "."))
+                            str_app.metric("🚚 Total Gastos del Camión del Mes", f"${df_gcf['valor'].sum():,.0f}".replace(",", "."))
 
                             if not df_gcf.empty:
                                 c_pdf_gc, c_xls_gc = str_app.columns(2)
@@ -1880,6 +1990,7 @@ else:
                             use_container_width=True
                         )
                         items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
+                        items_validos["Precio Unitario ($)"] = items_validos["Precio Unitario ($)"].fillna(0)
 
                         if not items_validos.empty:
                             items_validos["Subtotal ($)"] = items_validos["Cantidad (Huevos)"] * items_validos["Precio Unitario ($)"]
@@ -1889,6 +2000,8 @@ else:
                             if str_app.button("🚀 Generar Remisión"):
                                 if not c_nom.strip():
                                     str_app.error("El nombre del cliente es obligatorio.")
+                                elif (items_validos["Precio Unitario ($)"] <= 0).any():
+                                    str_app.error("Todos los ítems deben tener un precio unitario mayor a 0.")
                                 else:
                                     if guardar_cli_auto and c_nom.strip():
                                         guardar_cliente(c_nom, c_ced, c_dir, c_tel, c_em)
@@ -1913,6 +2026,10 @@ else:
                     if df_cartera.empty:
                         str_app.info("Sin deudas registradas.")
                     else:
+                        df_pendientes_k = df_cartera[df_cartera["estado"] == "PENDIENTE"]
+                        c_k1, c_k2 = str_app.columns(2)
+                        c_k1.metric("💰 Cartera Pendiente", f"${float(df_pendientes_k['saldo'].sum()):,.0f}".replace(",", "."))
+                        c_k2.metric("🧾 Remisiones Pendientes", f"{len(df_pendientes_k)}")
                         solo_pendientes = str_app.checkbox("Mostrar solo remisiones PENDIENTES", value=True)
                         df_cartera_mostrar = df_cartera[df_cartera["estado"] == "PENDIENTE"] if solo_pendientes else df_cartera
 
@@ -1959,11 +2076,59 @@ else:
                 elif str_app.session_state.seccion_activa == "📜 Historial":
                     str_app.subheader("📜 Historial de Remisiones")
                     df_h = cargar_remisiones()
+                    titulo_periodo_rem = "Todas las remisiones"
                     if not df_h.empty and "fecha_emision" in df_h.columns:
-                        c_fi, c_ff = str_app.columns(2)
-                        fecha_ini = c_fi.date_input("Desde", value=df_h["fecha_emision"].min(), key="hist_desde")
-                        fecha_fin = c_ff.date_input("Hasta", value=df_h["fecha_emision"].max(), key="hist_hasta")
-                        df_h = df_h[(df_h["fecha_emision"] >= fecha_ini) & (df_h["fecha_emision"] <= fecha_fin)]
+                        modo_filtro_rem = str_app.radio("Filtrar por", ["📅 Por mes", "🗓️ Rango de fechas"], horizontal=True, key="modo_filtro_hist")
+                        if modo_filtro_rem == "📅 Por mes":
+                            fechas_rem = pd.to_datetime(df_h["fecha_emision"])
+                            anios_rem = sorted(fechas_rem.dt.year.dropna().astype(int).unique().tolist(), reverse=True)
+                            if not anios_rem:
+                                anios_rem = [date.today().year]
+                            c_ay, c_mm = str_app.columns(2)
+                            anio_sel_rem = c_ay.selectbox("📅 Año", anios_rem, index=anios_rem.index(date.today().year) if date.today().year in anios_rem else 0, key="hist_anio")
+                            mes_nom_rem = c_mm.selectbox("📅 Mes", list(MESES_NOMBRES.values()), index=date.today().month - 1, key="hist_mes")
+                            mes_num_rem = [k for k, v in MESES_NOMBRES.items() if v == mes_nom_rem][0]
+                            df_h = df_h[(fechas_rem.dt.year == anio_sel_rem) & (fechas_rem.dt.month == mes_num_rem)]
+                            titulo_periodo_rem = f"{mes_nom_rem} {anio_sel_rem}"
+                        else:
+                            c_fi, c_ff = str_app.columns(2)
+                            fecha_ini = c_fi.date_input("Desde", value=df_h["fecha_emision"].min(), key="hist_desde")
+                            fecha_fin = c_ff.date_input("Hasta", value=df_h["fecha_emision"].max(), key="hist_hasta")
+                            df_h = df_h[(df_h["fecha_emision"] >= fecha_ini) & (df_h["fecha_emision"] <= fecha_fin)]
+                            titulo_periodo_rem = f"{fecha_ini.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')}"
+
+                    if not df_h.empty and {"num_remision", "cliente", "total"}.issubset(df_h.columns):
+                        # --- Resumen del periodo: una fila por remisión (cliente + valor) ---
+                        df_tot_rem = df_h.assign(total=pd.to_numeric(df_h["total"], errors="coerce").fillna(0.0))
+                        df_resumen_rem = (
+                            df_tot_rem.groupby("num_remision", as_index=False)
+                            .agg(Fecha=("fecha_emision", "first"), Cliente=("cliente", "first"), Valor=("total", "sum"))
+                            .sort_values("num_remision")
+                        )
+                        total_ventas_rem = float(df_resumen_rem["Valor"].sum())
+
+                        str_app.markdown(f"#### 🧾 Resumen — {titulo_periodo_rem}")
+                        c_r1, c_r2 = str_app.columns(2)
+                        c_r1.metric("🧾 Remisiones", f"{len(df_resumen_rem)}")
+                        c_r2.metric("📈 Total Ventas", f"${total_ventas_rem:,.0f}".replace(",", "."))
+
+                        df_resumen_mostrar = df_resumen_rem.copy()
+                        df_resumen_mostrar["Remisión"] = df_resumen_mostrar["num_remision"].apply(lambda n: f"{int(n):06d}")
+                        df_resumen_mostrar["Valor"] = df_resumen_mostrar["Valor"].apply(lambda x: f"$ {x:,.0f}".replace(",", "."))
+                        str_app.dataframe(df_resumen_mostrar[["Remisión", "Fecha", "Cliente", "Valor"]], use_container_width=True, hide_index=True)
+
+                        c_pdf_rem, c_xls_rem = str_app.columns(2)
+                        with c_pdf_rem:
+                            pdf_rem_mes = generar_pdf_remisiones_mes(titulo_periodo_rem, df_resumen_rem)
+                            str_app.download_button("📄 Descargar PDF de Remisiones", data=pdf_rem_mes,
+                                                    file_name=f"Remisiones_{titulo_periodo_rem.replace(' ', '_').replace('/', '-')}.pdf",
+                                                    mime="application/pdf", key="dl_pdf_remisiones_periodo")
+                        with c_xls_rem:
+                            boton_exportar_excel(df_resumen_rem.rename(columns={"num_remision": "Remisión"}),
+                                                 f"Remisiones_{titulo_periodo_rem.replace(' ', '_').replace('/', '-')}.xlsx", key="xls_remisiones_periodo")
+
+                        str_app.markdown("---")
+                        str_app.markdown("#### 📋 Detalle de cada remisión")
 
                     if not df_h.empty:
                         for num_sel in sorted(df_h['num_remision'].unique(), reverse=True):
@@ -2021,10 +2186,13 @@ else:
 
                                                 if str_app.form_submit_button("💾 Guardar Cambios de Remisión"):
                                                     items_val = df_items_editados[df_items_editados["Cantidad (Huevos)"] > 0].copy()
+                                                    items_val["Precio Unitario ($)"] = items_val["Precio Unitario ($)"].fillna(0)
                                                     if items_val.empty:
                                                         str_app.error("Debe tener al menos un ítem válido con cantidad mayor a 0.")
                                                     elif not ed_nom.strip():
                                                         str_app.error("El nombre del cliente es obligatorio.")
+                                                    elif (items_val["Precio Unitario ($)"] <= 0).any():
+                                                        str_app.error("Todos los ítems deben tener un precio unitario mayor a 0.")
                                                     else:
                                                         items_val["Subtotal ($)"] = items_val["Cantidad (Huevos)"] * items_val["Precio Unitario ($)"]
                                                         nuevos_items_dict = [
@@ -2050,7 +2218,7 @@ else:
 
                         boton_exportar_excel(df_h, "Historial_Remisiones.xlsx", key="xls_historial")
                     else:
-                        str_app.info("No hay remisiones registradas en el rango seleccionado.")
+                        str_app.info("No hay remisiones registradas en el periodo seleccionado.")
 
                 # ---------------- UTILIDADES POR GALPÓN ----------------
                 elif str_app.session_state.seccion_activa == "📈 Utilidades":
@@ -2171,6 +2339,7 @@ else:
                             df_evolucion["Utilidad"] = df_evolucion["Ingresos"] - df_evolucion["Gastos"]
                             df_evolucion = df_evolucion.sort_index()
                             df_evolucion.index = df_evolucion.index.astype(str)
+                            df_evolucion.index.name = "Mes"
                             str_app.bar_chart(df_evolucion[["Utilidad"]])
 
                             with str_app.expander("Ver detalle mes a mes"):

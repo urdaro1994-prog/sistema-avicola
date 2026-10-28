@@ -21,7 +21,7 @@ from xml.sax.saxutils import escape as _xml_escape
 str_app.set_page_config(
     page_title="Avícola Santa Isabel",
     page_icon="🥚",
-    layout="centered",
+    layout="wide", # 🔥 MEJORA UI: Layout ancho para aprovechar la pantalla
     initial_sidebar_state="collapsed"
 )
 
@@ -64,8 +64,8 @@ str_app.markdown(
 
     .block-container {
         padding-top: 1.5rem; padding-bottom: 5rem;
-        padding-left: 1.2rem; padding-right: 1.2rem;
-        max-width: 540px;
+        padding-left: 2rem; padding-right: 2rem;
+        max-width: 1200px;
         background-color: #0f2942 !important;
         border-radius: 16px;
         box-shadow: 0 10px 35px rgba(15, 41, 66, 0.3);
@@ -98,7 +98,7 @@ str_app.markdown(
         color: #ffffff;
     }
 
-    /* Estilo armónico para los Expander (Historial / Remisiones) */
+    /* Estilo armónico para los Expander */
     [data-testid="stExpander"] {
         background-color: #163559 !important;
         border-radius: 8px !important;
@@ -110,9 +110,7 @@ str_app.markdown(
         font-weight: bold !important;
     }
 
-    [data-testid="stExpanderDetails"] {
-        color: #ffffff !important;
-    }
+    [data-testid="stExpanderDetails"] { color: #ffffff !important; }
 
     /* Etiquetas de los campos */
     .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label, .stFileUploader label {
@@ -130,7 +128,7 @@ str_app.markdown(
 
     .stSubheader { color: #f26822 !important; font-weight: bold !important; }
 
-    /* Etiquetas de todos los campos (radio, checkbox, selectores...) */
+    /* Etiquetas de todos los campos */
     [data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] label { color: #ffffff !important; }
     [data-testid="stCaptionContainer"] p { color: #cbd5e1 !important; }
 
@@ -149,12 +147,10 @@ str_app.markdown(
 
 # =========================================================================
 # CONSTANTES DE NEGOCIO
-# 🔥 ORDEN OFICIAL DE CLASIFICACIONES:
-#    yumbo, extra, aa, a, b, c, palido, sucio, roto
-# Este orden se respeta en selectores, tablas, PDFs e inventario.
 # =========================================================================
 GALPONES = ["Galpón 1", "Galpón 2", "Galpón 3"]
 GALPONES_GASTOS = GALPONES + ["General / Granja"]
+# 🔥 ORDEN OFICIAL DE CLASIFICACIONES
 CLASIFICACIONES = ["yumbo", "extra", "aa", "a", "b", "c", "palido", "sucio", "roto"]
 COLUMNAS_INVENTARIO = set(CLASIFICACIONES)
 MESES_NOMBRES = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
@@ -847,11 +843,12 @@ def mostrar_resumen_general():
     _fila_metrica_con_desglose("💀", "Mortalidad del Mes", resumen["mortalidad_mes"], resumen["mortalidad_por_galpon"])
 
     str_app.markdown("---")
-    str_app.metric("💰 Cartera Pendiente", f"${resumen['cartera_pendiente']:,.0f}".replace(",", "."))
-    str_app.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
-    str_app.metric("💸 Gastos del Mes", f"${resumen['gastos_mes']:,.0f}".replace(",", "."))
-    str_app.markdown("<div style='margin-bottom:10px;'></div>", unsafe_allow_html=True)
-    str_app.metric("📈 Ventas del Mes", f"${resumen['ventas_mes']:,.0f}".replace(",", "."))
+    
+    # 🔥 MEJORA UI: Mostrar las 3 métricas financieras en columnas para mejor lectura
+    c_fin1, c_fin2, c_fin3 = str_app.columns(3)
+    c_fin1.metric("💰 Cartera Pendiente", f"${resumen['cartera_pendiente']:,.0f}".replace(",", "."))
+    c_fin2.metric("💸 Gastos del Mes", f"${resumen['gastos_mes']:,.0f}".replace(",", "."))
+    c_fin3.metric("📈 Ventas del Mes", f"${resumen['ventas_mes']:,.0f}".replace(",", "."))
 
     df_reg_all = cargar_registros_diarios()
     if not df_reg_all.empty:
@@ -1364,11 +1361,9 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
 
 
 # =========================================================================
-# 🔥 NUEVO: INFORME DE VENTAS Y GASTOS DEL MES
+# INFORME DE VENTAS Y GASTOS DEL MES
 # =========================================================================
 def calcular_ventas_mes_por_galpon(df_rem_periodo):
-    """Devuelve una tabla con filas = galpones, columnas = clasificaciones en orden
-    oficial, más Totales. También devuelve la tabla de valores en $ por galpón."""
     cols_unidades = ["Galpón"] + [c.capitalize() for c in CLASIFICACIONES] + ["Total Huevos"]
     cols_valores = ["Galpón", "Total Ventas ($)"]
 
@@ -1399,11 +1394,6 @@ def calcular_ventas_mes_por_galpon(df_rem_periodo):
 
 
 def calcular_gastos_mes_detallado(df_gas, df_cam, df_var, anio, mes):
-    """Filtra los gastos del mes y devuelve:
-    - df_por_categoria: gastos agrupados por categoría (con detalle de origen)
-    - df_por_galpon: gastos agrupados por galpón
-    - df_detalle: detalle fila por fila (fecha, origen, categoria, descripcion, valor)
-    """
     def _filtrar_mes(df, col_fecha="fecha"):
         if df is None or df.empty or col_fecha not in df.columns:
             return pd.DataFrame()
@@ -1448,6 +1438,8 @@ def calcular_gastos_mes_detallado(df_gas, df_cam, df_var, anio, mes):
         return pd.DataFrame(columns=["Categoría", "Valor ($)"]), pd.DataFrame(columns=["Origen", "Valor ($)"]), df_detalle
 
     df_por_categoria = df_detalle.groupby("Categoría", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
+    
+    # 🔥 Corrección del SyntaxError y agrupación por origen
     df_por_galpon = df_detalle.groupby("Origen", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
     
     return df_por_categoria, df_por_galpon, df_detalle
@@ -1467,7 +1459,6 @@ def generar_pdf_ventas_gastos_mes(titulo_periodo, df_unidades, df_valores, df_po
                                   f"<font size=8>Generado: {datetime.now().strftime('%Y-%m-%d')}</font>"))
     story.append(Spacer(1, 10))
 
-    # --- Tarjetas resumen ---
     utilidad = total_ventas - total_gastos
     color_util = "#15803d" if utilidad >= 0 else "#b91c1c"
     resumen_data = [
@@ -1485,7 +1476,6 @@ def generar_pdf_ventas_gastos_mes(titulo_periodo, df_unidades, df_valores, df_po
     story.append(t_res)
     story.append(Spacer(1, 14))
 
-    # --- Huevos vendidos por galpón y clasificación (orden oficial) ---
     story.append(Paragraph("Huevos vendidos por galpón y clasificación", estilo_seccion))
     cols_clasif = [c.capitalize() for c in CLASIFICACIONES]
     header = [Paragraph("Galpón", e["th_left"])] + [Paragraph(c[:4], e["th_right"]) for c in cols_clasif] + [Paragraph("Total", e["th_right"])]
@@ -1496,7 +1486,7 @@ def generar_pdf_ventas_gastos_mes(titulo_periodo, df_unidades, df_valores, df_po
             row.append(Paragraph(f"{int(fila[c]):,}".replace(",", ".") if c in fila else "0", e["right"]))
         row.append(Paragraph(f"<b>{int(fila['Total Huevos']):,}</b>".replace(",", "."), e["right_bold"]))
         table_data.append(row)
-    # Fila total
+    
     fila_total = [Paragraph("<b>TOTAL</b>", e["normal"])]
     for c in cols_clasif:
         fila_total.append(Paragraph(f"<b>{int(df_unidades[c].sum()):,}</b>".replace(",", "."), e["right_bold"]))
@@ -1523,7 +1513,6 @@ def generar_pdf_ventas_gastos_mes(titulo_periodo, df_unidades, df_valores, df_po
         textColor=colors.HexColor("#64748b"))))
     story.append(Spacer(1, 10))
 
-    # --- Ventas en $ por galpón ---
     story.append(Paragraph("Ventas en pesos por galpón", estilo_seccion))
     t_val_data = [[Paragraph("Galpón", e["th_left"]), Paragraph("Total Ventas ($)", e["th_right"])]]
     for _, fila in df_valores.iterrows():
@@ -1542,7 +1531,6 @@ def generar_pdf_ventas_gastos_mes(titulo_periodo, df_unidades, df_valores, df_po
     story.append(t_val)
     story.append(Spacer(1, 16))
 
-    # --- Gastos por categoría (concretos: Concentrado, Empleados, etc.) ---
     story.append(Paragraph("Gastos del mes por categoría (concepto)", estilo_seccion))
     if not df_por_categoria.empty:
         cat_data = [[Paragraph("Concepto", e["th_left"]), Paragraph("Valor ($)", e["th_right"])]]
@@ -1564,7 +1552,6 @@ def generar_pdf_ventas_gastos_mes(titulo_periodo, df_unidades, df_valores, df_po
         story.append(Paragraph("Sin gastos registrados en el mes.", e["normal"]))
     story.append(Spacer(1, 14))
 
-    # --- Gastos por origen (galpones, camión, varios) ---
     story.append(Paragraph("Gastos del mes por origen", estilo_seccion))
     if not df_por_galpon.empty:
         orig_data = [[Paragraph("Origen", e["th_left"]), Paragraph("Valor ($)", e["th_right"])]]
@@ -1677,44 +1664,84 @@ else:
         if "sesion_principal" not in str_app.session_state:
             str_app.session_state.sesion_principal = None
 
+        # --- MENÚ PRINCIPAL ---
         if str_app.session_state.sesion_principal is None:
             mostrar_resumen_general()
 
-            c_prin1, c_prin2 = str_app.columns(2)
-            with c_prin1:
-                if str_app.button("📦 Stock y Ventas", use_container_width=True):
+            # 🔥 MEJORA UI: Menú organizado en 3 grandes módulos lógicos
+            str_app.markdown("### 🗂️ Módulos del Sistema")
+            
+            c_mod1, c_mod2, c_mod3 = str_app.columns(3)
+            
+            with c_mod1:
+                str_app.markdown("#### 🥚 Operación Diaria")
+                str_app.caption("Producción, inventario y remisiones.")
+                if str_app.button("📝 Registro Diario", use_container_width=True, key="btn_mod_reg"):
+                    str_app.session_state.sesion_principal = "📝 Registro Diario"
+                    str_app.rerun()
+                if str_app.button("📦 Stock y Ventas", use_container_width=True, key="btn_mod_stock"):
                     str_app.session_state.sesion_principal = "📦 Stock y Ventas"
                     str_app.session_state.seccion_activa = None
                     str_app.rerun()
-            with c_prin2:
-                if str_app.button("📝 Registro Diario", use_container_width=True):
-                    str_app.session_state.sesion_principal = "📝 Registro Diario"
+
+            with c_mod2:
+                str_app.markdown("#### 💵 Finanzas y Gastos")
+                str_app.caption("Contabilidad, utilidades y cartera.")
+                if str_app.button("📊 Ventas y Gastos del Mes", use_container_width=True, key="btn_mod_vg"):
+                    str_app.session_state.sesion_principal = "📦 Stock y Ventas"
+                    str_app.session_state.seccion_activa = "📊 Ventas y Gastos del Mes"
+                    str_app.rerun()
+                if str_app.button("📈 Utilidades por Galpón", use_container_width=True, key="btn_mod_util"):
+                    str_app.session_state.sesion_principal = "📦 Stock y Ventas"
+                    str_app.session_state.seccion_activa = "📈 Utilidades"
+                    str_app.rerun()
+                if str_app.button("💰 Control de Cartera", use_container_width=True, key="btn_mod_cart"):
+                    str_app.session_state.sesion_principal = "📦 Stock y Ventas"
+                    str_app.session_state.seccion_activa = "💰 Cartera"
+                    str_app.rerun()
+                if str_app.button("💸 Control de Gastos", use_container_width=True, key="btn_mod_gastos"):
+                    str_app.session_state.sesion_principal = "📦 Stock y Ventas"
+                    str_app.session_state.seccion_activa = "💸 Gastos"
                     str_app.rerun()
 
-            if rol_actual == "Administrador":
-                str_app.markdown("---")
-                if "confirmar_reinicio" not in str_app.session_state:
-                    str_app.session_state.confirmar_reinicio = False
+            with c_mod3:
+                str_app.markdown("#### ⚙️ Administración")
+                str_app.caption("Clientes, auditorías y ajustes.")
+                if str_app.button("👥 Clientes", use_container_width=True, key="btn_mod_cli"):
+                    str_app.session_state.sesion_principal = "📦 Stock y Ventas"
+                    str_app.session_state.seccion_activa = "👥 Clientes"
+                    str_app.rerun()
+                if str_app.button("⚖️ Inventario Físico", use_container_width=True, key="btn_mod_inv"):
+                    str_app.session_state.sesion_principal = "📦 Stock y Ventas"
+                    str_app.session_state.seccion_activa = "⚖️ Inventario Fisico"
+                    str_app.rerun()
+                if str_app.button("📜 Historial de Remisiones", use_container_width=True, key="btn_mod_hist"):
+                    str_app.session_state.sesion_principal = "📦 Stock y Ventas"
+                    str_app.session_state.seccion_activa = "📜 Historial"
+                    str_app.rerun()
+                
+                if rol_actual == "Administrador":
+                    if "confirmar_reinicio" not in str_app.session_state:
+                        str_app.session_state.confirmar_reinicio = False
 
-                if not str_app.session_state.confirmar_reinicio:
-                    if str_app.button("🧹 Reiniciar Sistema (Dejar en Ceros)", use_container_width=True):
-                        str_app.session_state.confirmar_reinicio = True
-                        str_app.rerun()
-                else:
-                    str_app.warning("⚠️ ¿Estás completamente seguro? Esto borrará todas las remisiones, abonos, clientes, gastos, registros diarios y pondrá el stock en 0.")
-                    c_conf1, c_conf2 = str_app.columns(2)
-                    with c_conf1:
-                        if str_app.button("✅ Sí, borrar todo", use_container_width=True):
+                    if not str_app.session_state.confirmar_reinicio:
+                        if str_app.button("🧹 Reiniciar Sistema", use_container_width=True):
+                            str_app.session_state.confirmar_reinicio = True
+                            str_app.rerun()
+                    else:
+                        str_app.warning("⚠️ ¿Borrar todo y dejar en ceros?")
+                        cc1, cc2 = str_app.columns(2)
+                        if cc1.button("✅ Sí", use_container_width=True):
                             if reiniciar_sistema_completo():
                                 str_app.session_state.confirmar_reinicio = False
-                                str_app.success("¡El sistema ha sido reiniciado a ceros con éxito!")
+                                str_app.success("¡Reiniciado!")
                                 str_app.rerun()
-                    with c_conf2:
-                        if str_app.button("❌ Cancelar", use_container_width=True):
+                        if cc2.button("❌ No", use_container_width=True):
                             str_app.session_state.confirmar_reinicio = False
                             str_app.rerun()
+
         else:
-            if str_app.button("⬅️ Regresar al Menú Principal"):
+            if str_app.button("⬅️ Volver al Menú Principal"):
                 str_app.session_state.sesion_principal = None
                 str_app.session_state.seccion_activa = None
                 str_app.rerun()
@@ -1726,35 +1753,42 @@ else:
                 str_app.subheader("📦 Módulo Stock y Ventas")
                 str_app.caption("Seleccione una opción para continuar:")
 
-                col_m1, col_m2 = str_app.columns(2)
+                # 🔥 MEJORA UI: Submenú organizado por categorías dentro de Stock y Ventas
+                col_m1, col_m2, col_m3 = str_app.columns(3)
                 with col_m1:
+                    str_app.markdown("**Inventario**")
                     if str_app.button("📥 Entradas de Stock", use_container_width=True):
                         str_app.session_state.seccion_activa = "📥 Entradas"
                         str_app.rerun()
+                    if str_app.button("📊 Ver Stock Actual", use_container_width=True):
+                        str_app.session_state.seccion_activa = "📊 Stock"
+                        str_app.rerun()
+                    if str_app.button("⚖️ Inventario Físico", use_container_width=True):
+                        str_app.session_state.seccion_activa = "⚖️ Inventario Fisico"
+                        str_app.rerun()
+                
+                with col_m2:
+                    str_app.markdown("**Ventas**")
                     if str_app.button("📤 Nueva Remisión", use_container_width=True):
                         str_app.session_state.seccion_activa = "📤 Remisiones"
                         str_app.rerun()
-                    if str_app.button("📊 Ver Stock Actual", use_container_width=True):
-                        str_app.session_state.seccion_activa = "📊 Stock"
+                    if str_app.button("📜 Historial de Remisiones", use_container_width=True):
+                        str_app.session_state.seccion_activa = "📜 Historial"
+                        str_app.rerun()
+                    if str_app.button("👥 Clientes", use_container_width=True):
+                        str_app.session_state.seccion_activa = "👥 Clientes"
+                        str_app.rerun()
+
+                with col_m3:
+                    str_app.markdown("**Finanzas**")
+                    if str_app.button("💰 Control de Cartera", use_container_width=True):
+                        str_app.session_state.seccion_activa = "💰 Cartera"
                         str_app.rerun()
                     if str_app.button("💸 Control de Gastos", use_container_width=True):
                         str_app.session_state.seccion_activa = "💸 Gastos"
                         str_app.rerun()
                     if str_app.button("📊 Ventas y Gastos del Mes", use_container_width=True):
                         str_app.session_state.seccion_activa = "📊 Ventas y Gastos del Mes"
-                        str_app.rerun()
-                with col_m2:
-                    if str_app.button("👥 Clientes", use_container_width=True):
-                        str_app.session_state.seccion_activa = "👥 Clientes"
-                        str_app.rerun()
-                    if str_app.button("💰 Control de Cartera", use_container_width=True):
-                        str_app.session_state.seccion_activa = "💰 Cartera"
-                        str_app.rerun()
-                    if str_app.button("⚖️ Inventario Físico", use_container_width=True):
-                        str_app.session_state.seccion_activa = "⚖️ Inventario Fisico"
-                        str_app.rerun()
-                    if str_app.button("📜 Historial de Remisiones", use_container_width=True):
-                        str_app.session_state.seccion_activa = "📜 Historial"
                         str_app.rerun()
                     if str_app.button("📈 Utilidades por Galpón", use_container_width=True):
                         str_app.session_state.seccion_activa = "📈 Utilidades"
@@ -1789,7 +1823,6 @@ else:
                         galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", GALPONES, key=f"galpon_destino_entrada_{ctr_es}")
                         fecha_entrada = str_app.date_input("Fecha de la Entrada", value=date.today(), key=f"fecha_entrada_stock_{ctr_es}")
 
-                        # Precarga en el orden oficial
                         df_base_entrada = pd.DataFrame([{"Clasificación": c, "Cantidad": 0} for c in CLASIFICACIONES])
                         df_entrada_editado = str_app.data_editor(
                             df_base_entrada, num_rows="dynamic",
@@ -1874,7 +1907,6 @@ else:
                         df_inv_actual = cargar_inventario()
                         fila_galp = df_inv_actual.loc[galpon_fisico] if galpon_fisico in df_inv_actual.index else pd.Series({c: 0 for c in CLASIFICACIONES})
 
-                        # Orden oficial
                         datos_fisicos = []
                         for col_clasif in CLASIFICACIONES:
                             stock_sistema = int(fila_galp.get(col_clasif, 0))
@@ -2183,7 +2215,6 @@ else:
                             "Copia las celdas y pégalas aquí con Ctrl+V."
                         )
 
-                        # 🔥 Ítems iniciales en el ORDEN OFICIAL
                         df_base = pd.DataFrame([{
                             "Clasificación": c,
                             "Cantidad (Huevos)": 0,
@@ -2286,7 +2317,6 @@ else:
                     str_app.subheader("📦 Stock Actual")
                     df_stock = cargar_inventario()
                     if not df_stock.empty:
-                        # Reordenar columnas según orden oficial
                         cols_ordenadas = [c for c in CLASIFICACIONES if c in df_stock.columns]
                         df_stock_ordenado = df_stock[cols_ordenadas].copy()
                         df_stock_ordenado.columns = [c.capitalize() for c in df_stock_ordenado.columns]
@@ -2443,7 +2473,7 @@ else:
                     else:
                         str_app.info("No hay remisiones registradas en el periodo seleccionado.")
 
-                # ---------------- 🔥 NUEVA SECCIÓN: VENTAS Y GASTOS DEL MES ----------------
+                # ---------------- VENTAS Y GASTOS DEL MES ----------------
                 elif str_app.session_state.seccion_activa == "📊 Ventas y Gastos del Mes":
                     str_app.subheader("📊 Ventas y Gastos del Mes")
                     str_app.caption("Informe mensual: huevos vendidos por galpón (en el orden oficial de clasificaciones) y detalle de gastos del mes por concepto.")
@@ -2465,23 +2495,21 @@ else:
                     mes_vg_num = [k for k, v in MESES_NOMBRES.items() if v == mes_vg_nombre][0]
                     titulo_periodo_vg = f"{mes_vg_nombre} {anio_vg}"
 
-                    # --- Filtrar remisiones del mes ---
                     df_rem_mes = pd.DataFrame()
                     if df_rem is not None and not df_rem.empty and 'fecha_emision' in df_rem.columns:
                         dt_rem = pd.to_datetime(df_rem['fecha_emision'])
                         df_rem_mes = df_rem[(dt_rem.dt.year == anio_vg) & (dt_rem.dt.month == mes_vg_num)].copy()
 
-                    # --- Huevos vendidos por galpón ---
                     df_unidades, df_valores = calcular_ventas_mes_por_galpon(df_rem_mes)
                     total_ventas_vg = float(df_valores["Total Ventas ($)"].sum()) if not df_valores.empty else 0.0
                     total_huevos_vg = int(df_unidades["Total Huevos"].sum()) if not df_unidades.empty else 0
 
-                    # --- Gastos del mes detallados ---
                     df_por_categoria, df_por_origen, df_detalle = calcular_gastos_mes_detallado(df_gas, df_cam, df_var, anio_vg, mes_vg_num)
                     total_gastos_vg = float(df_por_categoria["Valor ($)"].sum()) if not df_por_categoria.empty else 0.0
 
-                    # --- Tarjetas resumen ---
                     utilidad_vg = total_ventas_vg - total_gastos_vg
+                    
+                    # 🔥 MEJORA UI: Tarjetas resumen en la parte superior
                     c1, c2, c3, c4 = str_app.columns(4)
                     c1.metric("🧾 Huevos vendidos", f"{total_huevos_vg:,}".replace(",", "."))
                     c2.metric("📈 Ventas", f"${total_ventas_vg:,.0f}".replace(",", "."))
@@ -2501,34 +2529,34 @@ else:
                         str_app.info("No hay huevos vendidos registrados en el mes seleccionado.")
 
                     str_app.markdown("---")
-                    str_app.markdown(f"#### 💰 Ventas en pesos por galpón — {titulo_periodo_vg}")
-                    if not df_valores.empty and df_valores["Total Ventas ($)"].sum() > 0:
-                        df_mostrar_v = df_valores.copy()
-                        df_mostrar_v["Total Ventas ($)"] = df_mostrar_v["Total Ventas ($)"].apply(lambda x: f"$ {float(x):,.0f}".replace(",", "."))
-                        str_app.dataframe(df_mostrar_v, use_container_width=True, hide_index=True)
-                    else:
-                        str_app.info("Sin ventas en pesos en el mes seleccionado.")
-
-                    str_app.markdown("---")
-                    str_app.markdown(f"#### 💸 Gastos del mes por concepto — {titulo_periodo_vg}")
-                    if not df_por_categoria.empty:
-                        df_mostrar_cat = df_por_categoria.copy()
-                        df_mostrar_cat["Valor ($)"] = df_mostrar_cat["Valor ($)"].apply(lambda x: f"$ {float(x):,.0f}".replace(",", "."))
-                        str_app.dataframe(df_mostrar_cat, use_container_width=True, hide_index=True)
-                        str_app.caption(f"Total gastos del mes: ${total_gastos_vg:,.0f}".replace(",", "."))
+                    str_app.markdown(f"#### 💸 Gastos del mes por concepto y galpón — {titulo_periodo_vg}")
+                    
+                    # 🔥 MEJORA UI: Matriz cruzada de Gastos (Concepto vs Galpón)
+                    if not df_detalle.empty:
+                        # Creamos columnas auxiliares para separar el galpón del prefijo "Galpón: X" o "Camión"
+                        df_matriz_base = df_detalle.copy()
+                        df_matriz_base["Galpón"] = df_matriz_base["Origen"].apply(lambda x: x.replace("Galpón: ", "") if "Galpón:" in x else x)
+                        
+                        # Pivoteamos: filas = Categoría, columnas = Galpón, valores = sum(Valor)
+                        df_matriz = df_matriz_base.pivot_table(index="Categoría", columns="Galpón", values="Valor ($)", aggfunc="sum", fill_value=0)
+                        
+                        # Agregar columna de Total por Concepto
+                        df_matriz["TOTAL CONCEPTO"] = df_matriz.sum(axis=1)
+                        df_matriz = df_matriz.sort_values("TOTAL CONCEPTO", ascending=False)
+                        
+                        # Agregar fila de Total por Galpón
+                        df_matriz.loc["TOTAL GALPÓN"] = df_matriz.sum(axis=0)
+                        
+                        # Formatear a moneda
+                        for col in df_matriz.columns:
+                            df_matriz[col] = df_matriz[col].apply(lambda x: f"$ {x:,.0f}".replace(",", ".") if x != 0 else "—")
+                        
+                        str_app.dataframe(df_matriz, use_container_width=True)
+                        str_app.caption("Esta tabla muestra exactamente cuánto se gastó en cada concepto (Concentrado, Personal, etc.) desglosado por galpón y camión.")
                     else:
                         str_app.info("No hay gastos registrados en el mes seleccionado.")
 
                     str_app.markdown("---")
-                    str_app.markdown(f"#### 🏭 Gastos del mes por origen — {titulo_periodo_vg}")
-                    if not df_por_origen.empty:
-                        df_mostrar_orig = df_por_origen.copy()
-                        df_mostrar_orig["Valor ($)"] = df_mostrar_orig["Valor ($)"].apply(lambda x: f"$ {float(x):,.0f}".replace(",", "."))
-                        str_app.dataframe(df_mostrar_orig, use_container_width=True, hide_index=True)
-                    else:
-                        str_app.info("Sin gastos por origen en el mes seleccionado.")
-
-                    # --- Exportar / PDF ---
                     c_exp1, c_exp2 = str_app.columns(2)
                     with c_exp1:
                         boton_exportar_excel(
@@ -2542,7 +2570,7 @@ else:
                     with c_exp2:
                         boton_exportar_excel(
                             df_detalle if not df_detalle.empty else pd.DataFrame(),
-                            f"Gastos_{mes_vg_nombre}_{anio_vg}.xlsx",
+                            f"Gastos_Detalle_{mes_vg_nombre}_{anio_vg}.xlsx",
                             etiqueta="📊 Gastos (Excel)", key="vg_xls_gastos"
                         )
 

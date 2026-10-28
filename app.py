@@ -1600,6 +1600,12 @@ else:
                     else:
                         str_app.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
 
+                        # 🔥 MEJORA UI: tip de pegado desde Excel
+                        str_app.info(
+                            "💡 **Tip rápido:** puedes pegar varias filas desde Excel. "
+                            "Selecciona las celdas en Excel, cópialas con Ctrl+C y pégalas aquí con Ctrl+V."
+                        )
+
                         # Contador usado para "reiniciar" los campos tras guardar: al cambiar,
                         # Streamlit crea widgets nuevos (con sus valores por defecto) en vez de
                         # reutilizar lo que había quedado escrito.
@@ -1610,14 +1616,29 @@ else:
                         galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", GALPONES, key=f"galpon_destino_entrada_{ctr_es}")
                         fecha_entrada = str_app.date_input("Fecha de la Entrada", value=date.today(), key=f"fecha_entrada_stock_{ctr_es}")
 
-                        df_base_entrada = pd.DataFrame([{"Clasificación": "a", "Cantidad": 0}])
+                        # 🔥 MEJORA UI: precargar las clasificaciones típicas en 0
+                        df_base_entrada = pd.DataFrame([
+                            {"Clasificación": "a", "Cantidad": 0},
+                            {"Clasificación": "aa", "Cantidad": 0},
+                            {"Clasificación": "extra", "Cantidad": 0},
+                            {"Clasificación": "yumbo", "Cantidad": 0},
+                            {"Clasificación": "b", "Cantidad": 0},
+                            {"Clasificación": "c", "Cantidad": 0},
+                        ])
                         df_entrada_editado = str_app.data_editor(
                             df_base_entrada, num_rows="dynamic",
                             column_config={
-                                "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=CLASIFICACIONES, required=True),
-                                "Cantidad": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True)
+                                "Clasificación": str_app.column_config.SelectboxColumn(
+                                    "Clasificación", options=CLASIFICACIONES, required=True,
+                                    help="Selecciona la clasificación del huevo"
+                                ),
+                                "Cantidad": str_app.column_config.NumberColumn(
+                                    "Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True,
+                                    help="Cantidad de huevos de esta clasificación"
+                                )
                             },
-                            use_container_width=True, key=f"editor_entradas_stock_{ctr_es}"
+                            use_container_width=True, hide_index=True,
+                            key=f"editor_entradas_stock_{ctr_es}"
                         )
 
                         if str_app.button("➕ Registrar Entrada al Inventario", key=f"btn_registrar_entrada_{ctr_es}"):
@@ -1700,7 +1721,8 @@ else:
                                 "Stock Sistema": str_app.column_config.NumberColumn("Stock Sistema", format="%d"),
                                 "Conteo Físico Real": str_app.column_config.NumberColumn("Conteo Físico Real", min_value=0, step=1, format="%d")
                             },
-                            use_container_width=True, key=f"editor_fisico_{galpon_fisico}"
+                            use_container_width=True, hide_index=True,
+                            key=f"editor_fisico_{galpon_fisico}"
                         )
 
                         df_fisico_editado["Diferencia (Merma/Faltante)"] = df_fisico_editado["Stock Sistema"] - df_fisico_editado["Conteo Físico Real"]
@@ -1730,8 +1752,15 @@ else:
                                 c_fecha_g = str_app.date_input("Fecha del Gasto", value=date.today())
                                 c_galpon_g = str_app.selectbox("Galpón Asociado", GALPONES_GASTOS)
                                 c_categoria_g = str_app.selectbox("Categoría de Gasto", CATEGORIAS_GASTO_GALPON)
-                                c_desc_g = str_app.text_input("Descripción del Gasto", placeholder="Ej. Compra de concentrado fase 1")
-                                c_valor_g = str_app.number_input("Valor ($)", min_value=0.0, step=1000.0, format="%.0f")
+                                c_desc_g = str_app.text_input(
+                                    "Descripción del Gasto",
+                                    placeholder="Ej. Compra de concentrado fase 1",
+                                    help="Sé específico: proveedor, número de factura, etc."
+                                )
+                                c_valor_g = str_app.number_input(
+                                    "Valor ($)", min_value=0.0, step=1000.0, format="%.0f",
+                                    help="Sin puntos ni comas. Ejemplo: 250000"
+                                )
 
                                 if str_app.form_submit_button("💾 Guardar Gasto"):
                                     if c_valor_g <= 0:
@@ -1970,24 +1999,52 @@ else:
                             d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
                             v_nom, v_ced, v_dir, v_tel, v_em = str(d_cli.get("nombre", "")), str(d_cli.get("cedula_nit", "")), str(d_cli.get("direccion", "CHOACHI")), str(d_cli.get("telefono", "")), str(d_cli.get("email", ""))
 
+                        # 🔥 MEJORA UI: campos del cliente en 2 columnas para reducir scroll
                         c_nom = str_app.text_input("Cliente *", value=v_nom)
-                        c_ced = str_app.text_input("Cédula/NIT", value=v_ced)
-                        c_dir = str_app.text_input("Dirección", value=v_dir)
-                        c_tel = str_app.text_input("Teléfono", value=v_tel)
-                        c_em = str_app.text_input("Email", value=v_em)
-                        c_cond = str_app.text_input("Conductor", value="Ivan Herrera")
-                        guardar_cli_auto = str_app.checkbox("Guardar cliente", value=True)
+                        col_c1, col_c2 = str_app.columns(2)
+                        with col_c1:
+                            c_ced = str_app.text_input("Cédula/NIT", value=v_ced)
+                            c_dir = str_app.text_input("Dirección", value=v_dir)
+                        with col_c2:
+                            c_tel = str_app.text_input("Teléfono", value=v_tel)
+                            c_em = str_app.text_input("Email", value=v_em)
+                        col_c3, col_c4 = str_app.columns([2, 1])
+                        with col_c3:
+                            c_cond = str_app.text_input("Conductor", value="Ivan Herrera")
+                        with col_c4:
+                            guardar_cli_auto = str_app.checkbox("Guardar cliente", value=True)
 
-                        df_base = pd.DataFrame([{"Clasificación": "a", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0, "Galpón Origen": GALPONES[0]}])
+                        # 🔥 MEJORA UI: tip de pegado desde Excel
+                        str_app.info(
+                            "💡 **Tip rápido:** puedes pegar varias filas de ítems desde Excel. "
+                            "Copia las celdas y pégalas aquí con Ctrl+V."
+                        )
+
+                        # 🔥 MEJORA UI: precargar 3 clasificaciones típicas en 0
+                        df_base = pd.DataFrame([
+                            {"Clasificación": "a", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0, "Galpón Origen": GALPONES[0]},
+                            {"Clasificación": "aa", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0, "Galpón Origen": GALPONES[0]},
+                            {"Clasificación": "extra", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0, "Galpón Origen": GALPONES[0]},
+                        ])
                         df_editado = str_app.data_editor(
                             df_base, num_rows="dynamic",
                             column_config={
-                                "Clasificación": str_app.column_config.SelectboxColumn("Clasificación", options=CLASIFICACIONES, required=True),
-                                "Cantidad (Huevos)": str_app.column_config.NumberColumn("Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True),
-                                "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio Unitario ($)", min_value=0, format="$%d", required=True),
-                                "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=GALPONES, required=True)
+                                "Clasificación": str_app.column_config.SelectboxColumn(
+                                    "Clasificación", options=CLASIFICACIONES, required=True
+                                ),
+                                "Cantidad (Huevos)": str_app.column_config.NumberColumn(
+                                    "Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True,
+                                    help="Cantidad de huevos de esta clasificación"
+                                ),
+                                "Precio Unitario ($)": str_app.column_config.NumberColumn(
+                                    "Precio Unitario ($)", min_value=0, format="$%d", required=True,
+                                    help="Precio por huevo (no por caja ni por cubeta)"
+                                ),
+                                "Galpón Origen": str_app.column_config.SelectboxColumn(
+                                    "Galpón Origen", options=GALPONES, required=True
+                                )
                             },
-                            use_container_width=True
+                            use_container_width=True, hide_index=True
                         )
                         items_validos = df_editado[df_editado["Cantidad (Huevos)"] > 0].copy()
                         items_validos["Precio Unitario ($)"] = items_validos["Precio Unitario ($)"].fillna(0)
@@ -2181,7 +2238,8 @@ else:
                                                         "Precio Unitario ($)": str_app.column_config.NumberColumn("Precio Unitario ($)", min_value=0, format="$%d", required=True),
                                                         "Galpón Origen": str_app.column_config.SelectboxColumn("Galpón Origen", options=GALPONES, required=True)
                                                     },
-                                                    use_container_width=True, key=f"editor_rem_{num_sel}"
+                                                    use_container_width=True, hide_index=True,
+                                                    key=f"editor_rem_{num_sel}"
                                                 )
 
                                                 if str_app.form_submit_button("💾 Guardar Cambios de Remisión"):
@@ -2386,19 +2444,66 @@ else:
                     if not config:
                         str_app.warning("⚠️ Primero debes configurar la Edad y Aves Iniciales en la pestaña 'Configuración Inicial'.")
                     else:
-                        with str_app.form(f"form_reg_diario_{galpon_reg}", clear_on_submit=True):
-                            fecha_reg = str_app.date_input("Fecha del Registro", value=date.today())
-                            mortalidad = str_app.number_input("Mortalidad del Día (Aves muertas)", min_value=0, value=0, step=1)
-                            conc_ing = str_app.number_input("Concentrado Ingresado (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%g")
-                            conc_cons = str_app.number_input("Concentrado Consumido (Bultos)", min_value=0.0, value=0.0, step=0.5, format="%g")
-                            huevos = str_app.number_input("Huevos Recolectados (Opcional)", min_value=0, value=0, step=1)
-                            obs = str_app.text_input("Observaciones / Novedades")
+                        # 🔥 MEJORA UI: registro tipo Excel multi-fila (pegable desde Excel)
+                        str_app.caption(
+                            "💡 Puedes pegar varias filas directamente desde Excel: "
+                            "selecciona las celdas en Excel, cópialas (Ctrl+C) y pégalas (Ctrl+V) en la tabla."
+                        )
 
-                            if str_app.form_submit_button("📥 Guardar Registro Diario"):
-                                if registrar_dia_galpon(fecha_reg, galpon_reg, int(mortalidad), float(conc_ing), float(conc_cons), int(huevos), obs):
-                                    str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
-                                    str_app.success(f"¡Registro diario guardado para {galpon_reg}! La edad y el stock de aves se han actualizado automáticamente.")
+                        df_plantilla = pd.DataFrame({
+                            "Fecha": [date.today()],
+                            "Mortalidad": [0],
+                            "Conc. Ingresado (Bultos)": [0.0],
+                            "Conc. Consumido (Bultos)": [0.0],
+                            "Huevos Recolectados": [0],
+                            "Observaciones": [""],
+                        })
+
+                        df_diario_editado = str_app.data_editor(
+                            df_plantilla,
+                            num_rows="dynamic",
+                            column_config={
+                                "Fecha": str_app.column_config.DateColumn("Fecha", required=True, format="DD/MM/YYYY"),
+                                "Mortalidad": str_app.column_config.NumberColumn("Mortalidad", min_value=0, step=1, format="%d"),
+                                "Conc. Ingresado (Bultos)": str_app.column_config.NumberColumn("Conc. Ingresado (Bultos)", min_value=0.0, step=0.5, format="%.1f"),
+                                "Conc. Consumido (Bultos)": str_app.column_config.NumberColumn("Conc. Consumido (Bultos)", min_value=0.0, step=0.5, format="%.1f"),
+                                "Huevos Recolectados": str_app.column_config.NumberColumn("Huevos Recolectados", min_value=0, step=1, format="%d"),
+                                "Observaciones": str_app.column_config.TextColumn("Observaciones", max_chars=200),
+                            },
+                            use_container_width=True,
+                            hide_index=True,
+                            key=f"editor_diario_{galpon_reg}",
+                        )
+
+                        filas_validas = df_diario_editado.dropna(subset=["Fecha"])
+                        if filas_validas.empty:
+                            str_app.info("Agrega al menos una fila con fecha para guardar.")
+                        else:
+                            if str_app.button("📥 Guardar Todos los Registros", key=f"btn_guardar_diario_{galpon_reg}"):
+                                errores = []
+                                guardados = 0
+                                for _, fila in filas_validas.iterrows():
+                                    try:
+                                        if registrar_dia_galpon(
+                                            fila["Fecha"],
+                                            galpon_reg,
+                                            int(fila.get("Mortalidad", 0) or 0),
+                                            float(fila.get("Conc. Ingresado (Bultos)", 0) or 0),
+                                            float(fila.get("Conc. Consumido (Bultos)", 0) or 0),
+                                            int(fila.get("Huevos Recolectados", 0) or 0),
+                                            str(fila.get("Observaciones", "") or ""),
+                                        ):
+                                            guardados += 1
+                                    except Exception as ex:
+                                        errores.append(f"Fila {fila['Fecha']}: {ex}")
+
+                                if guardados:
+                                    str_app.toast(f"¡{guardados} registro(s) guardado(s) con éxito! 🎉", icon="✅")
+                                    str_app.success(f"Se registraron {guardados} días en {galpon_reg}.")
                                     str_app.rerun()
+                                if errores:
+                                    for e in errores:
+                                        str_app.error(e)
 
             with tab_historial:
                 str_app.markdown(f"#### 📊 Resumen y Registros de {galpon_reg}")

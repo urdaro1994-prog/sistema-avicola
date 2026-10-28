@@ -149,11 +149,13 @@ str_app.markdown(
 
 # =========================================================================
 # CONSTANTES DE NEGOCIO
-# (Centralizadas aquí: si mañana abren un Galpón 4, solo se edita esta lista)
+# 🔥 ORDEN OFICIAL DE CLASIFICACIONES:
+#    yumbo, extra, aa, a, b, c, palido, sucio, roto
+# Este orden se respeta en selectores, tablas, PDFs e inventario.
 # =========================================================================
 GALPONES = ["Galpón 1", "Galpón 2", "Galpón 3"]
 GALPONES_GASTOS = GALPONES + ["General / Granja"]
-CLASIFICACIONES = ["yumbo", "extra", "aa", "a", "b", "c", "sucio", "roto", "palido"]
+CLASIFICACIONES = ["yumbo", "extra", "aa", "a", "b", "c", "palido", "sucio", "roto"]
 COLUMNAS_INVENTARIO = set(CLASIFICACIONES)
 MESES_NOMBRES = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
                   7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
@@ -170,9 +172,6 @@ TELEFONOS_EMPRESA = "Cel. 3102397244 - 3125588606"
 
 # =========================================================================
 # CAPA DE BASE DE DATOS
-# Se usa un pool de conexiones (en vez de abrir/cerrar una conexión nueva
-# en cada consulta) y decoradores que atrapan errores de PostgreSQL para
-# que nunca se vea un traceback crudo en pantalla.
 # =========================================================================
 @str_app.cache_resource(show_spinner=False)
 def _obtener_pool():
@@ -181,7 +180,6 @@ def _obtener_pool():
 
 @contextmanager
 def get_conn():
-    """Presta una conexión del pool y siempre la devuelve al terminar."""
     conexiones = _obtener_pool()
     conn = conexiones.getconn()
     try:
@@ -191,8 +189,6 @@ def get_conn():
 
 
 def ejecutar(sql, params=None):
-    """Ejecuta una sentencia de escritura (INSERT/UPDATE/DELETE/DDL) como una
-    transacción atómica: si algo falla, se revierte todo automáticamente."""
     with get_conn() as conn:
         with conn:
             with conn.cursor() as cur:
@@ -212,10 +208,6 @@ def leer_df(sql, params=None):
 
 
 def operacion_segura(func):
-    """Decorador para funciones que ESCRIBEN en la base de datos.
-    Atrapa errores de PostgreSQL y los muestra de forma amigable en vez de
-    tumbar la app. Las validaciones de negocio (ValueError) se dejan pasar
-    para que la pantalla que llamó pueda mostrar su propio mensaje."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -230,8 +222,6 @@ def operacion_segura(func):
 
 
 def lectura_segura(func):
-    """Decorador para funciones que LEEN de la base de datos. Si la consulta
-    falla, se devuelve una tabla vacía en vez de romper la página."""
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
@@ -242,7 +232,7 @@ def lectura_segura(func):
     return wrapper
 
 
-# --- CREACIÓN DE TABLAS (se ejecuta una sola vez por sesión, no en cada clic) ---
+# --- CREACIÓN DE TABLAS ---
 def inicializar_todas_las_tablas():
     ejecutar("""
         CREATE TABLE IF NOT EXISTS clientes (
@@ -259,10 +249,6 @@ def inicializar_todas_las_tablas():
             galpon TEXT PRIMARY KEY
         );
     """)
-    # Si la tabla ya existía de una versión anterior (por ejemplo, antes de
-    # agregar la clasificación "palido"), CREATE TABLE IF NOT EXISTS no la
-    # modifica. Este bucle agrega cualquier columna de clasificación que
-    # falte, para que nunca vuelva a pasar el error de "columna no existe".
     for col_clasif in CLASIFICACIONES:
         ejecutar(f"ALTER TABLE inventario ADD COLUMN IF NOT EXISTS {col_clasif} INT DEFAULT 0;")
     for g in GALPONES:
@@ -324,8 +310,6 @@ def inicializar_todas_las_tablas():
 
 
 def asegurar_tablas():
-    """Solo corre las sentencias CREATE TABLE una vez por sesión de usuario,
-    en vez de en cada clic como hacía la versión anterior."""
     if not str_app.session_state.get("_tablas_listas", False):
         inicializar_todas_las_tablas()
         str_app.session_state["_tablas_listas"] = True
@@ -390,10 +374,6 @@ def actualizar_historial_entrada(id_entrada, nuevo_galpon, nueva_clasificacion, 
                 if old_clasif not in COLUMNAS_INVENTARIO:
                     raise ValueError(f"La entrada tiene una clasificación inválida guardada: {old_clasif}")
 
-                # Antes de revertir el stock de la entrada original, verificamos que
-                # esa cantidad siga disponible: si ya se vendió parte de ese stock,
-                # restarlo dejaría el inventario en negativo. En ese caso se bloquea
-                # la edición con un mensaje claro en vez de corromper el inventario.
                 cur.execute(f"SELECT {old_clasif} FROM inventario WHERE galpon = %s", (old_galpon,))
                 res_stock = cur.fetchone()
                 stock_actual = res_stock[0] if res_stock else 0
@@ -404,16 +384,13 @@ def actualizar_historial_entrada(id_entrada, nuevo_galpon, nueva_clasificacion, 
                         f"Ajusta primero las remisiones o el inventario físico antes de editar esta entrada.".replace(",", ".")
                     )
 
-                # Revertir stock anterior
                 cur.execute(f"UPDATE inventario SET {old_clasif} = {old_clasif} - %s WHERE galpon = %s", (old_cant, old_galpon))
 
-                # Aplicar nuevo stock
                 nueva_clasificacion = nueva_clasificacion.lower()
                 if nueva_clasificacion not in COLUMNAS_INVENTARIO:
                     raise ValueError(f"Clasificación inválida: {nueva_clasificacion}")
                 cur.execute(f"UPDATE inventario SET {nueva_clasificacion} = {nueva_clasificacion} + %s WHERE galpon = %s", (nueva_cantidad, nuevo_galpon))
 
-                # Actualizar registro en historial_entradas
                 cur.execute("""
                     UPDATE historial_entradas 
                     SET fecha = %s, galpon = %s, clasificacion = %s, cantidad = %s 
@@ -434,8 +411,6 @@ def cargar_historial_entradas(galpon=None):
 
 @operacion_segura
 def actualizar_inventario_fisico(galpon, nuevo_stock_dict):
-    # Generado dinámicamente a partir de CLASIFICACIONES, para que agregar o quitar
-    # una clasificación en el futuro no requiera recordar actualizar esta consulta.
     set_columnas = ", ".join([f"{c} = %s" for c in CLASIFICACIONES])
     valores = [nuevo_stock_dict.get(c, 0) for c in CLASIFICACIONES] + [galpon]
     ejecutar(f"UPDATE inventario SET {set_columnas} WHERE galpon = %s", tuple(valores))
@@ -540,7 +515,6 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
     with get_conn() as conn:
         with conn:
             with conn.cursor() as cur:
-                # 1. Revertir inventario de la remisión anterior
                 cur.execute("SELECT galpon, tipo_huevo, cantidad FROM remisiones WHERE num_remision = %s", (num_remision,))
                 old_rows = cur.fetchall()
                 for galp, clasif, cant in old_rows:
@@ -549,7 +523,6 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
                         raise ValueError(f"La remisión original contiene una clasificación inválida: {clasif}")
                     cur.execute(f"UPDATE inventario SET {clasif} = {clasif} + %s WHERE galpon = %s", (cant, galp))
 
-                # 2. Validar stock para los nuevos ítems
                 for (galp_origen, clasificacion), cantidad_total in requerido.items():
                     cur.execute(f"SELECT {clasificacion} FROM inventario WHERE galpon = %s", (galp_origen,))
                     res = cur.fetchone()
@@ -560,19 +533,14 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
                             f"Stock actual: {stock_actual:,}, solicitado: {cantidad_total:,}".replace(",", ".")
                         )
 
-                # 3. Eliminar registros antiguos de la remisión
                 cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
 
-                # 3.1 Detectar qué columnas admiten inserción directa (algunas, como
-                # "total", pueden estar definidas como columna generada/calculada en
-                # la base de datos, y no se les puede insertar un valor a mano).
                 cur.execute("""
                     SELECT column_name, is_generated, identity_generation
                     FROM information_schema.columns WHERE table_name = 'remisiones';
                 """)
                 columnas_validas = {c for c, is_gen, id_gen in cur.fetchall() if is_gen != 'ALWAYS' and id_gen != 'ALWAYS'}
 
-                # 4. Insertar nuevos registros y descontar inventario
                 total_venta_acumulado = 0.0
                 for item in nuevos_items:
                     clasificacion = item['Clasificación'].lower()
@@ -598,7 +566,6 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
 
                     cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galp_origen))
 
-                # 5. Actualizar cartera
                 cur.execute("SELECT COALESCE(SUM(monto), 0) FROM abonos_cartera WHERE num_remision = %s", (num_remision,))
                 total_abonos = float(cur.fetchone()[0])
                 nuevo_saldo = max(0.0, total_venta_acumulado - total_abonos)
@@ -761,8 +728,6 @@ def reiniciar_sistema_completo():
             ejecutar(f"TRUNCATE TABLE {tabla} RESTART IDENTITY CASCADE;")
         except psycopg2.Error:
             ejecutar(f"DELETE FROM {tabla};")
-    # Se genera dinámicamente a partir de CLASIFICACIONES para que, si en el futuro
-    # se agrega o quita una clasificación, el reinicio no quede desactualizado.
     set_columnas = ", ".join([f"{c} = 0" for c in CLASIFICACIONES])
     ejecutar(f"UPDATE inventario SET {set_columnas};")
 
@@ -785,7 +750,7 @@ def calcular_resumen_general():
 
     df_inv = cargar_inventario()
     if not df_inv.empty:
-        cols_presentes = [c for c in COLUMNAS_INVENTARIO if c in df_inv.columns]
+        cols_presentes = [c for c in CLASIFICACIONES if c in df_inv.columns]
         resumen["stock_total"] = int(df_inv[cols_presentes].sum().sum())
         for g in GALPONES:
             if g in df_inv.index:
@@ -848,8 +813,6 @@ def calcular_resumen_general():
 
 
 def _fila_metrica_con_desglose(icono, titulo, valor_total, valores_por_galpon, es_moneda=False, porcentajes_por_galpon=None):
-    """Muestra una métrica grande (ej. Stock Total) y, justo debajo, una fila
-    con el mismo dato desglosado por cada uno de los galpones."""
     if es_moneda:
         texto_total = f"${valor_total:,.0f}".replace(",", ".")
     else:
@@ -902,11 +865,9 @@ def mostrar_resumen_general():
 
 
 # =========================================================================
-# UTILIDADES DE INTERFAZ (confirmaciones, exportación)
+# UTILIDADES DE INTERFAZ
 # =========================================================================
 def confirmar_eliminacion(clave, etiqueta="🗑️ Eliminar", mensaje="¿Confirmas que deseas eliminar este registro? Esta acción no se puede deshacer."):
-    """Botón de eliminar con doble confirmación para evitar borrados accidentales.
-    Devuelve True únicamente en el momento en que el usuario confirma."""
     estado_key = f"confirmar_del_{clave}"
     if not str_app.session_state.get(estado_key, False):
         if str_app.button(etiqueta, key=f"btn_del_{clave}"):
@@ -941,7 +902,7 @@ def boton_exportar_excel(df, nombre_archivo, etiqueta="📊 Descargar en Excel",
 
 
 # =========================================================================
-# GENERACIÓN DE PDF (estilos compartidos para no repetir código)
+# GENERACIÓN DE PDF
 # =========================================================================
 def _estilos_pdf():
     styles = getSampleStyleSheet()
@@ -968,8 +929,6 @@ def _moneda(valor):
 
 
 def _esc(valor):
-    """Texto seguro para reportlab: vacío si es None/NaN y con &, < y > escapados
-    (un nombre como 'A&B' o una descripción con '<' ya no rompe el PDF)."""
     if valor is None:
         return ""
     try:
@@ -1061,7 +1020,6 @@ def generar_pdf_remision(num_remision, fecha_str, conductor, cliente_datos, item
 
 
 def generar_pdf_remisiones_mes(titulo_periodo, df_resumen):
-    """df_resumen: columnas num_remision, Fecha, Cliente, Valor (una fila por remisión)."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -1238,8 +1196,6 @@ def generar_pdf_gastos(df_gastos, titulo_reporte):
 
 
 def _gastos_por_categoria(df_gas_periodo, df_cam_periodo):
-    """Une los gastos de galpones/granja y los del camión en una sola tabla
-    Concepto / Valor, ordenada de mayor a menor."""
     filas = []
     if df_gas_periodo is not None and not df_gas_periodo.empty and {"categoria", "valor"}.issubset(df_gas_periodo.columns):
         for cat, val in df_gas_periodo.groupby("categoria")["valor"].sum().items():
@@ -1252,7 +1208,6 @@ def _gastos_por_categoria(df_gas_periodo, df_cam_periodo):
 
 
 def calcular_evolucion_mensual(df_rem, df_gas, df_cam):
-    """Ingresos, gastos (galpones + camión) y utilidad mes a mes."""
     serie_ingresos = pd.Series(dtype=float)
     serie_gastos = pd.Series(dtype=float)
     if df_rem is not None and not df_rem.empty and "dt_fecha" in df_rem.columns and "total" in df_rem.columns:
@@ -1300,7 +1255,6 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
                                   f"<font size=8>Generado: {datetime.now().strftime('%Y-%m-%d')}</font>"))
     story.append(Spacer(1, 10))
 
-    # --- Resumen financiero ---
     story.append(Paragraph("Resumen financiero", estilo_seccion))
     resumen_data = [
         [Paragraph("Ingresos por ventas", e["normal"]), Paragraph(_moneda(total_ingresos), e["right"])],
@@ -1326,7 +1280,6 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
     story.append(t_resumen)
     story.append(Spacer(1, 16))
 
-    # --- Resultado por galpón ---
     story.append(Paragraph("Resultado por galpón", estilo_seccion))
     galpon_data = [[Paragraph("Galpón", e["th_left"]), Paragraph("Ingresos", e["th_right"]),
                     Paragraph("Gastos", e["th_right"]), Paragraph("Utilidad", e["th_right"])]]
@@ -1351,7 +1304,6 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
                            "que no se asignan a un galpón en particular.", estilo_nota))
     story.append(Spacer(1, 16))
 
-    # --- Gastos por categoría ---
     if df_categorias is not None and not df_categorias.empty:
         story.append(Paragraph("Gastos por categoría", estilo_seccion))
         cat_data = [[Paragraph("Concepto", e["th_left"]), Paragraph("Valor", e["th_right"])]]
@@ -1371,7 +1323,6 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
         story.append(t_cat)
         story.append(Spacer(1, 16))
 
-    # --- Evolución mes a mes (solo en el informe histórico) ---
     if df_evolucion is not None and not df_evolucion.empty:
         story.append(Paragraph("Evolución mes a mes", estilo_seccion))
         evol_data = [[Paragraph("Mes", e["th_left"]), Paragraph("Ingresos", e["th_right"]),
@@ -1413,14 +1364,238 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
 
 
 # =========================================================================
+# 🔥 NUEVO: INFORME DE VENTAS Y GASTOS DEL MES
+# =========================================================================
+def calcular_ventas_mes_por_galpon(df_rem_periodo):
+    """Devuelve una tabla con filas = galpones, columnas = clasificaciones en orden
+    oficial, más Totales. También devuelve la tabla de valores en $ por galpón."""
+    cols_unidades = ["Galpón"] + [c.capitalize() for c in CLASIFICACIONES] + ["Total Huevos"]
+    cols_valores = ["Galpón", "Total Ventas ($)"]
+
+    unidades = {g: {c.capitalize(): 0 for c in CLASIFICACIONES} for g in GALPONES}
+    valores = {g: 0.0 for g in GALPONES}
+
+    if df_rem_periodo is not None and not df_rem_periodo.empty and {"galpon", "tipo_huevo", "cantidad", "total"}.issubset(df_rem_periodo.columns):
+        for _, r in df_rem_periodo.iterrows():
+            g = r["galpon"]
+            if g not in unidades:
+                continue
+            clasif = str(r["tipo_huevo"]).lower()
+            cant = int(r["cantidad"] or 0)
+            tot = float(r["total"] or 0)
+            if clasif in COLUMNAS_INVENTARIO:
+                unidades[g][clasif.capitalize()] += cant
+            valores[g] += tot
+
+    filas_u = []
+    for g in GALPONES:
+        fila = {"Galpón": g}
+        fila.update(unidades[g])
+        fila["Total Huevos"] = sum(unidades[g].values())
+        filas_u.append(fila)
+    filas_v = [{"Galpón": g, "Total Ventas ($)": valores[g]} for g in GALPONES]
+
+    return pd.DataFrame(filas_u, columns=cols_unidades), pd.DataFrame(filas_v, columns=cols_valores)
+
+
+def calcular_gastos_mes_detallado(df_gas, df_cam, df_var, anio, mes):
+    """Filtra los gastos del mes y devuelve:
+    - df_por_categoria: gastos agrupados por categoría (con detalle de origen)
+    - df_por_galpon: gastos agrupados por galpón
+    - df_detalle: detalle fila por fila (fecha, origen, categoria, descripcion, valor)
+    """
+    def _filtrar_mes(df, col_fecha="fecha"):
+        if df is None or df.empty or col_fecha not in df.columns:
+            return pd.DataFrame()
+        dt = pd.to_datetime(df[col_fecha])
+        return df[(dt.dt.year == anio) & (dt.dt.month == mes)].copy()
+
+    df_g = _filtrar_mes(df_gas)
+    df_c = _filtrar_mes(df_cam)
+    df_v = _filtrar_mes(df_var)
+
+    detalle = []
+    if not df_g.empty:
+        for _, r in df_g.iterrows():
+            detalle.append({
+                "Fecha": r["fecha"],
+                "Origen": f"Galpón: {r.get('galpon','')}",
+                "Categoría": r.get("categoria", ""),
+                "Descripción": r.get("descripcion", ""),
+                "Valor ($)": float(r.get("valor", 0) or 0),
+            })
+    if not df_c.empty:
+        for _, r in df_c.iterrows():
+            detalle.append({
+                "Fecha": r["fecha"],
+                "Origen": "Camión",
+                "Categoría": r.get("categoria", ""),
+                "Descripción": r.get("descripcion", ""),
+                "Valor ($)": float(r.get("valor", 0) or 0),
+            })
+    if not df_v.empty:
+        for _, r in df_v.iterrows():
+            detalle.append({
+                "Fecha": r["fecha"],
+                "Origen": "Varios / Personal",
+                "Categoría": r.get("categoria", ""),
+                "Descripción": r.get("descripcion", ""),
+                "Valor ($)": float(r.get("valor", 0) or 0),
+            })
+
+    df_detalle = pd.DataFrame(detalle)
+    if df_detalle.empty:
+        return pd.DataFrame(columns=["Categoría", "Valor ($)"]), pd.DataFrame(columns=["Origen", "Valor ($)"]), df_detalle
+
+    df_por_categoria = df_detalle.groupby("Categoría", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
+    df_por_galpon = df_detalle.groupby("Origen", as_index=False)["Valor ($]".replace("]", ""))].sum() if False else df_detalle.groupby("Origen", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
+    return df_por_categoria, df_por_galpon, df_detalle
+
+
+def generar_pdf_ventas_gastos_mes(titulo_periodo, df_unidades, df_valores, df_por_categoria, df_por_galpon, df_detalle, total_ventas, total_gastos):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=36, bottomMargin=36)
+    story = []
+    e = _estilos_pdf()
+    styles = getSampleStyleSheet()
+    estilo_seccion = ParagraphStyle('SecVG', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11,
+                                    textColor=colors.HexColor("#0f2942"), spaceAfter=6)
+
+    story.append(_encabezado_pdf(e, "Informe de Ventas y Gastos del Mes",
+                                  f"<b>Periodo:</b><br/><font size=10 color='#f26822'><b>{_esc(titulo_periodo)}</b></font><br/>"
+                                  f"<font size=8>Generado: {datetime.now().strftime('%Y-%m-%d')}</font>"))
+    story.append(Spacer(1, 10))
+
+    # --- Tarjetas resumen ---
+    utilidad = total_ventas - total_gastos
+    color_util = "#15803d" if utilidad >= 0 else "#b91c1c"
+    resumen_data = [
+        [Paragraph(f"<b>Total ventas del mes:</b> <font color='#f26822'><b>{_moneda(total_ventas)}</b></font>", e["normal"]),
+         Paragraph(f"<b>Total gastos del mes:</b> <font color='#b91c1c'><b>{_moneda(total_gastos)}</b></font>", e["normal"])],
+        [Paragraph(f"<b>Utilidad bruta (ventas - gastos):</b> <font color='{color_util}'><b>{_moneda(utilidad)}</b></font>", e["normal"]), ""],
+    ]
+    t_res = Table(resumen_data, colWidths=[270, 264])
+    t_res.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('PADDING', (0, 0), (-1, -1), 8),
+        ('SPAN', (0, 1), (1, 1)),
+    ]))
+    story.append(t_res)
+    story.append(Spacer(1, 14))
+
+    # --- Huevos vendidos por galpón y clasificación (orden oficial) ---
+    story.append(Paragraph("Huevos vendidos por galpón y clasificación", estilo_seccion))
+    cols_clasif = [c.capitalize() for c in CLASIFICACIONES]
+    header = [Paragraph("Galpón", e["th_left"])] + [Paragraph(c[:4], e["th_right"]) for c in cols_clasif] + [Paragraph("Total", e["th_right"])]
+    table_data = [header]
+    for _, fila in df_unidades.iterrows():
+        row = [Paragraph(str(fila["Galpón"]), e["normal"])]
+        for c in cols_clasif:
+            row.append(Paragraph(f"{int(fila[c]):,}".replace(",", ".") if c in fila else "0", e["right"]))
+        row.append(Paragraph(f"<b>{int(fila['Total Huevos']):,}</b>".replace(",", "."), e["right_bold"]))
+        table_data.append(row)
+    # Fila total
+    fila_total = [Paragraph("<b>TOTAL</b>", e["normal"])]
+    for c in cols_clasif:
+        fila_total.append(Paragraph(f"<b>{int(df_unidades[c].sum()):,}</b>".replace(",", "."), e["right_bold"]))
+    fila_total.append(Paragraph(f"<b>{int(df_unidades['Total Huevos'].sum()):,}</b>".replace(",", "."), e["right_bold"]))
+    table_data.append(fila_total)
+
+    n_cols = len(header)
+    ancho_col = 480 / n_cols
+    t_u = Table(table_data, colWidths=[ancho_col * 1.4] + [ancho_col * 0.85] * (n_cols - 1))
+    t_u.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4), ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
+        ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+    ]))
+    story.append(t_u)
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Las abreviaturas corresponden a las clasificaciones en el orden oficial: "
+                           "yumbo, extra, aa, a, b, c, palido, sucio, roto.", ParagraphStyle(
+        'NotaVG', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8,
+        textColor=colors.HexColor("#64748b"))))
+    story.append(Spacer(1, 10))
+
+    # --- Ventas en $ por galpón ---
+    story.append(Paragraph("Ventas en pesos por galpón", estilo_seccion))
+    t_val_data = [[Paragraph("Galpón", e["th_left"]), Paragraph("Total Ventas ($)", e["th_right"])]]
+    for _, fila in df_valores.iterrows():
+        t_val_data.append([Paragraph(str(fila["Galpón"]), e["normal"]), Paragraph(_moneda(float(fila["Total Ventas ($)"])), e["right"])])
+    t_val_data.append([Paragraph("<b>TOTAL</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_valores['Total Ventas ($)'].sum()))}</b>", e["right_bold"])])
+    t_val = Table(t_val_data, colWidths=[280, 254])
+    t_val.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
+        ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+    ]))
+    story.append(t_val)
+    story.append(Spacer(1, 16))
+
+    # --- Gastos por categoría (concretos: Concentrado, Empleados, etc.) ---
+    story.append(Paragraph("Gastos del mes por categoría (concepto)", estilo_seccion))
+    if not df_por_categoria.empty:
+        cat_data = [[Paragraph("Concepto", e["th_left"]), Paragraph("Valor ($)", e["th_right"])]]
+        for _, fila in df_por_categoria.iterrows():
+            cat_data.append([Paragraph(_esc(fila["Categoría"]), e["normal"]), Paragraph(_moneda(float(fila["Valor ($)"])), e["right"])])
+        cat_data.append([Paragraph("<b>TOTAL GASTOS</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_por_categoria['Valor ($)'].sum()))}</b>", e["right_bold"])])
+        t_cat = Table(cat_data, colWidths=[280, 254])
+        t_cat.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+        ]))
+        story.append(t_cat)
+    else:
+        story.append(Paragraph("Sin gastos registrados en el mes.", e["normal"]))
+    story.append(Spacer(1, 14))
+
+    # --- Gastos por origen (galpones, camión, varios) ---
+    story.append(Paragraph("Gastos del mes por origen", estilo_seccion))
+    if not df_por_galpon.empty:
+        orig_data = [[Paragraph("Origen", e["th_left"]), Paragraph("Valor ($)", e["th_right"])]]
+        for _, fila in df_por_galpon.iterrows():
+            orig_data.append([Paragraph(_esc(fila["Origen"]), e["normal"]), Paragraph(_moneda(float(fila["Valor ($)"])), e["right"])])
+        orig_data.append([Paragraph("<b>TOTAL</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_por_galpon['Valor ($)'].sum()))}</b>", e["right_bold"])])
+        t_orig = Table(orig_data, colWidths=[280, 254])
+        t_orig.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+        ]))
+        story.append(t_orig)
+    else:
+        story.append(Paragraph("Sin gastos registrados en el mes.", e["normal"]))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
+
+# =========================================================================
 # CONTROL DE SESIÓN Y AUTENTICACIÓN
 # =========================================================================
 if "usuario_autenticado" not in str_app.session_state:
     str_app.session_state.usuario_autenticado = None
 
 def _clave_desde_secrets(nombre, valor_por_defecto):
-    """Lee la contraseña desde .streamlit/secrets.toml ([auth] admin / invitado).
-    Si no está configurada, usa la clave de siempre para no dejar a nadie fuera."""
     try:
         return str(str_app.secrets["auth"][nombre])
     except Exception:
@@ -1478,7 +1653,6 @@ if str_app.session_state.usuario_autenticado is None:
 else:
     asegurar_tablas()
 
-    # --- ENCABEZADO ---
     col_logo, col_tit = str_app.columns([1, 3.5])
     with col_logo:
         if os.path.exists("LOGOASI.png"):
@@ -1565,6 +1739,9 @@ else:
                     if str_app.button("💸 Control de Gastos", use_container_width=True):
                         str_app.session_state.seccion_activa = "💸 Gastos"
                         str_app.rerun()
+                    if str_app.button("📊 Ventas y Gastos del Mes", use_container_width=True):
+                        str_app.session_state.seccion_activa = "📊 Ventas y Gastos del Mes"
+                        str_app.rerun()
                 with col_m2:
                     if str_app.button("👥 Clientes", use_container_width=True):
                         str_app.session_state.seccion_activa = "👥 Clientes"
@@ -1599,16 +1776,11 @@ else:
                         str_app.warning("👀 Modo Invitado: Solo puedes visualizar la sección.")
                     else:
                         str_app.caption("Registre los huevos recolectados y clasificados para sumarlos al inventario del galpón correspondiente.")
-
-                        # 🔥 MEJORA UI: tip de pegado desde Excel
                         str_app.info(
                             "💡 **Tip rápido:** puedes pegar varias filas desde Excel. "
                             "Selecciona las celdas en Excel, cópialas con Ctrl+C y pégalas aquí con Ctrl+V."
                         )
 
-                        # Contador usado para "reiniciar" los campos tras guardar: al cambiar,
-                        # Streamlit crea widgets nuevos (con sus valores por defecto) en vez de
-                        # reutilizar lo que había quedado escrito.
                         if "reset_ctr_entrada_stock" not in str_app.session_state:
                             str_app.session_state["reset_ctr_entrada_stock"] = 0
                         ctr_es = str_app.session_state["reset_ctr_entrada_stock"]
@@ -1616,25 +1788,17 @@ else:
                         galpon_destino = str_app.selectbox("Seleccione el Galpón de Destino", GALPONES, key=f"galpon_destino_entrada_{ctr_es}")
                         fecha_entrada = str_app.date_input("Fecha de la Entrada", value=date.today(), key=f"fecha_entrada_stock_{ctr_es}")
 
-                        # 🔥 MEJORA UI: precargar las clasificaciones típicas en 0
-                        df_base_entrada = pd.DataFrame([
-                            {"Clasificación": "a", "Cantidad": 0},
-                            {"Clasificación": "aa", "Cantidad": 0},
-                            {"Clasificación": "extra", "Cantidad": 0},
-                            {"Clasificación": "yumbo", "Cantidad": 0},
-                            {"Clasificación": "b", "Cantidad": 0},
-                            {"Clasificación": "c", "Cantidad": 0},
-                        ])
+                        # Precarga en el orden oficial
+                        df_base_entrada = pd.DataFrame([{"Clasificación": c, "Cantidad": 0} for c in CLASIFICACIONES])
                         df_entrada_editado = str_app.data_editor(
                             df_base_entrada, num_rows="dynamic",
                             column_config={
                                 "Clasificación": str_app.column_config.SelectboxColumn(
                                     "Clasificación", options=CLASIFICACIONES, required=True,
-                                    help="Selecciona la clasificación del huevo"
+                                    help="Orden oficial: yumbo, extra, aa, a, b, c, palido, sucio, roto"
                                 ),
                                 "Cantidad": str_app.column_config.NumberColumn(
-                                    "Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True,
-                                    help="Cantidad de huevos de esta clasificación"
+                                    "Cantidad (Huevos)", min_value=1, step=1, format="%d", required=True
                                 )
                             },
                             use_container_width=True, hide_index=True,
@@ -1673,7 +1837,7 @@ else:
                             str_app.dataframe(df_hist_mostrar, use_container_width=True, hide_index=True)
                             str_app.caption(f"Total en el rango: {int(df_hist_filtrado['cantidad'].sum()):,} huevos".replace(",", "."))
                             boton_exportar_excel(df_hist_mostrar, "Historial_Entradas_Stock.xlsx")
-                            
+
                             str_app.markdown("---")
                             str_app.markdown("#### ✏️ Editar una Entrada de Stock Registrada")
                             for _, row_he in df_hist_filtrado.iterrows():
@@ -1709,10 +1873,11 @@ else:
                         df_inv_actual = cargar_inventario()
                         fila_galp = df_inv_actual.loc[galpon_fisico] if galpon_fisico in df_inv_actual.index else pd.Series({c: 0 for c in CLASIFICACIONES})
 
+                        # Orden oficial
                         datos_fisicos = []
                         for col_clasif in CLASIFICACIONES:
                             stock_sistema = int(fila_galp.get(col_clasif, 0))
-                            datos_fisicos.append({"Clasificación": col_clasif, "Stock Sistema": stock_sistema, "Conteo Físico Real": stock_sistema})
+                            datos_fisicos.append({"Clasificación": col_clasif.capitalize(), "Stock Sistema": stock_sistema, "Conteo Físico Real": stock_sistema})
 
                         df_fisico_base = pd.DataFrame(datos_fisicos)
                         df_fisico_editado = str_app.data_editor(
@@ -1733,7 +1898,7 @@ else:
                             str_app.caption(f"⚠️ Diferencia neta detectada: {diferencia_total:,} huevos".replace(",", "."))
 
                         if str_app.button("💾 Guardar y Ajustar Inventario Físico"):
-                            nuevo_stock_dict = {r["Clasificación"]: int(r["Conteo Físico Real"]) for _, r in df_fisico_editado.iterrows()}
+                            nuevo_stock_dict = {str(r["Clasificación"]).lower(): int(r["Conteo Físico Real"]) for _, r in df_fisico_editado.iterrows()}
                             if actualizar_inventario_fisico(galpon_fisico, nuevo_stock_dict):
                                 str_app.toast("¡Registrado con éxito! 🎉", icon="✅")
                                 str_app.success(f"¡Inventario físico de {galpon_fisico} aplicado con éxito!")
@@ -1796,7 +1961,6 @@ else:
                                 with c_xls:
                                     boton_exportar_excel(df_gf[["fecha", "galpon", "categoria", "descripcion", "valor"]], f"Gastos_{mes_nombre_sel}_{anio_sel_g}.xlsx")
 
-                                # --- PDF SEPARADO POR GALPÓN ---
                                 str_app.markdown("##### 📄 PDF separado por galpón")
                                 galpones_con_gastos = [g for g in GALPONES_GASTOS if g in df_gf["galpon"].values]
                                 cols_pdf_galpon = str_app.columns(2)
@@ -1999,7 +2163,6 @@ else:
                             d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
                             v_nom, v_ced, v_dir, v_tel, v_em = str(d_cli.get("nombre", "")), str(d_cli.get("cedula_nit", "")), str(d_cli.get("direccion", "CHOACHI")), str(d_cli.get("telefono", "")), str(d_cli.get("email", ""))
 
-                        # 🔥 MEJORA UI: campos del cliente en 2 columnas para reducir scroll
                         c_nom = str_app.text_input("Cliente *", value=v_nom)
                         col_c1, col_c2 = str_app.columns(2)
                         with col_c1:
@@ -2014,18 +2177,18 @@ else:
                         with col_c4:
                             guardar_cli_auto = str_app.checkbox("Guardar cliente", value=True)
 
-                        # 🔥 MEJORA UI: tip de pegado desde Excel
                         str_app.info(
                             "💡 **Tip rápido:** puedes pegar varias filas de ítems desde Excel. "
                             "Copia las celdas y pégalas aquí con Ctrl+V."
                         )
 
-                        # 🔥 MEJORA UI: precargar 3 clasificaciones típicas en 0
-                        df_base = pd.DataFrame([
-                            {"Clasificación": "a", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0, "Galpón Origen": GALPONES[0]},
-                            {"Clasificación": "aa", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0, "Galpón Origen": GALPONES[0]},
-                            {"Clasificación": "extra", "Cantidad (Huevos)": 0, "Precio Unitario ($)": 0, "Galpón Origen": GALPONES[0]},
-                        ])
+                        # 🔥 Ítems iniciales en el ORDEN OFICIAL
+                        df_base = pd.DataFrame([{
+                            "Clasificación": c,
+                            "Cantidad (Huevos)": 0,
+                            "Precio Unitario ($)": 0,
+                            "Galpón Origen": GALPONES[0],
+                        } for c in CLASIFICACIONES])
                         df_editado = str_app.data_editor(
                             df_base, num_rows="dynamic",
                             column_config={
@@ -2122,10 +2285,13 @@ else:
                     str_app.subheader("📦 Stock Actual")
                     df_stock = cargar_inventario()
                     if not df_stock.empty:
-                        df_stock_mostrar = df_stock.copy()
-                        df_stock_mostrar.loc["TOTAL"] = df_stock_mostrar.sum(numeric_only=True)
-                        str_app.dataframe(df_stock_mostrar, use_container_width=True)
-                        boton_exportar_excel(df_stock.reset_index(), "Stock_Actual.xlsx")
+                        # Reordenar columnas según orden oficial
+                        cols_ordenadas = [c for c in CLASIFICACIONES if c in df_stock.columns]
+                        df_stock_ordenado = df_stock[cols_ordenadas].copy()
+                        df_stock_ordenado.columns = [c.capitalize() for c in df_stock_ordenado.columns]
+                        df_stock_ordenado.loc["TOTAL"] = df_stock_ordenado.sum(numeric_only=True)
+                        str_app.dataframe(df_stock_ordenado, use_container_width=True)
+                        boton_exportar_excel(df_stock_ordenado.reset_index(), "Stock_Actual.xlsx")
                     else:
                         str_app.info("Sin datos de inventario todavía.")
 
@@ -2155,7 +2321,6 @@ else:
                             titulo_periodo_rem = f"{fecha_ini.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')}"
 
                     if not df_h.empty and {"num_remision", "cliente", "total"}.issubset(df_h.columns):
-                        # --- Resumen del periodo: una fila por remisión (cliente + valor) ---
                         df_tot_rem = df_h.assign(total=pd.to_numeric(df_h["total"], errors="coerce").fillna(0.0))
                         df_resumen_rem = (
                             df_tot_rem.groupby("num_remision", as_index=False)
@@ -2212,8 +2377,7 @@ else:
 
                                     pdf_buf = generar_pdf_remision(int(num_sel), fecha_str, conductor_val, cliente_datos, items_pdf, total_factura)
                                     str_app.download_button(f"📄 Descargar PDF Remisión #{int(num_sel):06d}", data=pdf_buf, file_name=f"Remision_{int(num_sel):06d}.pdf", mime="application/pdf", key=f"dl_hist_{num_sel}")
-                                    
-                                    # Opción de edición para administradores
+
                                     if rol_actual == "Administrador":
                                         str_app.markdown("---")
                                         if str_app.checkbox(f"✏️ Habilitar edición para Remisión #{int(num_sel):06d}", key=f"chk_edit_rem_{num_sel}"):
@@ -2229,7 +2393,7 @@ else:
 
                                                 df_items_actuales = df_r[['tipo_huevo', 'cantidad', 'precio_unitario', 'galpon']].copy()
                                                 df_items_actuales.columns = ['Clasificación', 'Cantidad (Huevos)', 'Precio Unitario ($)', 'Galpón Origen']
-                                                
+
                                                 df_items_editados = str_app.data_editor(
                                                     df_items_actuales, num_rows="dynamic",
                                                     column_config={
@@ -2277,6 +2441,122 @@ else:
                         boton_exportar_excel(df_h, "Historial_Remisiones.xlsx", key="xls_historial")
                     else:
                         str_app.info("No hay remisiones registradas en el periodo seleccionado.")
+
+                # ---------------- 🔥 NUEVA SECCIÓN: VENTAS Y GASTOS DEL MES ----------------
+                elif str_app.session_state.seccion_activa == "📊 Ventas y Gastos del Mes":
+                    str_app.subheader("📊 Ventas y Gastos del Mes")
+                    str_app.caption("Informe mensual: huevos vendidos por galpón (en el orden oficial de clasificaciones) y detalle de gastos del mes por concepto.")
+
+                    df_rem = cargar_remisiones()
+                    df_gas = cargar_gastos()
+                    df_cam = cargar_gastos_camion()
+                    df_var = cargar_gastos_varios()
+
+                    anios_disponibles = set()
+                    for dfx, col in [(df_rem, 'fecha_emision'), (df_gas, 'fecha'), (df_cam, 'fecha'), (df_var, 'fecha')]:
+                        if dfx is not None and not dfx.empty and col in dfx.columns:
+                            anios_disponibles.update(pd.to_datetime(dfx[col]).dt.year.dropna().astype(int).unique().tolist())
+                    anios_disponibles = sorted(anios_disponibles, reverse=True) if anios_disponibles else [date.today().year]
+
+                    c_a, c_m = str_app.columns(2)
+                    anio_vg = c_a.selectbox("📅 Año", anios_disponibles, key="vg_anio")
+                    mes_vg_nombre = c_m.selectbox("📅 Mes", list(MESES_NOMBRES.values()), index=date.today().month - 1, key="vg_mes")
+                    mes_vg_num = [k for k, v in MESES_NOMBRES.items() if v == mes_vg_nombre][0]
+                    titulo_periodo_vg = f"{mes_vg_nombre} {anio_vg}"
+
+                    # --- Filtrar remisiones del mes ---
+                    df_rem_mes = pd.DataFrame()
+                    if df_rem is not None and not df_rem.empty and 'fecha_emision' in df_rem.columns:
+                        dt_rem = pd.to_datetime(df_rem['fecha_emision'])
+                        df_rem_mes = df_rem[(dt_rem.dt.year == anio_vg) & (dt_rem.dt.month == mes_vg_num)].copy()
+
+                    # --- Huevos vendidos por galpón ---
+                    df_unidades, df_valores = calcular_ventas_mes_por_galpon(df_rem_mes)
+                    total_ventas_vg = float(df_valores["Total Ventas ($)"].sum()) if not df_valores.empty else 0.0
+                    total_huevos_vg = int(df_unidades["Total Huevos"].sum()) if not df_unidades.empty else 0
+
+                    # --- Gastos del mes detallados ---
+                    df_por_categoria, df_por_origen, df_detalle = calcular_gastos_mes_detallado(df_gas, df_cam, df_var, anio_vg, mes_vg_num)
+                    total_gastos_vg = float(df_por_categoria["Valor ($)"].sum()) if not df_por_categoria.empty else 0.0
+
+                    # --- Tarjetas resumen ---
+                    utilidad_vg = total_ventas_vg - total_gastos_vg
+                    c1, c2, c3, c4 = str_app.columns(4)
+                    c1.metric("🧾 Huevos vendidos", f"{total_huevos_vg:,}".replace(",", "."))
+                    c2.metric("📈 Ventas", f"${total_ventas_vg:,.0f}".replace(",", "."))
+                    c3.metric("💸 Gastos", f"${total_gastos_vg:,.0f}".replace(",", "."))
+                    c4.metric("💰 Utilidad", f"${utilidad_vg:,.0f}".replace(",", "."))
+
+                    str_app.markdown("---")
+                    str_app.markdown(f"#### 🥚 Huevos vendidos por galpón y clasificación — {titulo_periodo_vg}")
+                    if not df_unidades.empty and df_unidades["Total Huevos"].sum() > 0:
+                        cols_clasif_display = [c.capitalize() for c in CLASIFICACIONES]
+                        df_mostrar_u = df_unidades.copy()
+                        df_mostrar_u.columns = ["Galpón"] + cols_clasif_display + ["Total Huevos"]
+                        df_mostrar_u = df_mostrar_u.set_index("Galpón")
+                        str_app.dataframe(df_mostrar_u, use_container_width=True)
+                        str_app.caption("El orden de las columnas corresponde al orden oficial: yumbo, extra, aa, a, b, c, palido, sucio, roto.")
+                    else:
+                        str_app.info("No hay huevos vendidos registrados en el mes seleccionado.")
+
+                    str_app.markdown("---")
+                    str_app.markdown(f"#### 💰 Ventas en pesos por galpón — {titulo_periodo_vg}")
+                    if not df_valores.empty and df_valores["Total Ventas ($)"].sum() > 0:
+                        df_mostrar_v = df_valores.copy()
+                        df_mostrar_v["Total Ventas ($)"] = df_mostrar_v["Total Ventas ($)"].apply(lambda x: f"$ {float(x):,.0f}".replace(",", "."))
+                        str_app.dataframe(df_mostrar_v, use_container_width=True, hide_index=True)
+                    else:
+                        str_app.info("Sin ventas en pesos en el mes seleccionado.")
+
+                    str_app.markdown("---")
+                    str_app.markdown(f"#### 💸 Gastos del mes por concepto — {titulo_periodo_vg}")
+                    if not df_por_categoria.empty:
+                        df_mostrar_cat = df_por_categoria.copy()
+                        df_mostrar_cat["Valor ($)"] = df_mostrar_cat["Valor ($)"].apply(lambda x: f"$ {float(x):,.0f}".replace(",", "."))
+                        str_app.dataframe(df_mostrar_cat, use_container_width=True, hide_index=True)
+                        str_app.caption(f"Total gastos del mes: ${total_gastos_vg:,.0f}".replace(",", "."))
+                    else:
+                        str_app.info("No hay gastos registrados en el mes seleccionado.")
+
+                    str_app.markdown("---")
+                    str_app.markdown(f"#### 🏭 Gastos del mes por origen — {titulo_periodo_vg}")
+                    if not df_por_origen.empty:
+                        df_mostrar_orig = df_por_origen.copy()
+                        df_mostrar_orig["Valor ($)"] = df_mostrar_orig["Valor ($)"].apply(lambda x: f"$ {float(x):,.0f}".replace(",", "."))
+                        str_app.dataframe(df_mostrar_orig, use_container_width=True, hide_index=True)
+                    else:
+                        str_app.info("Sin gastos por origen en el mes seleccionado.")
+
+                    # --- Exportar / PDF ---
+                    c_exp1, c_exp2 = str_app.columns(2)
+                    with c_exp1:
+                        boton_exportar_excel(
+                            pd.concat([
+                                df_unidades.assign(Tipo="Unidades"),
+                                df_valores.assign(Tipo="Valores"),
+                            ], ignore_index=True) if (not df_unidades.empty or not df_valores.empty) else pd.DataFrame(),
+                            f"Ventas_{mes_vg_nombre}_{anio_vg}.xlsx",
+                            etiqueta="📊 Ventas (Excel)", key="vg_xls_ventas"
+                        )
+                    with c_exp2:
+                        boton_exportar_excel(
+                            df_detalle if not df_detalle.empty else pd.DataFrame(),
+                            f"Gastos_{mes_vg_nombre}_{anio_vg}.xlsx",
+                            etiqueta="📊 Gastos (Excel)", key="vg_xls_gastos"
+                        )
+
+                    pdf_vg_buf = generar_pdf_ventas_gastos_mes(
+                        titulo_periodo_vg, df_unidades, df_valores,
+                        df_por_categoria, df_por_origen, df_detalle,
+                        total_ventas_vg, total_gastos_vg
+                    )
+                    str_app.download_button(
+                        "📄 Descargar Informe del Mes en PDF",
+                        data=pdf_vg_buf,
+                        file_name=f"Ventas_Gastos_{mes_vg_nombre}_{anio_vg}.pdf",
+                        mime="application/pdf",
+                        key="vg_pdf"
+                    )
 
                 # ---------------- UTILIDADES POR GALPÓN ----------------
                 elif str_app.session_state.seccion_activa == "📈 Utilidades":
@@ -2332,7 +2612,6 @@ else:
                             resumen_utilidades.append({"Galpón": g, "Ingresos ($)": ingresos, "Gastos ($)": gastos, "Utilidad ($)": ingresos - gastos})
 
                         gastos_generales = float(df_gas_periodo[df_gas_periodo['galpon'] == "General / Granja"]['valor'].sum()) if not df_gas_periodo.empty and 'galpon' in df_gas_periodo.columns and 'valor' in df_gas_periodo.columns else 0.0
-
                         gastos_camion = float(df_cam_periodo['valor'].sum()) if not df_cam_periodo.empty and 'valor' in df_cam_periodo.columns else 0.0
 
                         df_util = pd.DataFrame(resumen_utilidades)
@@ -2360,7 +2639,6 @@ else:
                         str_app.dataframe(df_mostrar, use_container_width=True, hide_index=True)
                         boton_exportar_excel(df_util, f"Utilidades_{titulo_periodo.replace(' ', '_')}.xlsx")
 
-                        # --- Informe PDF de utilidades ---
                         df_categorias_informe = _gastos_por_categoria(df_gas_periodo, df_cam_periodo)
                         df_evolucion_informe = calcular_evolucion_mensual(df_rem, df_gas, df_cam) if vista_util == "📊 Histórico completo" else None
                         pdf_informe_util = generar_pdf_informe_utilidades(
@@ -2444,7 +2722,6 @@ else:
                     if not config:
                         str_app.warning("⚠️ Primero debes configurar la Edad y Aves Iniciales en la pestaña 'Configuración Inicial'.")
                     else:
-                        # 🔥 MEJORA UI: registro tipo Excel multi-fila (pegable desde Excel)
                         str_app.caption(
                             "💡 Puedes pegar varias filas directamente desde Excel: "
                             "selecciona las celdas en Excel, cópialas (Ctrl+C) y pégalas (Ctrl+V) en la tabla."

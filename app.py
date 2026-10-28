@@ -1448,7 +1448,8 @@ def calcular_gastos_mes_detallado(df_gas, df_cam, df_var, anio, mes):
         return pd.DataFrame(columns=["Categoría", "Valor ($)"]), pd.DataFrame(columns=["Origen", "Valor ($)"]), df_detalle
 
     df_por_categoria = df_detalle.groupby("Categoría", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
-    df_por_galpon = df_detalle.groupby("Origen", as_index=False)["Valor ($]".replace("]", ""))].sum() if False else df_detalle.groupby("Origen", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
+    df_por_galpon = df_detalle.groupby("Origen", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
+    
     return df_por_categoria, df_por_galpon, df_detalle
 
 

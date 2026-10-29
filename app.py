@@ -21,7 +21,7 @@ from xml.sax.saxutils import escape as _xml_escape
 str_app.set_page_config(
     page_title="Avícola Santa Isabel",
     page_icon="🥚",
-    layout="wide", # 🔥 MEJORA UI: Layout ancho para aprovechar la pantalla
+    layout="wide",
     initial_sidebar_state="collapsed"
 )
 
@@ -73,7 +73,6 @@ str_app.markdown(
         border: 1px solid #1a3e63;
     }
 
-    /* Botones principales y de envío */
     .stButton>button, div.stFormSubmitButton>button {
         width: 100% !important; border-radius: 10px !important; height: 3.2em !important;
         font-weight: 650 !important; background-color: #f26822 !important;
@@ -93,12 +92,10 @@ str_app.markdown(
         color: #f26822 !important;
     }
 
-    /* Textos generales del contenedor */
     .block-container h1, .block-container h2, .block-container h3, .block-container h4, .block-container p {
         color: #ffffff;
     }
 
-    /* Estilo armónico para los Expander */
     [data-testid="stExpander"] {
         background-color: #163559 !important;
         border-radius: 8px !important;
@@ -112,7 +109,6 @@ str_app.markdown(
 
     [data-testid="stExpanderDetails"] { color: #ffffff !important; }
 
-    /* Etiquetas de los campos */
     .stTextInput label, .stNumberInput label, .stSelectbox label, .stDateInput label, .stFileUploader label {
         color: #ffffff !important;
     }
@@ -128,17 +124,14 @@ str_app.markdown(
 
     .stSubheader { color: #f26822 !important; font-weight: bold !important; }
 
-    /* Etiquetas de todos los campos */
     [data-testid="stWidgetLabel"] p, [data-testid="stWidgetLabel"] label { color: #ffffff !important; }
     [data-testid="stCaptionContainer"] p { color: #cbd5e1 !important; }
 
-    /* Pestañas legibles sobre el fondo azul */
     .stTabs [data-baseweb="tab-list"] { gap: 6px; }
     .stTabs [data-baseweb="tab"] p { color: #cbd5e1 !important; font-weight: 600 !important; }
     .stTabs [aria-selected="true"] p { color: #f26822 !important; }
     .stTabs [data-baseweb="tab-highlight"] { background-color: #f26822 !important; }
 
-    /* Tablas con esquinas redondeadas */
     [data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; }
     </style>
     """,
@@ -370,16 +363,7 @@ def actualizar_historial_entrada(id_entrada, nuevo_galpon, nueva_clasificacion, 
                 if old_clasif not in COLUMNAS_INVENTARIO:
                     raise ValueError(f"La entrada tiene una clasificación inválida guardada: {old_clasif}")
 
-                cur.execute(f"SELECT {old_clasif} FROM inventario WHERE galpon = %s", (old_galpon,))
-                res_stock = cur.fetchone()
-                stock_actual = res_stock[0] if res_stock else 0
-                if stock_actual < old_cant:
-                    raise ValueError(
-                        f"No se puede editar esta entrada: parte de ese stock de '{old_clasif.upper()}' en {old_galpon} "
-                        f"ya fue vendido o movido (stock actual: {stock_actual:,}, cantidad original: {old_cant:,}). "
-                        f"Ajusta primero las remisiones o el inventario físico antes de editar esta entrada.".replace(",", ".")
-                    )
-
+                # Ahora permitimos editar aunque el stock sea menor (quedaría negativo)
                 cur.execute(f"UPDATE inventario SET {old_clasif} = {old_clasif} - %s WHERE galpon = %s", (old_cant, old_galpon))
 
                 nueva_clasificacion = nueva_clasificacion.lower()
@@ -436,28 +420,10 @@ def obtener_siguiente_num_remision():
 
 @operacion_segura
 def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conductor, num_remision, fecha_remision, items_venta):
-    requerido = {}
-    for item in items_venta:
-        clasificacion = item['Clasificación'].lower()
-        if clasificacion not in COLUMNAS_INVENTARIO:
-            raise ValueError(f"Clasificación inválida: {clasificacion}")
-        galp_origen = item.get('Galpón', GALPONES[0])
-        clave = (galp_origen, clasificacion)
-        requerido[clave] = requerido.get(clave, 0) + int(item['Cantidad (Huevos)'])
-
+    # 🔥 ELIMINADA LA VALIDACIÓN DE STOCK. AHORA PERMITE VENDER ASÍ NO HAYA.
     with get_conn() as conn:
         with conn:
             with conn.cursor() as cur:
-                for (galp_origen, clasificacion), cantidad_total in requerido.items():
-                    cur.execute(f"SELECT {clasificacion} FROM inventario WHERE galpon = %s", (galp_origen,))
-                    res = cur.fetchone()
-                    stock_actual = res[0] if res else 0
-                    if cantidad_total > stock_actual:
-                        raise ValueError(
-                            f"Stock insuficiente de '{clasificacion.upper()}' en {galp_origen}. "
-                            f"Stock actual: {stock_actual:,}, solicitado: {cantidad_total:,}".replace(",", ".")
-                        )
-
                 cur.execute("""
                     SELECT column_name, is_generated, identity_generation
                     FROM information_schema.columns WHERE table_name = 'remisiones';
@@ -487,6 +453,7 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
                         placeholders = ", ".join(["%s"] * len(datos_reales))
                         cur.execute(f"INSERT INTO remisiones ({cols}) VALUES ({placeholders})", vals)
 
+                    # Resta del inventario (puede quedar negativo)
                     cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galp_origen))
 
                 cur.execute("""
@@ -499,18 +466,11 @@ def registrar_venta_multiple(cliente, cedula, direccion, telefono, email, conduc
 
 @operacion_segura
 def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, email, conductor, fecha_remision, nuevos_items):
-    requerido = {}
-    for item in nuevos_items:
-        clasificacion = item['Clasificación'].lower()
-        if clasificacion not in COLUMNAS_INVENTARIO:
-            raise ValueError(f"Clasificación inválida: {clasificacion}")
-        galp_origen = item.get('Galpón', GALPONES[0])
-        clave = (galp_origen, clasificacion)
-        requerido[clave] = requerido.get(clave, 0) + int(item['Cantidad (Huevos)'])
-
+    # 🔥 ELIMINADA LA VALIDACIÓN DE STOCK AL EDITAR REMISIÓN.
     with get_conn() as conn:
         with conn:
             with conn.cursor() as cur:
+                # 1. Revertir inventario de la remisión anterior
                 cur.execute("SELECT galpon, tipo_huevo, cantidad FROM remisiones WHERE num_remision = %s", (num_remision,))
                 old_rows = cur.fetchall()
                 for galp, clasif, cant in old_rows:
@@ -519,16 +479,7 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
                         raise ValueError(f"La remisión original contiene una clasificación inválida: {clasif}")
                     cur.execute(f"UPDATE inventario SET {clasif} = {clasif} + %s WHERE galpon = %s", (cant, galp))
 
-                for (galp_origen, clasificacion), cantidad_total in requerido.items():
-                    cur.execute(f"SELECT {clasificacion} FROM inventario WHERE galpon = %s", (galp_origen,))
-                    res = cur.fetchone()
-                    stock_actual = res[0] if res else 0
-                    if cantidad_total > stock_actual:
-                        raise ValueError(
-                            f"Stock insuficiente de '{clasificacion.upper()}' en {galp_origen}. "
-                            f"Stock actual: {stock_actual:,}, solicitado: {cantidad_total:,}".replace(",", ".")
-                        )
-
+                # 2. Eliminar registros antiguos de la remisión
                 cur.execute("DELETE FROM remisiones WHERE num_remision = %s", (num_remision,))
 
                 cur.execute("""
@@ -537,6 +488,7 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
                 """)
                 columnas_validas = {c for c, is_gen, id_gen in cur.fetchall() if is_gen != 'ALWAYS' and id_gen != 'ALWAYS'}
 
+                # 3. Insertar nuevos registros y descontar inventario (puede quedar negativo)
                 total_venta_acumulado = 0.0
                 for item in nuevos_items:
                     clasificacion = item['Clasificación'].lower()
@@ -562,6 +514,7 @@ def actualizar_remision(num_remision, cliente, cedula, direccion, telefono, emai
 
                     cur.execute(f"UPDATE inventario SET {clasificacion} = {clasificacion} - %s WHERE galpon = %s", (cantidad, galp_origen))
 
+                # 4. Actualizar cartera
                 cur.execute("SELECT COALESCE(SUM(monto), 0) FROM abonos_cartera WHERE num_remision = %s", (num_remision,))
                 total_abonos = float(cur.fetchone()[0])
                 nuevo_saldo = max(0.0, total_venta_acumulado - total_abonos)
@@ -844,7 +797,6 @@ def mostrar_resumen_general():
 
     str_app.markdown("---")
     
-    # 🔥 MEJORA UI: Mostrar las 3 métricas financieras en columnas para mejor lectura
     c_fin1, c_fin2, c_fin3 = str_app.columns(3)
     c_fin1.metric("💰 Cartera Pendiente", f"${resumen['cartera_pendiente']:,.0f}".replace(",", "."))
     c_fin2.metric("💸 Gastos del Mes", f"${resumen['gastos_mes']:,.0f}".replace(",", "."))
@@ -1438,8 +1390,6 @@ def calcular_gastos_mes_detallado(df_gas, df_cam, df_var, anio, mes):
         return pd.DataFrame(columns=["Categoría", "Valor ($)"]), pd.DataFrame(columns=["Origen", "Valor ($)"]), df_detalle
 
     df_por_categoria = df_detalle.groupby("Categoría", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
-    
-    # 🔥 Corrección del SyntaxError y agrupación por origen
     df_por_galpon = df_detalle.groupby("Origen", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
     
     return df_por_categoria, df_por_galpon, df_detalle
@@ -1664,11 +1614,9 @@ else:
         if "sesion_principal" not in str_app.session_state:
             str_app.session_state.sesion_principal = None
 
-        # --- MENÚ PRINCIPAL ---
         if str_app.session_state.sesion_principal is None:
             mostrar_resumen_general()
 
-            # 🔥 MEJORA UI: Menú organizado en 3 grandes módulos lógicos
             str_app.markdown("### 🗂️ Módulos del Sistema")
             
             c_mod1, c_mod2, c_mod3 = str_app.columns(3)
@@ -1746,14 +1694,12 @@ else:
                 str_app.session_state.seccion_activa = None
                 str_app.rerun()
 
-        # --- CONTENIDO DE LAS SESIONES ---
         if str_app.session_state.sesion_principal == "📦 Stock y Ventas":
 
             if "seccion_activa" not in str_app.session_state or str_app.session_state.seccion_activa is None:
                 str_app.subheader("📦 Módulo Stock y Ventas")
                 str_app.caption("Seleccione una opción para continuar:")
 
-                # 🔥 MEJORA UI: Submenú organizado por categorías dentro de Stock y Ventas
                 col_m1, col_m2, col_m3 = str_app.columns(3)
                 with col_m1:
                     str_app.markdown("**Inventario**")
@@ -1804,7 +1750,6 @@ else:
 
                 str_app.markdown("---")
 
-                # ---------------- ENTRADAS ----------------
                 if str_app.session_state.seccion_activa == "📥 Entradas":
                     str_app.subheader("📥 Entrada de Producción / Clasificación")
                     if rol_actual == "Invitado":
@@ -1897,7 +1842,6 @@ else:
                     else:
                         str_app.info("Aún no hay entradas de stock registradas.")
 
-                # ---------------- INVENTARIO FÍSICO ----------------
                 elif str_app.session_state.seccion_activa == "⚖️ Inventario Fisico":
                     str_app.subheader("⚖️ Inventario Físico y Mermas")
                     if rol_actual == "Invitado":
@@ -1937,7 +1881,6 @@ else:
                                 str_app.success(f"¡Inventario físico de {galpon_fisico} aplicado con éxito!")
                                 str_app.rerun()
 
-                # ---------------- GASTOS POR GALPÓN ----------------
                 elif str_app.session_state.seccion_activa == "💸 Gastos":
                     str_app.subheader("💸 Control de Gastos")
                     tab_g_galpones, tab_g_camion = str_app.tabs(["🐔 Gastos de Galpones", "🚚 Gastos del Camión"])
@@ -2079,7 +2022,6 @@ else:
                         else:
                             str_app.info("Aún no hay gastos del camión registrados.")
 
-                # ---------------- GASTOS VARIOS ----------------
                 elif str_app.session_state.seccion_activa == "🏷️ Gastos Varios":
                     str_app.subheader("🏷️ Control de Gastos Varios y Personales")
                     if rol_actual == "Invitado":
@@ -2117,7 +2059,6 @@ else:
                                         eliminar_gasto_vario(r['id'])
                                         str_app.rerun()
 
-                # ---------------- CLIENTES ----------------
                 elif str_app.session_state.seccion_activa == "👥 Clientes":
                     str_app.subheader("👥 Directorio de Clientes")
                     df_cli = cargar_clientes()
@@ -2176,7 +2117,6 @@ else:
                         for _, r in df_cli_filtrado.iterrows():
                             str_app.write(f"👤 **{r['nombre']}** | Tel: {r.get('telefono', '') or '—'}")
 
-                # ---------------- REMISIONES ----------------
                 elif str_app.session_state.seccion_activa == "📤 Remisiones":
                     str_app.subheader("📋 Nueva Remisión")
                     if rol_actual == "Invitado":
@@ -2249,6 +2189,15 @@ else:
                             tot_fac = items_validos["Subtotal ($)"].sum()
                             str_app.markdown(f"#### Total: ${tot_fac:,.0f}".replace(",", "."))
 
+                            # 🔥 AVISO AMIGABLE SI NO HAY STOCK (PERO PERMITE VENDER)
+                            for _, r in items_validos.iterrows():
+                                galp = r['Galpón Origen']
+                                clasif = r['Clasificación'].lower()
+                                cant_pedida = int(r['Cantidad (Huevos)'])
+                                stock_actual = int(df_inv.loc[galp, clasif]) if (galp in df_inv.index and clasif in df_inv.columns) else 0
+                                if cant_pedida > stock_actual:
+                                    str_app.warning(f"⚠️ **Aviso:** Solicitaste {cant_pedida:,} de **{clasif.upper()}** en {galp}, pero solo hay {stock_actual:,} en stock. La remisión se guardará igual y el inventario quedará en negativo.".replace(",", "."))
+
                             if str_app.button("🚀 Generar Remisión"):
                                 if not c_nom.strip():
                                     str_app.error("El nombre del cliente es obligatorio.")
@@ -2271,7 +2220,6 @@ else:
                                     except ValueError as e:
                                         str_app.error(str(e))
 
-                # ---------------- CARTERA ----------------
                 elif str_app.session_state.seccion_activa == "💰 Cartera":
                     str_app.subheader("💰 Control de Cartera e Historial de Abonos")
                     df_cartera = cargar_cartera()
@@ -2312,7 +2260,6 @@ else:
                                                     str_app.success("¡Abono registrado correctamente!")
                                                     str_app.rerun()
 
-                # ---------------- STOCK ----------------
                 elif str_app.session_state.seccion_activa == "📊 Stock":
                     str_app.subheader("📦 Stock Actual")
                     df_stock = cargar_inventario()
@@ -2326,7 +2273,6 @@ else:
                     else:
                         str_app.info("Sin datos de inventario todavía.")
 
-                # ---------------- HISTORIAL DE REMISIONES ----------------
                 elif str_app.session_state.seccion_activa == "📜 Historial":
                     str_app.subheader("📜 Historial de Remisiones")
                     df_h = cargar_remisiones()
@@ -2473,7 +2419,6 @@ else:
                     else:
                         str_app.info("No hay remisiones registradas en el periodo seleccionado.")
 
-                # ---------------- VENTAS Y GASTOS DEL MES ----------------
                 elif str_app.session_state.seccion_activa == "📊 Ventas y Gastos del Mes":
                     str_app.subheader("📊 Ventas y Gastos del Mes")
                     str_app.caption("Informe mensual: huevos vendidos por galpón (en el orden oficial de clasificaciones) y detalle de gastos del mes por concepto.")
@@ -2509,7 +2454,6 @@ else:
 
                     utilidad_vg = total_ventas_vg - total_gastos_vg
                     
-                    # 🔥 MEJORA UI: Tarjetas resumen en la parte superior
                     c1, c2, c3, c4 = str_app.columns(4)
                     c1.metric("🧾 Huevos vendidos", f"{total_huevos_vg:,}".replace(",", "."))
                     c2.metric("📈 Ventas", f"${total_ventas_vg:,.0f}".replace(",", "."))
@@ -2531,23 +2475,15 @@ else:
                     str_app.markdown("---")
                     str_app.markdown(f"#### 💸 Gastos del mes por concepto y galpón — {titulo_periodo_vg}")
                     
-                    # 🔥 MEJORA UI: Matriz cruzada de Gastos (Concepto vs Galpón)
                     if not df_detalle.empty:
-                        # Creamos columnas auxiliares para separar el galpón del prefijo "Galpón: X" o "Camión"
                         df_matriz_base = df_detalle.copy()
                         df_matriz_base["Galpón"] = df_matriz_base["Origen"].apply(lambda x: x.replace("Galpón: ", "") if "Galpón:" in x else x)
                         
-                        # Pivoteamos: filas = Categoría, columnas = Galpón, valores = sum(Valor)
                         df_matriz = df_matriz_base.pivot_table(index="Categoría", columns="Galpón", values="Valor ($)", aggfunc="sum", fill_value=0)
-                        
-                        # Agregar columna de Total por Concepto
                         df_matriz["TOTAL CONCEPTO"] = df_matriz.sum(axis=1)
                         df_matriz = df_matriz.sort_values("TOTAL CONCEPTO", ascending=False)
-                        
-                        # Agregar fila de Total por Galpón
                         df_matriz.loc["TOTAL GALPÓN"] = df_matriz.sum(axis=0)
                         
-                        # Formatear a moneda
                         for col in df_matriz.columns:
                             df_matriz[col] = df_matriz[col].apply(lambda x: f"$ {x:,.0f}".replace(",", ".") if x != 0 else "—")
                         
@@ -2587,7 +2523,6 @@ else:
                         key="vg_pdf"
                     )
 
-                # ---------------- UTILIDADES POR GALPÓN ----------------
                 elif str_app.session_state.seccion_activa == "📈 Utilidades":
                     str_app.subheader("📈 Utilidades por Galpón")
                     str_app.caption("Análisis financiero de ingresos por ventas, gastos directos y utilidad neta por galpón.")

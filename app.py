@@ -148,7 +148,7 @@ CLASIFICACIONES = ["yumbo", "extra", "aa", "a", "b", "c", "palido", "sucio", "ro
 COLUMNAS_INVENTARIO = set(CLASIFICACIONES)
 MESES_NOMBRES = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
                   7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'}
-CATEGORIAS_GASTO_GALPON = ["Alimento", "Medicamentos / Sanidad", "Personal / Mano de Obra",
+CATEGORIAS_GASTO_GALPON = ["Alimento","Cubeta", "Medicamentos / Sanidad", "Personal / Mano de Obra",
                             "Mantenimiento / Reparaciones", "Servicios Públicos", "Otros"]
 CATEGORIAS_GASTO_VARIO = ["Personal", "Hogar", "Vehículo", "Impuestos", "Varios"]
 CATEGORIAS_GASTO_CAMION = ["Combustible", "Mantenimiento / Repuestos", "Llantas", "Peajes",

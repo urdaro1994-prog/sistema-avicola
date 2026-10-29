@@ -2122,11 +2122,8 @@ else:
                     if rol_actual == "Invitado":
                         str_app.warning("👀 Modo Invitado.")
                     else:
-                        # 🔥 1. Inicializamos el contador de reseteo si no existe
                         if "reset_ctr_remision" not in str_app.session_state:
                             str_app.session_state["reset_ctr_remision"] = 0
-                        
-                        # 🔥 2. Guardamos el valor actual en una variable local
                         ctr_rem = str_app.session_state["reset_ctr_remision"]
 
                         df_inv = cargar_inventario()
@@ -2135,24 +2132,40 @@ else:
 
                         str_app.markdown(f"### Remisión No. {num_rem_act:06d}")
                         
-                        # 🔥 3. Añadimos el contador a la 'key' de cada campo
                         fecha_rem = str_app.date_input("Fecha", value=date.today(), key=f"fecha_rem_{ctr_rem}")
                         opciones_cli = ["-- Escribir cliente nuevo --"] + df_clientes["nombre"].tolist() if not df_clientes.empty else ["-- Escribir cliente nuevo --"]
                         cliente_sel = str_app.selectbox("Cliente Guardado", opciones_cli, key=f"cli_sel_{ctr_rem}")
 
-                        v_nom, v_ced, v_dir, v_tel, v_em = "", "", "CHOACHI", "", ""
+                        # 🔥 SOLUCIÓN: Sincronizamos los campos de texto con el cliente seleccionado usando session_state
                         if cliente_sel != "-- Escribir cliente nuevo --" and not df_clientes.empty:
                             d_cli = df_clientes[df_clientes["nombre"] == cliente_sel].iloc[0]
-                            v_nom, v_ced, v_dir, v_tel, v_em = str(d_cli.get("nombre", "")), str(d_cli.get("cedula_nit", "")), str(d_cli.get("direccion", "CHOACHI")), str(d_cli.get("telefono", "")), str(d_cli.get("email", ""))
+                            # Solo actualizamos si el cliente seleccionado cambió para no sobreescribir lo que el usuario escribe
+                            if str_app.session_state.get(f"ultimo_cli_sel_{ctr_rem}") != cliente_sel:
+                                str_app.session_state[f"c_nom_{ctr_rem}"] = str(d_cli.get("nombre", ""))
+                                str_app.session_state[f"c_ced_{ctr_rem}"] = str(d_cli.get("cedula_nit", ""))
+                                str_app.session_state[f"c_dir_{ctr_rem}"] = str(d_cli.get("direccion", "CHOACHI"))
+                                str_app.session_state[f"c_tel_{ctr_rem}"] = str(d_cli.get("telefono", ""))
+                                str_app.session_state[f"c_em_{ctr_rem}"] = str(d_cli.get("email", ""))
+                                str_app.session_state[f"ultimo_cli_sel_{ctr_rem}"] = cliente_sel
+                        else:
+                            if str_app.session_state.get(f"ultimo_cli_sel_{ctr_rem}") != "-- Escribir cliente nuevo --":
+                                # Si elige "cliente nuevo", limpiamos los campos
+                                str_app.session_state[f"c_nom_{ctr_rem}"] = ""
+                                str_app.session_state[f"c_ced_{ctr_rem}"] = ""
+                                str_app.session_state[f"c_dir_{ctr_rem}"] = "CHOACHI"
+                                str_app.session_state[f"c_tel_{ctr_rem}"] = ""
+                                str_app.session_state[f"c_em_{ctr_rem}"] = ""
+                                str_app.session_state[f"ultimo_cli_sel_{ctr_rem}"] = "-- Escribir cliente nuevo --"
 
-                        c_nom = str_app.text_input("Cliente *", value=v_nom, key=f"c_nom_{ctr_rem}")
+                        # Ahora los text_input usan directamente el session_state (sin el parámetro value=)
+                        c_nom = str_app.text_input("Cliente *", key=f"c_nom_{ctr_rem}")
                         col_c1, col_c2 = str_app.columns(2)
                         with col_c1:
-                            c_ced = str_app.text_input("Cédula/NIT", value=v_ced, key=f"c_ced_{ctr_rem}")
-                            c_dir = str_app.text_input("Dirección", value=v_dir, key=f"c_dir_{ctr_rem}")
+                            c_ced = str_app.text_input("Cédula/NIT", key=f"c_ced_{ctr_rem}")
+                            c_dir = str_app.text_input("Dirección", key=f"c_dir_{ctr_rem}")
                         with col_c2:
-                            c_tel = str_app.text_input("Teléfono", value=v_tel, key=f"c_tel_{ctr_rem}")
-                            c_em = str_app.text_input("Email", value=v_em, key=f"c_em_{ctr_rem}")
+                            c_tel = str_app.text_input("Teléfono", key=f"c_tel_{ctr_rem}")
+                            c_em = str_app.text_input("Email", key=f"c_em_{ctr_rem}")
                         col_c3, col_c4 = str_app.columns([2, 1])
                         with col_c3:
                             c_cond = str_app.text_input("Conductor", value="Ivan Herrera", key=f"c_cond_{ctr_rem}")
@@ -2171,7 +2184,6 @@ else:
                             "Galpón Origen": GALPONES[0],
                         } for c in CLASIFICACIONES])
                         
-                        # 🔥 4. Añadimos el contador a la 'key' del data_editor
                         df_editado = str_app.data_editor(
                             df_base, num_rows="dynamic",
                             column_config={
@@ -2201,7 +2213,6 @@ else:
                             tot_fac = items_validos["Subtotal ($)"].sum()
                             str_app.markdown(f"#### Total: ${tot_fac:,.0f}".replace(",", "."))
 
-                            # Aviso amigable si no hay stock
                             for _, r in items_validos.iterrows():
                                 galp = r['Galpón Origen']
                                 clasif = r['Clasificación'].lower()
@@ -2210,7 +2221,6 @@ else:
                                 if cant_pedida > stock_actual:
                                     str_app.warning(f"⚠️ **Aviso:** Solicitaste {cant_pedida:,} de **{clasif.upper()}** en {galp}, pero solo hay {stock_actual:,} en stock. La remisión se guardará igual y el inventario quedará en negativo.".replace(",", "."))
 
-                            # 🔥 5. Usamos una 'key' para el botón que también dependa del contador
                             if str_app.button("🚀 Generar Remisión", key=f"btn_generar_rem_{ctr_rem}"):
                                 if not c_nom.strip():
                                     str_app.error("El nombre del cliente es obligatorio.")
@@ -2231,8 +2241,10 @@ else:
                                             pdf_buf = generar_pdf_remision(num_rem_act, str(fecha_rem), c_cond, cliente_datos, items_validos, tot_fac)
                                             str_app.download_button("📄 Descargar Remisión en PDF", data=pdf_buf, file_name=f"Remision_{num_rem_act:06d}.pdf", mime="application/pdf", key=f"dl_pdf_rem_{ctr_rem}")
                                             
-                                            # 🔥 6. AQUÍ ESTÁ LA MAGIA: Aumentamos el contador y recargamos la página.
-                                            # Al cambiar el número, Streamlit crea todos los campos de arriba vacíos de nuevo.
+                                            # Limpiamos el rastro del último cliente y aumentamos el contador
+                                            if f"ultimo_cli_sel_{ctr_rem}" in str_app.session_state:
+                                                del str_app.session_state[f"ultimo_cli_sel_{ctr_rem}"]
+                                                
                                             str_app.session_state["reset_ctr_remision"] += 1
                                             str_app.rerun()
                                             

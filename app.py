@@ -151,7 +151,7 @@ MESES_NOMBRES = {1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6:
 CATEGORIAS_GASTO_GALPON = ["Alimento","Cubeta", "Medicamentos / Sanidad", "Personal / Mano de Obra",
                             "Mantenimiento / Reparaciones", "Servicios Públicos", "Otros"]
 CATEGORIAS_GASTO_VARIO = ["Personal", "Hogar", "Vehículo", "Impuestos", "Varios"]
-CATEGORIAS_GASTO_CAMION = ["Combustible", "Mantenimiento / Repuestos", "Llantas", "Peajes",
+CATEGORIAS_GASTO_CAMION = ["Combustible", "Conductor", "Mantenimiento / Repuestos", "Llantas", "Peajes",
                            "Seguro / SOAT / Tecnomecánica", "Lavado / Parqueadero", "Viáticos", "Otros"]
 
 NOMBRE_EMPRESA = "AGROAVICOLA SANTA ISABEL"

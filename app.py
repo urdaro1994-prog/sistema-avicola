@@ -654,9 +654,10 @@ def registrar_dia_galpon(fecha, galpon, mortalidad, conc_ingresado, conc_consumi
 @lectura_segura
 def cargar_registros_diarios(galpon=None):
     if galpon:
-        df = leer_df("SELECT * FROM registros_diarios WHERE galpon = %s ORDER BY fecha DESC, id DESC", (galpon,))
+        # 🔥 CAMBIO: de DESC a ASC para que el 1 salga primero
+        df = leer_df("SELECT * FROM registros_diarios WHERE galpon = %s ORDER BY fecha ASC, id ASC", (galpon,))
     else:
-        df = leer_df("SELECT * FROM registros_diarios ORDER BY fecha DESC, id DESC")
+        df = leer_df("SELECT * FROM registros_diarios ORDER BY fecha ASC, id ASC")
     if not df.empty:
         df['fecha'] = pd.to_datetime(df['fecha']).dt.date
     return df

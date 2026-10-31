@@ -571,7 +571,7 @@ def registrar_gasto(fecha, galpon, categoria, descripcion, valor):
 
 @lectura_segura
 def cargar_gastos():
-    df = leer_df("SELECT * FROM gastos ORDER BY fecha DESC, id DESC")
+    df = leer_df("SELECT * FROM gastos ORDER BY fecha ASC, id ASC")
     if not df.empty:
         df['fecha'] = pd.to_datetime(df['fecha']).dt.date
     return df
@@ -590,7 +590,7 @@ def registrar_gasto_vario(fecha, categoria, descripcion, valor):
 
 @lectura_segura
 def cargar_gastos_varios():
-    df = leer_df("SELECT * FROM gastos_varios ORDER BY fecha DESC, id DESC")
+    df = leer_df("SELECT * FROM gastos_varios ORDER BY fecha ASC, id ASC")
     if not df.empty:
         df['fecha'] = pd.to_datetime(df['fecha']).dt.date
     return df
@@ -609,7 +609,7 @@ def registrar_gasto_camion(fecha, categoria, descripcion, valor):
 
 @lectura_segura
 def cargar_gastos_camion():
-    df = leer_df("SELECT * FROM gastos_camion ORDER BY fecha DESC, id DESC")
+    df = leer_df("SELECT * FROM gastos_camion ORDER BY fecha ASC, id ASC")
     if not df.empty:
         df['fecha'] = pd.to_datetime(df['fecha']).dt.date
     return df

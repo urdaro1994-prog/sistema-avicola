@@ -1176,10 +1176,176 @@ def calcular_evolucion_mensual(df_rem, df_gas, df_cam):
     return df_evol.reset_index()
 
 
-def generar_pdf_informe_utilidades
+def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, gastos_camion, df_categorias=None, df_evolucion=None, 
+                                   df_registros=None, df_rem_periodo=None, df_gastos_galpones=None, df_gastos_camion=None):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    story = []
+    e = _estilos_pdf()
+    styles = getSampleStyleSheet()
+    estilo_seccion = ParagraphStyle('SeccionInforme', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11,
+                                    textColor=colors.HexColor("#0f2942"), spaceAfter=6)
+    estilo_nota = ParagraphStyle('NotaInforme', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8,
+                                 textColor=colors.HexColor("#64748b"))
+    estilo_subtitulo = ParagraphStyle('Subtitulo', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10,
+                                      textColor=colors.HexColor("#f26822"), spaceAfter=4)
+
+    total_ingresos = float(df_util["Ingresos ($)"].sum())
+    gastos_galpones = float(df_util["Gastos ($)"].sum())
+    total_gastos = gastos_galpones + float(gastos_generales) + float(gastos_camion)
+    utilidad_neta = total_ingresos - total_gastos
+    margen_txt = f"{(utilidad_neta / total_ingresos * 100):.1f} %" if total_ingresos > 0 else "N/A"
+    color_neta = "#15803d" if utilidad_neta >= 0 else "#b91c1c"
+
+    def _color_valor(valor, negrilla=False):
+        color = "#15803d" if valor >= 0 else "#b91c1c"
+        texto = _moneda(valor)
+        return f"<font color='{color}'><b>{texto}</b></font>" if negrilla else f"<font color='{color}'>{texto}</font>"
+
+    # --- ENCABEZADO ---
+    story.append(_encabezado_pdf(e, "Informe Gerencial de Utilidades y Operación",
+                                  f"<b>Periodo:</b><br/><font size=10 color='#f26822'><b>{titulo_periodo}</b></font><br/>"
+                                  f"<font size=8>Generado: {datetime.now().strftime('%Y-%m-%d')}</font>"))
+    story.append(Spacer(1, 10))
+
+    # --- 1. RESUMEN FINANCIERO ---
+    story.append(Paragraph("1. Resumen Financiero Global", estilo_seccion))
+    resumen_data = [
+        [Paragraph("Ingresos por ventas (Remisiones)", e["normal"]), Paragraph(_moneda(total_ingresos), e["right"])],
+        [Paragraph("(-) Gastos directos de galpones", e["normal"]), Paragraph(_moneda(gastos_galpones), e["right"])],
+        [Paragraph("(-) Gastos generales / granja", e["normal"]), Paragraph(_moneda(gastos_generales), e["right"])],
+        [Paragraph("(-) Gastos del camión", e["normal"]), Paragraph(_moneda(gastos_camion), e["right"])],
+        [Paragraph("<b>Total gastos</b>", e["normal"]), Paragraph(f"<b>{_moneda(total_gastos)}</b>", e["right_bold"])],
+        [Paragraph("<font size=11><b>UTILIDAD NETA</b></font>", e["normal"]),
+         Paragraph(f"<font size=11 color='{color_neta}'><b>{_moneda(utilidad_neta)}</b></font>", e["right"])],
+        [Paragraph("Margen neto sobre ventas", e["normal"]), Paragraph(margen_txt, e["right"])],
+    ]
+    t_resumen = Table(resumen_data, colWidths=[374, 160])
+    t_resumen.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5), ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 0), (-1, 3), [colors.HexColor("#f8fafc"), colors.white]),
+        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor("#f1f5f9")),
+        ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor("#fff3eb")),
+        ('LINEABOVE', (0, 4), (-1, 4), 1, colors.HexColor("#0f2942")),
+        ('LINEABOVE', (0, 5), (-1, 5), 1, colors.HexColor("#0f2942")),
+    ]))
+    story.append(t_resumen)
+    story.append(Spacer(1, 16))
+
+    # --- 2. OPERACIÓN: PRODUCCIÓN Y VENTAS DE HUEVOS ---
+    story.append(Paragraph("2. Operación: Producción, Ventas y Concentrado", estilo_seccion))
+    total_prod = 0
+    total_conc_ing = 0.0
+    total_conc_cons = 0.0
+    if df_registros is not None and not df_registros.empty:
+        total_prod = int(df_registros["huevos_recolectados"].sum()) if "huevos_recolectados" in df_registros.columns else 0
+        total_conc_ing = float(df_registros["concentrado_ingresado"].sum()) if "concentrado_ingresado" in df_registros.columns else 0.0
+        total_conc_cons = float(df_registros["concentrado_consumido"].sum()) if "concentrado_consumido" in df_registros.columns else 0.0
+
+    op_data = [
+        [Paragraph("<b>Total Huevos Producidos (Registros):</b>", e["normal"]), Paragraph(f"{total_prod:,}".replace(",", "."), e["right"])],
+        [Paragraph("<b>Total Concentrado Comprado (Bultos):</b>", e["normal"]), Paragraph(f"{total_conc_ing:,.1f}", e["right"])],
+        [Paragraph("<b>Total Concentrado Consumido (Bultos):</b>", e["normal"]), Paragraph(f"{total_conc_cons:,.1f}", e["right"])],
+    ]
+    if df_rem_periodo is not None and not df_rem_periodo.empty and "cantidad" in df_rem_periodo.columns:
+        total_vendidos = int(df_rem_periodo["cantidad"].sum())
+        op_data.append([Paragraph("<b>Total Huevos Vendidos:</b>", e["normal"]), Paragraph(f"{total_vendidos:,}".replace(",", "."), e["right"])])
+        if "tipo_huevo" in df_rem_periodo.columns:
+            df_ventas_clasif = df_rem_periodo.groupby("tipo_huevo")["cantidad"].sum().reset_index()
+            for _, row in df_ventas_clasif.iterrows():
+                clasif_nombre = str(row["tipo_huevo"]).capitalize()
+                cant = int(row["cantidad"])
+                op_data.append([Paragraph(f"  - {clasif_nombre}", e["normal"]), Paragraph(f"{cant:,}".replace(",", "."), e["right"])])
+
+    t_op = Table(op_data, colWidths=[374, 160])
+    t_op.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4), ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.HexColor("#f8fafc"), colors.white]),
+    ]))
+    story.append(t_op)
+    story.append(Spacer(1, 16))
+
+    # --- 3. RESULTADO POR GALPÓN ---
+    story.append(Paragraph("3. Resultado Financiero por Galpón", estilo_seccion))
+    galpon_data = [[Paragraph("Galpón", e["th_left"]), Paragraph("Ingresos", e["th_right"]),
+                    Paragraph("Gastos", e["th_right"]), Paragraph("Utilidad", e["th_right"])]]
+    for _, fila in df_util.iterrows():
+        galpon_data.append([
+            Paragraph(str(fila["Galpón"]), e["normal"]),
+            Paragraph(_moneda(float(fila["Ingresos ($)"])), e["right"]),
+            Paragraph(_moneda(float(fila["Gastos ($)"])), e["right"]),
+            Paragraph(_color_valor(float(fila["Utilidad ($)"])), e["right"]),
+        ])
+    t_galpon = Table(galpon_data, colWidths=[150, 128, 128, 128])
+    t_galpon.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor("#f8fafc"), colors.white]),
+    ]))
+    story.append(t_galpon)
+    story.append(Spacer(1, 16))
+
+    # --- 4. GASTOS POR CATEGORÍA (GLOBAL) ---
+    if df_categorias is not None and not df_categorias.empty:
+        story.append(Paragraph("4. Distribución Global de Gastos por Categoría", estilo_seccion))
+        cat_data = [[Paragraph("Concepto", e["th_left"]), Paragraph("Valor Total", e["th_right"])]]
+        for _, fila in df_categorias.iterrows():
+            cat_data.append([Paragraph(_esc(fila["Concepto"]), e["normal"]), Paragraph(_moneda(float(fila["Valor"])), e["right"])])
+        cat_data.append([Paragraph("<b>Total Gastos</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_categorias['Valor'].sum()))}</b>", e["right_bold"])])
+        t_cat = Table(cat_data, colWidths=[374, 160])
+        t_cat.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#f1f5f9")),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+        ]))
+        story.append(t_cat)
+        story.append(Spacer(1, 16))
+
+    # --- 5. EVOLUCIÓN MENSUAL ---
+    if df_evolucion is not None and not df_evolucion.empty:
+        story.append(Paragraph("5. Evolución Histórica Mes a Mes", estilo_seccion))
+        evol_data = [[Paragraph("Mes", e["th_left"]), Paragraph("Ingresos", e["th_right"]),
+                      Paragraph("Gastos", e["th_right"]), Paragraph("Utilidad", e["th_right"])]]
+        for _, fila in df_evolucion.iterrows():
+            evol_data.append([
+                Paragraph(str(fila["Mes"]), e["normal"]),
+                Paragraph(_moneda(float(fila["Ingresos"])), e["right"]),
+                Paragraph(_moneda(float(fila["Gastos"])), e["right"]),
+                Paragraph(_color_valor(float(fila["Utilidad"])), e["right"]),
+            ])
+        ev_ing = float(df_evolucion["Ingresos"].sum())
+        ev_gas = float(df_evolucion["Gastos"].sum())
+        evol_data.append([
+            Paragraph("<b>Total Histórico</b>", e["normal"]),
+            Paragraph(f"<b>{_moneda(ev_ing)}</b>", e["right_bold"]),
+            Paragraph(f"<b>{_moneda(ev_gas)}</b>", e["right_bold"]),
+            Paragraph(_color_valor(ev_ing - ev_gas, negrilla=True), e["right"]),
+        ])
+        t_evol = Table(evol_data, colWidths=[150, 128, 128, 128], repeatRows=1)
+        t_evol.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
+            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#f1f5f9")),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
+        ]))
+        story.append(t_evol)
+        story.append(Spacer(1, 16))
 
     # =========================================================================
-    # ANEXOS: DETALLE DE GASTOS
+    # ANEXOS: DETALLE DE GASTOS (Protegido contra columnas vacías)
     # =========================================================================
     story.append(PageBreak())
     story.append(Paragraph("ANEXOS: Detalle Descriptivo de Gastos", ParagraphStyle(
@@ -1199,10 +1365,14 @@ def generar_pdf_informe_utilidades
         for _, r in df_gastos.iterrows():
             val = float(r.get("valor", 0) or 0)
             total_g += val
+            fecha_str = str(r.get("fecha", ""))
+            cat_str = str(r.get("categoria", ""))
+            desc_str = str(r.get("descripcion", ""))
+            
             data.append([
-                Paragraph(str(r.get("fecha", "")), e["normal"]),
-                Paragraph(_esc(r.get("categoria", "")), e["normal"]),
-                Paragraph(_esc(r.get("descripcion", "")), e["normal"]),
+                Paragraph(fecha_str, e["normal"]),
+                Paragraph(cat_str, e["normal"]),
+                Paragraph(desc_str, e["normal"]),
                 Paragraph(_moneda(val), e["right"])
             ])
             
@@ -1224,14 +1394,15 @@ def generar_pdf_informe_utilidades
 
     # Anexo 1: Gastos por Galpón
     if df_gastos_galpones is not None and not df_gastos_galpones.empty:
-        for g in GALPONES:
-            df_g = df_gastos_galpones[df_gastos_galpones["galpon"] == g]
-            if not df_g.empty:
-                _tabla_gastos(df_g, f"Anexo A1 - Gastos Detallados: {g}")
-                
-        df_general = df_gastos_galpones[df_gastos_galpones["galpon"] == "General / Granja"]
-        if not df_general.empty:
-            _tabla_gastos(df_general, "Anexo A2 - Gastos Detallados: General / Granja")
+        if "galpon" in df_gastos_galpones.columns:
+            for g in GALPONES:
+                df_g = df_gastos_galpones[df_gastos_galpones["galpon"] == g]
+                if not df_g.empty:
+                    _tabla_gastos(df_g, f"Anexo A1 - Gastos Detallados: {g}")
+                    
+            df_general = df_gastos_galpones[df_gastos_galpones["galpon"] == "General / Granja"]
+            if not df_general.empty:
+                _tabla_gastos(df_general, "Anexo A2 - Gastos Detallados: General / Granja")
 
     # Anexo 2: Gastos del Camión
     if df_gastos_camion is not None and not df_gastos_camion.empty:
@@ -1239,221 +1410,6 @@ def generar_pdf_informe_utilidades
 
     story.append(Paragraph("Este informe incluye las ventas (remisiones), los gastos de galpones, los gastos generales / granja "
                            "y los gastos del camión. No incluye los Gastos Varios y Personales.", estilo_nota))
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
-
-# =========================================================================
-# INFORME DE VENTAS Y GASTOS DEL MES
-# =========================================================================
-def calcular_ventas_mes_por_galpon(df_rem_periodo):
-    cols_unidades = ["Galpón"] + [c.capitalize() for c in CLASIFICACIONES] + ["Total Huevos"]
-    cols_valores = ["Galpón", "Total Ventas ($)"]
-
-    unidades = {g: {c.capitalize(): 0 for c in CLASIFICACIONES} for g in GALPONES}
-    valores = {g: 0.0 for g in GALPONES}
-
-    if df_rem_periodo is not None and not df_rem_periodo.empty and {"galpon", "tipo_huevo", "cantidad", "total"}.issubset(df_rem_periodo.columns):
-        for _, r in df_rem_periodo.iterrows():
-            g = r["galpon"]
-            if g not in unidades:
-                continue
-            clasif = str(r["tipo_huevo"]).lower()
-            cant = int(r["cantidad"] or 0)
-            tot = float(r["total"] or 0)
-            if clasif in COLUMNAS_INVENTARIO:
-                unidades[g][clasif.capitalize()] += cant
-            valores[g] += tot
-
-    filas_u = []
-    for g in GALPONES:
-        fila = {"Galpón": g}
-        fila.update(unidades[g])
-        fila["Total Huevos"] = sum(unidades[g].values())
-        filas_u.append(fila)
-    filas_v = [{"Galpón": g, "Total Ventas ($)": valores[g]} for g in GALPONES]
-
-    return pd.DataFrame(filas_u, columns=cols_unidades), pd.DataFrame(filas_v, columns=cols_valores)
-
-
-def calcular_gastos_mes_detallado(df_gas, df_cam, df_var, anio, mes):
-    def _filtrar_mes(df, col_fecha="fecha"):
-        if df is None or df.empty or col_fecha not in df.columns:
-            return pd.DataFrame()
-        dt = pd.to_datetime(df[col_fecha])
-        return df[(dt.dt.year == anio) & (dt.dt.month == mes)].copy()
-
-    df_g = _filtrar_mes(df_gas)
-    df_c = _filtrar_mes(df_cam)
-    df_v = _filtrar_mes(df_var)
-
-    detalle = []
-    if not df_g.empty:
-        for _, r in df_g.iterrows():
-            detalle.append({
-                "Fecha": r["fecha"],
-                "Origen": f"Galpón: {r.get('galpon','')}",
-                "Categoría": r.get("categoria", ""),
-                "Descripción": r.get("descripcion", ""),
-                "Valor ($)": float(r.get("valor", 0) or 0),
-            })
-    if not df_c.empty:
-        for _, r in df_c.iterrows():
-            detalle.append({
-                "Fecha": r["fecha"],
-                "Origen": "Camión",
-                "Categoría": r.get("categoria", ""),
-                "Descripción": r.get("descripcion", ""),
-                "Valor ($)": float(r.get("valor", 0) or 0),
-            })
-    if not df_v.empty:
-        for _, r in df_v.iterrows():
-            detalle.append({
-                "Fecha": r["fecha"],
-                "Origen": "Varios / Personal",
-                "Categoría": r.get("categoria", ""),
-                "Descripción": r.get("descripcion", ""),
-                "Valor ($)": float(r.get("valor", 0) or 0),
-            })
-
-    df_detalle = pd.DataFrame(detalle)
-    if df_detalle.empty:
-        return pd.DataFrame(columns=["Categoría", "Valor ($)"]), pd.DataFrame(columns=["Origen", "Valor ($)"]), df_detalle
-
-    df_por_categoria = df_detalle.groupby("Categoría", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
-    df_por_galpon = df_detalle.groupby("Origen", as_index=False)["Valor ($)"].sum().sort_values("Valor ($)", ascending=False)
-    
-    return df_por_categoria, df_por_galpon, df_detalle
-
-
-def generar_pdf_ventas_gastos_mes(titulo_periodo, df_unidades, df_valores, df_por_categoria, df_por_galpon, df_detalle, total_ventas, total_gastos):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=36, bottomMargin=36)
-    story = []
-    e = _estilos_pdf()
-    styles = getSampleStyleSheet()
-    estilo_seccion = ParagraphStyle('SecVG', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=11,
-                                    textColor=colors.HexColor("#0f2942"), spaceAfter=6)
-
-    story.append(_encabezado_pdf(e, "Informe de Ventas y Gastos del Mes",
-                                  f"<b>Periodo:</b><br/><font size=10 color='#f26822'><b>{_esc(titulo_periodo)}</b></font><br/>"
-                                  f"<font size=8>Generado: {datetime.now().strftime('%Y-%m-%d')}</font>"))
-    story.append(Spacer(1, 10))
-
-    utilidad = total_ventas - total_gastos
-    color_util = "#15803d" if utilidad >= 0 else "#b91c1c"
-    resumen_data = [
-        [Paragraph(f"<b>Total ventas del mes:</b> <font color='#f26822'><b>{_moneda(total_ventas)}</b></font>", e["normal"]),
-         Paragraph(f"<b>Total gastos del mes:</b> <font color='#b91c1c'><b>{_moneda(total_gastos)}</b></font>", e["normal"])],
-        [Paragraph(f"<b>Utilidad bruta (ventas - gastos):</b> <font color='{color_util}'><b>{_moneda(utilidad)}</b></font>", e["normal"]), ""],
-    ]
-    t_res = Table(resumen_data, colWidths=[270, 264])
-    t_res.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'), ('PADDING', (0, 0), (-1, -1), 8),
-        ('SPAN', (0, 1), (1, 1)),
-    ]))
-    story.append(t_res)
-    story.append(Spacer(1, 14))
-
-    story.append(Paragraph("Huevos vendidos por galpón y clasificación", estilo_seccion))
-    cols_clasif = [c.capitalize() for c in CLASIFICACIONES]
-    header = [Paragraph("Galpón", e["th_left"])] + [Paragraph(c[:4], e["th_right"]) for c in cols_clasif] + [Paragraph("Total", e["th_right"])]
-    table_data = [header]
-    for _, fila in df_unidades.iterrows():
-        row = [Paragraph(str(fila["Galpón"]), e["normal"])]
-        for c in cols_clasif:
-            row.append(Paragraph(f"{int(fila[c]):,}".replace(",", ".") if c in fila else "0", e["right"]))
-        row.append(Paragraph(f"<b>{int(fila['Total Huevos']):,}</b>".replace(",", "."), e["right_bold"]))
-        table_data.append(row)
-    
-    fila_total = [Paragraph("<b>TOTAL</b>", e["normal"])]
-    for c in cols_clasif:
-        fila_total.append(Paragraph(f"<b>{int(df_unidades[c].sum()):,}</b>".replace(",", "."), e["right_bold"]))
-    fila_total.append(Paragraph(f"<b>{int(df_unidades['Total Huevos'].sum()):,}</b>".replace(",", "."), e["right_bold"]))
-    table_data.append(fila_total)
-
-    n_cols = len(header)
-    ancho_col = 480 / n_cols
-    t_u = Table(table_data, colWidths=[ancho_col * 1.4] + [ancho_col * 0.85] * (n_cols - 1))
-    t_u.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4), ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
-        ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
-    ]))
-    story.append(t_u)
-    story.append(Spacer(1, 8))
-    story.append(Paragraph("Las abreviaturas corresponden a las clasificaciones en el orden oficial: "
-                           "yumbo, extra, aa, a, b, c, palido, sucio, roto.", ParagraphStyle(
-        'NotaVG', parent=styles['Normal'], fontName='Helvetica-Oblique', fontSize=8,
-        textColor=colors.HexColor("#64748b"))))
-    story.append(Spacer(1, 10))
-
-    story.append(Paragraph("Ventas en pesos por galpón", estilo_seccion))
-    t_val_data = [[Paragraph("Galpón", e["th_left"]), Paragraph("Total Ventas ($)", e["th_right"])]]
-    for _, fila in df_valores.iterrows():
-        t_val_data.append([Paragraph(str(fila["Galpón"]), e["normal"]), Paragraph(_moneda(float(fila["Total Ventas ($)"])), e["right"])])
-    t_val_data.append([Paragraph("<b>TOTAL</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_valores['Total Ventas ($)'].sum()))}</b>", e["right_bold"])])
-    t_val = Table(t_val_data, colWidths=[280, 254])
-    t_val.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
-        ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
-    ]))
-    story.append(t_val)
-    story.append(Spacer(1, 16))
-
-    story.append(Paragraph("Gastos del mes por categoría (concepto)", estilo_seccion))
-    if not df_por_categoria.empty:
-        cat_data = [[Paragraph("Concepto", e["th_left"]), Paragraph("Valor ($)", e["th_right"])]]
-        for _, fila in df_por_categoria.iterrows():
-            cat_data.append([Paragraph(_esc(fila["Categoría"]), e["normal"]), Paragraph(_moneda(float(fila["Valor ($)"])), e["right"])])
-        cat_data.append([Paragraph("<b>TOTAL GASTOS</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_por_categoria['Valor ($)'].sum()))}</b>", e["right_bold"])])
-        t_cat = Table(cat_data, colWidths=[280, 254])
-        t_cat.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
-            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
-        ]))
-        story.append(t_cat)
-    else:
-        story.append(Paragraph("Sin gastos registrados en el mes.", e["normal"]))
-    story.append(Spacer(1, 14))
-
-    story.append(Paragraph("Gastos del mes por origen", estilo_seccion))
-    if not df_por_galpon.empty:
-        orig_data = [[Paragraph("Origen", e["th_left"]), Paragraph("Valor ($)", e["th_right"])]]
-        for _, fila in df_por_galpon.iterrows():
-            orig_data.append([Paragraph(_esc(fila["Origen"]), e["normal"]), Paragraph(_moneda(float(fila["Valor ($)"])), e["right"])])
-        orig_data.append([Paragraph("<b>TOTAL</b>", e["normal"]), Paragraph(f"<b>{_moneda(float(df_por_galpon['Valor ($)'].sum()))}</b>", e["right_bold"])])
-        t_orig = Table(orig_data, colWidths=[280, 254])
-        t_orig.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#0f2942")),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5), ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor("#f8fafc"), colors.white]),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#fff3eb")),
-            ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor("#0f2942")),
-        ]))
-        story.append(t_orig)
-    else:
-        story.append(Paragraph("Sin gastos registrados en el mes.", e["normal"]))
 
     doc.build(story)
     buffer.seek(0)

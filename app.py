@@ -2644,73 +2644,25 @@ else:
                     if not config:
                         str_app.warning("⚠️ Primero debes configurar la Edad y Aves Iniciales en la pestaña 'Configuración Inicial'.")
                     else:
-                        str_app.markdown("### ✍️ Registrar Días")
-                        
-                        # --- 🔥 NUEVA FORMA FÁCIL: PEGAR DESDE EXCEL ---
-                        str_app.info("💡 **Nuevo método rápido:** Copia el bloque de celdas en Excel (sin los títulos), pégalo en el cuadro de abajo y presiona 'Procesar Datos'.")
-                        
-                        with str_app.form(key=f"form_pegar_excel_{galpon_reg}", clear_on_submit=True):
-                            texto_pegado = str_app.text_area("Pega aquí los datos desde Excel:", height=150, help="Copia las filas de Excel y pégalas aquí. Presiona Ctrl+Enter o haz clic en Procesar.")
-                            btn_procesar = str_app.form_submit_button("🪄 Procesar Datos Pegados")
+                        str_app.caption(
+                            "💡 Puedes pegar varias filas directamente desde Excel: "
+                            "selecciona las celdas en Excel, cópialas (Ctrl+C) y pégalas (Ctrl+V) en la tabla."
+                        )
 
-                        if btn_procesar and texto_pegado.strip():
-                            lineas = texto_pegado.strip().split('\n')
-                            errores_pega = []
-                            guardados_pega = 0
-                            
-                            for i, linea in enumerate(lineas, 1):
-                                partes = linea.split('\t')
-                                if len(partes) < 5:
-                                    errores_pega.append(f"Línea {i}: Faltan datos (se esperaban al menos 5 columnas separadas por tabulación).")
-                                    continue
-                                
-                                try:
-                                    # Parsear fecha (intenta DD/MM/YYYY y YYYY-MM-DD)
-                                    fecha_str = partes[0].strip()
-                                    try:
-                                        fecha_obj = datetime.strptime(fecha_str, "%d/%m/%Y").date()
-                                    except ValueError:
-                                        try:
-                                            fecha_obj = datetime.strptime(fecha_str, "%Y-%m-%d").date()
-                                        except ValueError:
-                                            fecha_obj = pd.to_datetime(fecha_str).date()
-                                    
-                                    # Parsear números
-                                    mort = int(float(partes[1].replace(',', '.'))) if partes[1].strip() else 0
-                                    conc_ing = float(partes[2].replace(',', '.')) if partes[2].strip() else 0.0
-                                    conc_cons = float(partes[3].replace(',', '.')) if partes[3].strip() else 0.0
-                                    huevos = int(float(partes[4].replace(',', '.'))) if partes[4].strip() else 0
-                                    obs = partes[5].strip() if len(partes) > 5 else ""
-                                    
-                                    if registrar_dia_galpon(fecha_obj, galpon_reg, mort, conc_ing, conc_cons, huevos, obs):
-                                        guardados_pega += 1
-                                except Exception as e:
-                                    errores_pega.append(f"Línea {i}: Error en el formato ({e}).")
-                            
-                            if guardados_pega > 0:
-                                str_app.toast(f"¡{guardados_pega} registros guardados con éxito! 🎉", icon="✅")
-                                str_app.success(f"Se procesaron correctamente {guardados_pega} días para {galpon_reg}.")
-                                str_app.rerun()
-                            if errores_pega:
-                                for err in errores_pega[:5]: # Mostrar max 5 errores
-                                    str_app.error(err)
-                                if len(errores_pega) > 5:
-                                    str_app.warning(f"Y {len(errores_pega) - 5} errores más omitidos...")
-
-                        str_app.markdown("---")
-                        str_app.markdown("### 📝 O registra manualmente fila por fila (o arrastra la esquina):")
-
-                        # --- MÉTODO TRADICIONAL (Data Editor) ---
-                        df_plantilla = pd.DataFrame(columns=[
-                            "Fecha", "Mortalidad", "Conc. Ingresado (Bultos)", 
-                            "Conc. Consumido (Bultos)", "Huevos Recolectados", "Observaciones"
-                        ])
+                        df_plantilla = pd.DataFrame({
+                            "Fecha": [date.today()],
+                            "Mortalidad": [0],
+                            "Conc. Ingresado (Bultos)": [0.0],
+                            "Conc. Consumido (Bultos)": [0.0],
+                            "Huevos Recolectados": [0],
+                            "Observaciones": [""],
+                        })
 
                         df_diario_editado = str_app.data_editor(
                             df_plantilla,
                             num_rows="dynamic",
                             column_config={
-                                "Fecha": str_app.column_config.DateColumn("Fecha", format="DD/MM/YYYY"),
+                                "Fecha": str_app.column_config.DateColumn("Fecha", required=True, format="DD/MM/YYYY"),
                                 "Mortalidad": str_app.column_config.NumberColumn("Mortalidad", min_value=0, step=1, format="%d"),
                                 "Conc. Ingresado (Bultos)": str_app.column_config.NumberColumn("Conc. Ingresado (Bultos)", min_value=0.0, step=0.5, format="%.1f"),
                                 "Conc. Consumido (Bultos)": str_app.column_config.NumberColumn("Conc. Consumido (Bultos)", min_value=0.0, step=0.5, format="%.1f"),
@@ -2724,9 +2676,9 @@ else:
 
                         filas_validas = df_diario_editado.dropna(subset=["Fecha"])
                         if filas_validas.empty:
-                            pass # No mostramos mensaje para no saturar
+                            str_app.info("Agrega al menos una fila con fecha para guardar.")
                         else:
-                            if str_app.button("📥 Guardar las filas de la tabla", key=f"btn_guardar_diario_{galpon_reg}"):
+                            if str_app.button("📥 Guardar Todos los Registros", key=f"btn_guardar_diario_{galpon_reg}"):
                                 errores = []
                                 guardados = 0
                                 for _, fila in filas_validas.iterrows():
@@ -2746,11 +2698,11 @@ else:
 
                                 if guardados:
                                     str_app.toast(f"¡{guardados} registro(s) guardado(s) con éxito! 🎉", icon="✅")
+                                    str_app.success(f"Se registraron {guardados} días en {galpon_reg}.")
                                     str_app.rerun()
                                 if errores:
                                     for e in errores:
                                         str_app.error(e)
-
             with tab_historial:
                 str_app.markdown(f"#### 📊 Resumen y Registros de {galpon_reg}")
                 config = cargar_config_galpon(galpon_reg)

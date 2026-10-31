@@ -1177,7 +1177,7 @@ def calcular_evolucion_mensual(df_rem, df_gas, df_cam):
 
 
 def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, gastos_camion, df_categorias=None, df_evolucion=None, 
-                                   df_registros=None, df_rem_periodo=None, df_gastos_galpones=None, df_gastos_camion=None):
+                                   anio_sel=None, mes_sel=None, vista_util=None):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story = []
@@ -1189,6 +1189,26 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
                                  textColor=colors.HexColor("#64748b"))
     estilo_subtitulo = ParagraphStyle('Subtitulo', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10,
                                       textColor=colors.HexColor("#f26822"), spaceAfter=4)
+
+    # 🔥 AHORA DESCARGAMOS LOS DATOS DIRECTAMENTE DE LA BD AQUÍ MISMO PARA EVITAR NULOS
+    df_reg_all = cargar_registros_diarios()
+    df_rem_all = cargar_remisiones()
+    df_gas_all = cargar_gastos()
+    df_cam_all = cargar_gastos_camion()
+
+    if vista_util == "📅 Mes específico" and anio_sel is not None and mes_sel is not None:
+        if not df_reg_all.empty and 'fecha' in df_reg_all.columns:
+            df_reg_all = df_reg_all[pd.to_datetime(df_reg_all['fecha']).dt.year == anio_sel]
+            df_reg_all = df_reg_all[pd.to_datetime(df_reg_all['fecha']).dt.month == mes_sel]
+        if not df_rem_all.empty and 'fecha_emision' in df_rem_all.columns:
+            df_rem_all = df_rem_all[pd.to_datetime(df_rem_all['fecha_emision']).dt.year == anio_sel]
+            df_rem_all = df_rem_all[pd.to_datetime(df_rem_all['fecha_emision']).dt.month == mes_sel]
+        if not df_gas_all.empty and 'fecha' in df_gas_all.columns:
+            df_gas_all = df_gas_all[pd.to_datetime(df_gas_all['fecha']).dt.year == anio_sel]
+            df_gas_all = df_gas_all[pd.to_datetime(df_gas_all['fecha']).dt.month == mes_sel]
+        if not df_cam_all.empty and 'fecha' in df_cam_all.columns:
+            df_cam_all = df_cam_all[pd.to_datetime(df_cam_all['fecha']).dt.year == anio_sel]
+            df_cam_all = df_cam_all[pd.to_datetime(df_cam_all['fecha']).dt.month == mes_sel]
 
     total_ingresos = float(df_util["Ingresos ($)"].sum())
     gastos_galpones = float(df_util["Gastos ($)"].sum())
@@ -1236,24 +1256,32 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
 
     # --- 2. OPERACIÓN: PRODUCCIÓN Y VENTAS DE HUEVOS ---
     story.append(Paragraph("2. Operación: Producción, Ventas y Concentrado", estilo_seccion))
+    
     total_prod = 0
     total_conc_ing = 0.0
     total_conc_cons = 0.0
-    if df_registros is not None and not df_registros.empty:
-        total_prod = int(df_registros["huevos_recolectados"].sum()) if "huevos_recolectados" in df_registros.columns else 0
-        total_conc_ing = float(df_registros["concentrado_ingresado"].sum()) if "concentrado_ingresado" in df_registros.columns else 0.0
-        total_conc_cons = float(df_registros["concentrado_consumido"].sum()) if "concentrado_consumido" in df_registros.columns else 0.0
+    
+    if not df_reg_all.empty:
+        total_prod = int(df_reg_all["huevos_recolectados"].sum()) if "huevos_recolectados" in df_reg_all.columns else 0
+        total_conc_ing = float(df_reg_all["concentrado_ingresado"].sum()) if "concentrado_ingresado" in df_reg_all.columns else 0.0
+        total_conc_cons = float(df_reg_all["concentrado_consumido"].sum()) if "concentrado_consumido" in df_reg_all.columns else 0.0
 
     op_data = [
         [Paragraph("<b>Total Huevos Producidos (Registros):</b>", e["normal"]), Paragraph(f"{total_prod:,}".replace(",", "."), e["right"])],
         [Paragraph("<b>Total Concentrado Comprado (Bultos):</b>", e["normal"]), Paragraph(f"{total_conc_ing:,.1f}", e["right"])],
         [Paragraph("<b>Total Concentrado Consumido (Bultos):</b>", e["normal"]), Paragraph(f"{total_conc_cons:,.1f}", e["right"])],
     ]
-    if df_rem_periodo is not None and not df_rem_periodo.empty and "cantidad" in df_rem_periodo.columns:
-        total_vendidos = int(df_rem_periodo["cantidad"].sum())
+    
+    if not df_rem_all.empty and "cantidad" in df_rem_all.columns:
+        total_vendidos = int(df_rem_all["cantidad"].sum())
         op_data.append([Paragraph("<b>Total Huevos Vendidos:</b>", e["normal"]), Paragraph(f"{total_vendidos:,}".replace(",", "."), e["right"])])
-        if "tipo_huevo" in df_rem_periodo.columns:
-            df_ventas_clasif = df_rem_periodo.groupby("tipo_huevo")["cantidad"].sum().reset_index()
+        
+        if "tipo_huevo" in df_rem_all.columns:
+            df_ventas_clasif = df_rem_all.groupby("tipo_huevo")["cantidad"].sum().reset_index()
+            # Ordenar según el orden oficial
+            df_ventas_clasif['orden'] = df_ventas_clasif['tipo_huevo'].apply(lambda x: CLASIFICACIONES.index(x) if x in CLASIFICACIONES else 99)
+            df_ventas_clasif = df_ventas_clasif.sort_values('orden')
+            
             for _, row in df_ventas_clasif.iterrows():
                 clasif_nombre = str(row["tipo_huevo"]).capitalize()
                 cant = int(row["cantidad"])
@@ -1345,7 +1373,7 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
         story.append(Spacer(1, 16))
 
     # =========================================================================
-    # ANEXOS: DETALLE DE GASTOS (Protegido contra columnas vacías)
+    # ANEXOS: DETALLE DE GASTOS
     # =========================================================================
     story.append(PageBreak())
     story.append(Paragraph("ANEXOS: Detalle Descriptivo de Gastos", ParagraphStyle(
@@ -1393,20 +1421,19 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
         story.append(Spacer(1, 12))
 
     # Anexo 1: Gastos por Galpón
-    if df_gastos_galpones is not None and not df_gastos_galpones.empty:
-        if "galpon" in df_gastos_galpones.columns:
-            for g in GALPONES:
-                df_g = df_gastos_galpones[df_gastos_galpones["galpon"] == g]
-                if not df_g.empty:
-                    _tabla_gastos(df_g, f"Anexo A1 - Gastos Detallados: {g}")
-                    
-            df_general = df_gastos_galpones[df_gastos_galpones["galpon"] == "General / Granja"]
-            if not df_general.empty:
-                _tabla_gastos(df_general, "Anexo A2 - Gastos Detallados: General / Granja")
+    if not df_gas_all.empty and "galpon" in df_gas_all.columns:
+        for g in GALPONES:
+            df_g = df_gas_all[df_gas_all["galpon"] == g]
+            if not df_g.empty:
+                _tabla_gastos(df_g, f"Anexo A1 - Gastos Detallados: {g}")
+                
+        df_general = df_gas_all[df_gas_all["galpon"] == "General / Granja"]
+        if not df_general.empty:
+            _tabla_gastos(df_general, "Anexo A2 - Gastos Detallados: General / Granja")
 
     # Anexo 2: Gastos del Camión
-    if df_gastos_camion is not None and not df_gastos_camion.empty:
-        _tabla_gastos(df_gastos_camion, "Anexo B - Gastos Detallados: Camión")
+    if not df_cam_all.empty:
+        _tabla_gastos(df_cam_all, "Anexo B - Gastos Detallados: Camión")
 
     story.append(Paragraph("Este informe incluye las ventas (remisiones), los gastos de galpones, los gastos generales / granja "
                            "y los gastos del camión. No incluye los Gastos Varios y Personales.", estilo_nota))
@@ -1414,8 +1441,6 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
     doc.build(story)
     buffer.seek(0)
     return buffer
-
-
 # =========================================================================
 # CONTROL DE SESIÓN Y AUTENTICACIÓN
 # =========================================================================

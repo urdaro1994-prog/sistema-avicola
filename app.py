@@ -2550,10 +2550,23 @@ else:
 
                         df_categorias_informe = _gastos_por_categoria(df_gas_periodo, df_cam_periodo)
                         df_evolucion_informe = calcular_evolucion_mensual(df_rem, df_gas, df_cam) if vista_util == "📊 Histórico completo" else None
-                        pdf_informe_util = generar_pdf_informe_utilidades(
-                            titulo_periodo, df_util, gastos_generales, gastos_camion,
-                            df_categorias_informe, df_evolucion_informe
-                        )
+                                                # Validamos si estamos en vista mensual para pasar el año y mes
+                        if vista_util == "📅 Mes específico":
+                            pdf_informe_util = generar_pdf_informe_utilidades(
+                                titulo_periodo, df_util, gastos_generales, gastos_camion,
+                                df_categorias_informe, df_evolucion_informe,
+                                anio_sel=anio_sel_u,
+                                mes_sel=mes_num_sel_u,
+                                vista_util=vista_util
+                            )
+                        else:
+                            pdf_informe_util = generar_pdf_informe_utilidades(
+                                titulo_periodo, df_util, gastos_generales, gastos_camion,
+                                df_categorias_informe, df_evolucion_informe,
+                                anio_sel=None,
+                                mes_sel=None,
+                                vista_util=vista_util
+                            )
                         str_app.download_button(
                             "📄 Descargar Informe de Utilidades en PDF", data=pdf_informe_util,
                             file_name=f"Informe_Utilidades_{titulo_periodo.replace(' ', '_')}.pdf",

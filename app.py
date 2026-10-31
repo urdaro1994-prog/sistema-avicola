@@ -1423,6 +1423,9 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
 
     # Anexo 1: Gastos por Galpón
     if not df_gas_all.empty and "galpon" in df_gas_all.columns:
+        # 🔥 ORDENAR DE FORMA ASCENDENTE ANTES DE IMPRIMIR
+        df_gas_all = df_gas_all.sort_values(by="fecha", ascending=True)
+        
         for g in GALPONES:
             df_g = df_gas_all[df_gas_all["galpon"] == g]
             if not df_g.empty:
@@ -1434,6 +1437,8 @@ def generar_pdf_informe_utilidades(titulo_periodo, df_util, gastos_generales, ga
 
     # Anexo 2: Gastos del Camión
     if not df_cam_all.empty:
+        # 🔥 ORDENAR DE FORMA ASCENDENTE ANTES DE IMPRIMIR
+        df_cam_all = df_cam_all.sort_values(by="fecha", ascending=True)
         _tabla_gastos(df_cam_all, "Anexo B - Gastos Detallados: Camión")
 
     story.append(Paragraph("Este informe incluye las ventas (remisiones), los gastos de galpones, los gastos generales / granja "
